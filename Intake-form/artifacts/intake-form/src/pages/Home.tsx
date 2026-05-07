@@ -96,16 +96,17 @@ const initialData: FormData = {
 // the SF picklist exactly or Lead creation fails ("bad value for restricted
 // picklist field" was the production failure that prompted this list).
 //
-// Sourced from the Lead.Federal_Agency__c picklist in Salesforce: 80 values
-// total. We exclude the two non-agency channel markers ("SOFA", "FNN") since
-// the form is for federal employees, not internal channel routing. Sub-agency
-// values are prefixed with "    ► " (4 spaces + U+25BA + 1 space) — that
-// prefix is part of the SF picklist value, not just display formatting.
+// Sourced from the Lead.Federal_Agency__c picklist in Salesforce. Excluded:
+//   - "SOFA" and "FNN": internal channel markers, not federal employers.
+//   - 28 sub-agency entries prefixed with "    ► ": Salesforce's REST
+//     /sobjects/Lead endpoint trims leading whitespace on picklist input
+//     before validating, but the picklist's stored values include that
+//     prefix verbatim — so trimmed input never matches and SF rejects with
+//     INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. Confirmed by direct REST POST
+//     2026-05-07. Users pick the parent agency instead; Apex routing via
+//     Agency_Mapping__mdt resolves to a Campaign at parent granularity.
 //
-// Order: top-level agencies alphabetical; each parent's children listed
-// immediately below it. NNSA is an orphan in the picklist (no parent prefix
-// despite being part of DOE), placed under Dept of Energy where it belongs.
-// "Other" appended last; it is NOT a SF picklist value — it triggers the
+// "Other" is appended last; it is NOT a SF picklist value — it triggers the
 // agencyOther free-text reveal, and submit.ts converts agency==="Other" to
 // agencyOther's value before forwarding to the Zap.
 type AgencyOption = { label: string; value: string };
@@ -113,41 +114,19 @@ type AgencyOption = { label: string; value: string };
 const AGENCIES: AgencyOption[] = [
   { label: "Architect of the Capitol", value: "Architect of the Capitol" },
   { label: "DC Courts", value: "DC Courts" },
-  { label: "    ► DC Courts: Court of Appeals", value: "    ► DC Courts: Court of Appeals" },
-  { label: "    ► DC Courts: Superior Court", value: "    ► DC Courts: Superior Court" },
-  { label: "    ► DC Courts: US Tax Court", value: "    ► DC Courts: US Tax Court" },
   { label: "DC Public Defender Service", value: "DC Public Defender Service" },
   { label: "Defense Nuclear Facilities Safety Board", value: "Defense Nuclear Facilities Safety Board" },
   { label: "Dept of Agriculture (USDA)", value: "Dept of Agriculture (USDA)" },
   { label: "Dept of Commerce (DOC)", value: "Dept of Commerce (DOC)" },
-  { label: "    ► Dept of Commerce (DOC): Bureau of Industry and Security (BIS)", value: "    ► Dept of Commerce (DOC): Bureau of Industry and Security (BIS)" },
-  { label: "    ► Dept of Commerce (DOC): National Institute of Standards and Technology (NIST)", value: "    ► Dept of Commerce (DOC): National Institute of Standards and Technology (NIST)" },
-  { label: "    ► Dept of Commerce (DOC): National Oceanic and Atmospheric Administration (NOAA)", value: "    ► Dept of Commerce (DOC): National Oceanic and Atmospheric Administration (NOAA)" },
-  { label: "    ► Dept of Commerce (DOC): U.S. Census Bureau", value: "    ► Dept of Commerce (DOC): U.S. Census Bureau" },
   { label: "Dept of Defense (DOD)", value: "Dept of Defense (DOD)" },
-  { label: "    ► Dept of Defense (DOD): Army", value: "    ► Dept of Defense (DOD): Army" },
-  { label: "    ► Dept of Defense (DOD): National Guard", value: "    ► Dept of Defense (DOD): National Guard" },
-  { label: "    ► Dept of Defense (DOD): Navy", value: "    ► Dept of Defense (DOD): Navy" },
-  { label: "    ► Dept of Defense (DOD): NGA (Nat'l Geospatial Agency)", value: "    ► Dept of Defense (DOD): NGA (Nat'l Geospatial Agency)" },
-  { label: "    ► Dept of Defense (DOD): NSA (Natl Security Agency)", value: "    ► Dept of Defense (DOD): NSA (Natl Security Agency)" },
   { label: "Dept of Education", value: "Dept of Education" },
-  { label: "    ► Dept of Education: Office for Civil Rights", value: "    ► Dept of Education: Office for Civil Rights" },
   { label: "Dept of Energy (DOE)", value: "Dept of Energy (DOE)" },
-  // NNSA is an orphan in the SF picklist (no DOE: parent prefix in the value).
-  // Placed here under DOE where it logically belongs.
-  { label: "    ► National Nuclear Security Administration (NNSA)", value: "    ► National Nuclear Security Administration (NNSA)" },
   { label: "Dept of Homeland Security", value: "Dept of Homeland Security" },
-  { label: "    ► Dept of Homeland Security: Customs and Border Protection", value: "    ► Dept of Homeland Security: Customs and Border Protection" },
-  { label: "    ► Dept of Homeland Security: ICE (Immigration and Customs Enforcement)", value: "    ► Dept of Homeland Security: ICE (Immigration and Customs Enforcement)" },
   { label: "Dept of Justice (DOJ)", value: "Dept of Justice (DOJ)" },
   { label: "Dept of Labor", value: "Dept of Labor" },
   { label: "Dept of the Interior (DOI)", value: "Dept of the Interior (DOI)" },
-  { label: "    ► Dept of the Interior (DOI): Fish and Wildlife Service (FWS)", value: "    ► Dept of the Interior (DOI): Fish and Wildlife Service (FWS)" },
   { label: "Dept of the Treasury", value: "Dept of the Treasury" },
-  { label: "    ► Dept of the Treasury: U.S. Mint", value: "    ► Dept of the Treasury: U.S. Mint" },
   { label: "Dept of Transportation (DOT)", value: "Dept of Transportation (DOT)" },
-  { label: "    ► Dept of Transportation (DOT)Federal Aviation Administration (FAA)", value: "    ► Dept of Transportation (DOT)Federal Aviation Administration (FAA)" },
-  { label: "    ► Dept of Transportation (DOT): Federal Railroad Administration (FRA)", value: "    ► Dept of Transportation (DOT): Federal Railroad Administration (FRA)" },
   { label: "Environmental Protection Agency (EPA)", value: "Environmental Protection Agency (EPA)" },
   { label: "Equal Employment Opportunity Commission (EEOC)", value: "Equal Employment Opportunity Commission (EEOC)" },
   { label: "Export-Import Bank of the United States (EXIM)", value: "Export-Import Bank of the United States (EXIM)" },
@@ -164,14 +143,6 @@ const AGENCIES: AgencyOption[] = [
   { label: "Government Publishing Office (GPO)", value: "Government Publishing Office (GPO)" },
   { label: "Govt Accountability Office (GAO)", value: "Govt Accountability Office (GAO)" },
   { label: "Health and Human Svcs (HHS)", value: "Health and Human Svcs (HHS)" },
-  { label: "    ► Health and Human Svcs (HHS): Administration for Children and Families (ACF)", value: "    ► Health and Human Svcs (HHS): Administration for Children and Families (ACF)" },
-  { label: "    ► Health and Human Svcs (HHS): Centers for Disease Control and Prevention (CDC)", value: "    ► Health and Human Svcs (HHS): Centers for Disease Control and Prevention (CDC)" },
-  { label: "    ► Health and Human Svcs (HHS): Centers for Medicare & Medicaid (CMS)", value: "    ► Health and Human Svcs (HHS): Centers for Medicare & Medicaid (CMS)" },
-  { label: "    ► Health and Human Svcs (HHS): Food and Drug Administration (FDA)", value: "    ► Health and Human Svcs (HHS): Food and Drug Administration (FDA)" },
-  { label: "    ► Health and Human Svcs (HHS): Health Resources and Services Administration (HRSA)", value: "    ► Health and Human Svcs (HHS): Health Resources and Services Administration (HRSA)" },
-  { label: "    ► Health and Human Svcs (HHS): Indian Health Service (IHS)", value: "    ► Health and Human Svcs (HHS): Indian Health Service (IHS)" },
-  { label: "    ► Health and Human Svcs (HHS): Natl Institute of Health (NIH)", value: "    ► Health and Human Svcs (HHS): Natl Institute of Health (NIH)" },
-  { label: "    ► Health and Human Svcs (HHS): Substance Abuse and Mental Health Services Admin (SAMSHA)", value: "    ► Health and Human Svcs (HHS): Substance Abuse and Mental Health Services Admin (SAMSHA)" },
   { label: "Housing and Urban Development (HUD)", value: "Housing and Urban Development (HUD)" },
   { label: "N/A", value: "N/A" },
   { label: "National Aeronautics and Space Administration (NASA)", value: "National Aeronautics and Space Administration (NASA)" },

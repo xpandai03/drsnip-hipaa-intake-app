@@ -204,7 +204,13 @@ Channel routing relies on these Lead fields being populated correctly upstream b
 
 The full Agency_Mapping__mdt table (71 records) is preserved at `/tmp/agency_mapping.json`. Notable shape: Sub_Category values for sub-agencies are prefixed with `'    ► '` (4 spaces + ► + space) — e.g., `'    ► Dept of the Interior (DOI): Fish and Wildlife Service (FWS)'`. This whitespace prefix matters for matching.
 
-The intake form's agency dropdown now uses all 78 valid `Lead.Federal_Agency__c` picklist values (80 total minus the two non-agency channel markers `SOFA` and `FNN`), with sub-agencies preserved verbatim including the `'    ► '` prefix. Previously the dropdown shipped only 29 entries, mostly with short labels (e.g. `"NASA"`) that failed the restricted-picklist check on the Salesforce side.
+The intake form's agency dropdown ships 53 entries: 50 top-level `Lead.Federal_Agency__c` parent agencies, plus `N/A`, `University of Maryland` (both top-level SF picklist entries), and the `Other` free-text reveal trigger. Excluded: the channel markers `SOFA`/`FNN` and all 28 sub-agency entries (see Phase 1 limitation below). Previously the dropdown shipped only 29 entries, mostly with short labels (e.g. `"NASA"`) that failed the restricted-picklist check on the Salesforce side.
+
+**Phase 1 limitation (sub-agency picklist values unsubmittable via REST):** Salesforce's REST API endpoint `/sobjects/Lead` strips leading whitespace from picklist input before validating against allowed values. Restricted picklist values that include the leading `'    ► '` prefix (28 sub-agency entries) cannot be inserted via REST. Confirmed via direct REST POST test on 2026-05-07 — value was active in picklist metadata, byte-for-byte match against describe output, but SF rejected with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` and echoed back the trimmed value (no leading spaces) in the error.
+
+Resolution for Phase 1: form excludes the 28 indented sub-agency values. Users select parent agency only (e.g. `'Dept of Defense (DOD)'` instead of `'    ► Dept of Defense (DOD): Navy'`). Apex routing via `Agency_Mapping__mdt` still works — parent agency resolves to a Campaign, just at less granular level than sub-agency.
+
+Phase 2 candidate: investigate alternative ingestion paths (Bulk API, Web-to-Lead) that don't trim leading whitespace, or work with Mel to restructure picklist values without the leading `'    ► '` prefix. Both options have tradeoffs — 98 historical Leads currently store the prefixed values, so a picklist-rename would orphan them; an ingestion-path change adds operational complexity.
 
 ### Other Lead fields the Apex inspects (less central)
 - `RecordTypeId` — must match `Lead.RecordType.DeveloperName = 'Federal'` for duplicate-checking branches to fire
