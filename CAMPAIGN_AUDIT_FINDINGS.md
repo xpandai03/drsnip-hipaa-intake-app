@@ -206,6 +206,8 @@ The full Agency_Mapping__mdt table (71 records) is preserved at `/tmp/agency_map
 
 The intake form's agency dropdown now uses all 78 valid `Lead.Federal_Agency__c` picklist values (80 total minus the two non-agency channel markers `SOFA` and `FNN`), with sub-agencies preserved verbatim including the `'    ► '` prefix. Previously the dropdown shipped only 29 entries, mostly with short labels (e.g. `"NASA"`) that failed the restricted-picklist check on the Salesforce side.
 
+**Phase 1 platform note**: Salesforce's modern REST API endpoint `POST /sobjects/Lead` strips leading whitespace from picklist input before validation, which would reject the 28 sub-agency picklist values that include the `'    ► '` prefix. Direct REST POST tests on 2026-05-07 confirmed this behavior with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`. However, Zapier's standard Salesforce "Create Lead" action uses a different endpoint (presumed SOAP API based on 1,436 successful sub-agency Leads created via this path in the past year), which preserves leading whitespace correctly. Phase 1 form retains sub-agency support because the production Zapier integration handles them. If we ever migrate Zapier away from its standard Salesforce action — or if a future Phase requires direct REST POST integration — sub-agency picklist values would need to be restructured (admin task) or a different SF endpoint used (SOAP, Bulk API, or Apex).
+
 ### Other Lead fields the Apex inspects (less central)
 - `RecordTypeId` — must match `Lead.RecordType.DeveloperName = 'Federal'` for duplicate-checking branches to fire
 - `SurveyId__c`, `ResponseId__c`, `Sofa_Consultation_Survey_*__c` — used by `updateEvalType`/`createContentNote`, separate from Campaign assignment
