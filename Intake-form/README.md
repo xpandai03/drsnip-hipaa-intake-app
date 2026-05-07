@@ -33,22 +33,34 @@ For end-to-end testing of `/api/submit` locally, install the Vercel CLI and run:
 vercel dev
 ```
 
-This serves both the SPA and the `api/submit.ts` function, reading
-`ZAPIER_WEBHOOK_URL` from `.env.local`.
+This serves both the SPA and the `api/submit.ts` function, reading the
+`ZAPIER_WEBHOOK_*` vars below from `.env.local`.
 
 ## Environment variables
 
-| Var | Where | Purpose |
-|---|---|---|
-| `ZAPIER_WEBHOOK_URL` | Vercel project + `.env.local` | Server-side webhook target. Required. |
+`/api/submit` dispatches to one of three Zapier Catch Hooks based on the
+`?source=` URL param the form was loaded with. All three should be set in any
+environment that handles real submissions.
 
-Copy `.env.local.example` → `.env.local` and fill in the value before running
-`vercel dev` or deploying.
+| Var | `?source=` | Survey_Detail__c | Salesforce Campaign route |
+|---|---|---|---|
+| `ZAPIER_WEBHOOK_FEDERAL` | `federal` (default) | `DC SOFA` | Federal_Agency__c → agency-specific Campaign |
+| `ZAPIER_WEBHOOK_INTERNAL` | `internal` | `DC SOFA 2` | "INTERNAL MARKETING" Campaign |
+| `ZAPIER_WEBHOOK_FNN` | `fnn` | `DC SOFA 3` | FNN Campaign |
+
+If `?source=` is missing or unrecognized, the request is treated as `federal`.
+If the matching env var is unset for an incoming request, `/api/submit` returns
+500 with `Webhook URL not configured for source: <source>`.
+
+Copy `.env.local.example` → `.env.local` and fill in the values before running
+`vercel dev` or deploying. The legacy single-webhook var `ZAPIER_WEBHOOK_URL`
+is no longer read.
 
 ## Deploy to Vercel
 
 1. Set Vercel **Root Directory** to `Intake-form/` (this folder).
-2. Add `ZAPIER_WEBHOOK_URL` as a Project Environment Variable.
+2. Add `ZAPIER_WEBHOOK_FEDERAL`, `ZAPIER_WEBHOOK_INTERNAL`, and
+   `ZAPIER_WEBHOOK_FNN` as Project Environment Variables.
 3. Build settings auto-load from `vercel.json`:
    - Build command: `pnpm --filter @workspace/intake-form build`
    - Output directory: `artifacts/intake-form/dist/public`
@@ -61,21 +73,27 @@ Copy `.env.local.example` → `.env.local` and fill in the value before running
 - `/` — public intake form
 - `/internal-tools-x9k2` — link generator for the team (not linked from the form,
   not public-facing). Bookmark the URL or share manually.
-- `POST /api/submit` — Vercel serverless function; forwards validated payload to
-  `ZAPIER_WEBHOOK_URL`.
+- `POST /api/submit` — Vercel serverless function; routes the payload to one of
+  the three `ZAPIER_WEBHOOK_*` URLs based on the `source` field in the body.
 
 ## Source attribution via URL params
 
 The form reads `source`, `campaign`, `event`, and standard `utm_*` params on
-mount and includes them in the submission payload. `source` is mapped to a
-Lead Source string server-side:
+mount and includes them in the submission payload. `source` drives both the
+client-side `leadSource` label (preserved for downstream Zaps that still set
+`Lead.LeadSource`) and the `surveyDetail` field that the Salesforce Apex
+trigger `LeadHandler.addLeadInCampaign` reads to pick a Campaign:
 
-| `?source=` | Lead Source |
-|---|---|
-| `fnn` | `FNN: Webinar` |
-| `internal` | `Internal: Webinar` |
-| `federal` | `SOFA: Webinar` |
-| (none / unknown) | `SOFA: Webinar` (default) |
+| `?source=` | `leadSource` (in payload) | `surveyDetail` (in payload, drives Campaign routing) |
+|---|---|---|
+| `fnn` | `FNN: Webinar` | `DC SOFA 3` |
+| `internal` | `Internal: Webinar` | `DC SOFA 2` |
+| `federal` | `SOFA: Webinar` | `DC SOFA` |
+| (none / unknown) | `SOFA: Webinar` (default) | `DC SOFA` (default) |
+
+`leadSource` was the original channel signal but is unreliable for attribution
+(Apex doesn't read it; the Zaps hardcode a value). `surveyDetail` is what Apex
+actually routes on. See `CAMPAIGN_AUDIT_FINDINGS.md` for details.
 
 Use the `/internal-tools-x9k2` page to generate pre-tagged URLs.
 

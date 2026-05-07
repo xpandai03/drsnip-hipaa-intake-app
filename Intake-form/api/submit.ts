@@ -11,10 +11,34 @@ const REQUIRED_FIELDS = [
 type Body = Record<string, unknown> & {
   agency?: string;
   agencyOther?: string;
+  source?: string;
 };
+
+type SourceKey = "federal" | "internal" | "fnn";
 
 function isString(v: unknown): v is string {
   return typeof v === "string";
+}
+
+function resolveSource(raw: unknown): SourceKey {
+  if (isString(raw)) {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "fnn") return "fnn";
+    if (normalized === "internal") return "internal";
+    if (normalized === "federal") return "federal";
+  }
+  return "federal";
+}
+
+function webhookEnvVarFor(source: SourceKey): string {
+  switch (source) {
+    case "fnn":
+      return "ZAPIER_WEBHOOK_FNN";
+    case "internal":
+      return "ZAPIER_WEBHOOK_INTERNAL";
+    case "federal":
+      return "ZAPIER_WEBHOOK_FEDERAL";
+  }
 }
 
 export default async function handler(
@@ -28,19 +52,22 @@ export default async function handler(
       .json({ success: false, error: "Method not allowed" });
   }
 
-  const webhookUrl = process.env.ZAPIER_WEBHOOK_URL;
-  if (!webhookUrl) {
-    console.error("ZAPIER_WEBHOOK_URL env var is not set");
-    return res
-      .status(500)
-      .json({ success: false, error: "Service is not configured" });
-  }
-
   const body = (req.body ?? {}) as Body;
   if (typeof body !== "object" || body === null) {
     return res
       .status(400)
       .json({ success: false, error: "Invalid request body" });
+  }
+
+  const source = resolveSource(body.source);
+  const envVar = webhookEnvVarFor(source);
+  const webhookUrl = process.env[envVar];
+  if (!webhookUrl) {
+    console.error(`${envVar} env var is not set (source=${source})`);
+    return res.status(500).json({
+      success: false,
+      error: `Webhook URL not configured for source: ${source}`,
+    });
   }
 
   const missing: string[] = [];
@@ -71,6 +98,7 @@ export default async function handler(
       body: JSON.stringify({
         ...body,
         federalAgency: agencyValue,
+        source,
       }),
     });
 

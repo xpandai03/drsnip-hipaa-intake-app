@@ -50,7 +50,9 @@ type FormData = {
   // Q15 Areas of concern
   areasOfConcern: string;
   // Source attribution (URL params, not user-facing)
+  source: string;
   leadSource: string;
+  surveyDetail: string;
   campaign: string;
   event: string;
   utmSource: string;
@@ -79,7 +81,9 @@ const initialData: FormData = {
   externalInvestments: "",
   tspBalance: "",
   areasOfConcern: "",
+  source: "federal",
   leadSource: "SOFA: Webinar",
+  surveyDetail: "DC SOFA",
   campaign: "",
   event: "",
   utmSource: "",
@@ -101,6 +105,18 @@ const SOURCE_MAP: Record<string, string> = {
   internal: "Internal: Webinar",
   federal: "SOFA: Webinar",
 };
+
+// Maps the URL ?source= param to the Salesforce `Survey_Detail__c` value that
+// LeadHandler.addLeadInCampaign reads to route the Lead to a Campaign.
+//   "DC SOFA 3" -> FNN Marketing Campaign
+//   "DC SOFA 2" -> Internal Marketing Campaign
+//   "DC SOFA"   -> falls through to Federal_Agency__c lookup (agency-specific Campaign)
+const SURVEY_DETAIL_MAP: Record<string, string> = {
+  fnn: "DC SOFA 3",
+  internal: "DC SOFA 2",
+  federal: "DC SOFA",
+};
+const SURVEY_DETAIL_DEFAULT = "DC SOFA";
 
 // --- Animation Variants ---
 
@@ -150,10 +166,14 @@ export default function Home() {
     setIsClient(true);
     const params = new URLSearchParams(window.location.search);
     const sourceKey = (params.get("source") ?? "").toLowerCase();
-    const leadSource = SOURCE_MAP[sourceKey] ?? "SOFA: Webinar";
+    const knownSource = sourceKey in SOURCE_MAP ? sourceKey : "federal";
+    const leadSource = SOURCE_MAP[knownSource] ?? "SOFA: Webinar";
+    const surveyDetail = SURVEY_DETAIL_MAP[knownSource] ?? SURVEY_DETAIL_DEFAULT;
     setData((prev) => ({
       ...prev,
+      source: knownSource,
       leadSource,
+      surveyDetail,
       campaign: params.get("campaign") ?? "",
       event: params.get("event") ?? "",
       utmSource: params.get("utm_source") ?? "",
