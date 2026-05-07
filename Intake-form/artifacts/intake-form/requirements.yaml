@@ -1,0 +1,13 @@
+packages:
+  "framer-motion": "For smooth, Typeform-style page transitions and interactions"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to merge Tailwind classes without conflicts"
+
+images:
+  - path: "artifacts/intake-form/public/images/bg-abstract.png"
+    description: "Soft abstract geometric background with gentle gradient mesh in pure white, very light airy blue, and subtle silver tones. Minimalist, premium, and trustworthy financial aesthetic."
+    aspect_ratio: "16:9"
+
+notes:
+  - Frontend-only application with complex local state management.
+  - No backend or API integration required per instructions.

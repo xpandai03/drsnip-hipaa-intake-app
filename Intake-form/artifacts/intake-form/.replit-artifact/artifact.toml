@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Financial Advisor Intake Form"
+version = "1.0.0"
+id = "artifacts/intake-form"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24416
+
+[services.development]
+run = "pnpm --filter @workspace/intake-form run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/intake-form", "run", "build" ]
+publicDir = "artifacts/intake-form/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24416"
+BASE_PATH = "/"

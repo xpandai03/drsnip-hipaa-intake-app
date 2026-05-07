@@ -1,0 +1,307 @@
+Absolutely --- here's a **refined clear framework prompt** you can paste into Replit Agent to update the existing form with the **correct brand/logo and color direction** while preserving the strong UX it already built.
+
+* * * * *
+
+**CLEAR FRAMEWORK PROMPT**
+--------------------------
+
+You are a **senior frontend engineer and product designer** helping refine an existing multi-step intake form demo for a financial advisory firm.
+
+The current build already has a strong Typeform-style UX:
+
+-   one question / section at a time
+
+-   progress bar
+
+-   minimal modern layout
+
+-   bottom CTA/footer
+
+-   polished step flow
+
+Your task is to **redesign the visual system only**, so the form matches the client's branding more closely.
+
+* * * * *
+
+### **C --- Clarity**
+
+**Problem:**
+
+The current form UX is good, but the branding is wrong. It currently uses a generic blue "SOFA" style identity that does not match the client.
+
+**Objective & metric:**
+
+Update the form so it visually feels like a branded CJ Wealth Management / CJ Campbell & Associates intake experience, while preserving the current flow and usability.
+
+Success = the form instantly feels aligned to the client's brand and looks polished enough for a client demo.
+
+**Scope & boundaries:**
+
+In scope:
+
+-   replace logo/brand mark
+
+-   update color palette
+
+-   adjust text/button/progress bar colors
+
+-   refine background styling
+
+-   preserve the current step flow and structure
+
+Out of scope:
+
+-   changing the underlying questions
+
+-   backend integrations
+
+-   major logic rewrites
+
+-   complex animations beyond what already exists
+
+* * * * *
+
+### **L --- Logic**
+
+#### **1) Logo / Brand Update**
+
+Replace the current top-left "SOFA" logo/mark with the uploaded **CJ Wealth Management / CJ Campbell & Associates** logo image.
+
+Use the uploaded logo asset as the primary brand image in the top-left header area.
+
+Implementation guidance:
+
+-   display the logo cleanly at top left
+
+-   ensure it scales well on desktop
+
+-   preserve whitespace around it
+
+-   do not distort the logo
+
+-   prefer showing the full logo image rather than recreating it in text
+
+#### **2) Color System**
+
+Update the UI to use a **red / white brand palette** inspired by the uploaded CJ Wealth branding.
+
+Primary visual direction:
+
+-   dominant brand red background or red-toned panels
+
+-   white primary text when on red backgrounds
+
+-   soft white / off-white surfaces where needed for readability
+
+-   minimal use of gray
+
+-   no bright blue accents
+
+Color intent:
+
+-   **Primary brand red** = main identity color
+
+-   **White** = primary contrast color
+
+-   **Soft off-white / faint pinkish-white** = subtle background/surface variation
+
+-   **Very dark burgundy / charcoal-red** only if needed for contrast on light surfaces
+
+#### **3) Specific UI Adjustments**
+
+Please make these exact changes:
+
+-   Replace blue accents with white or brand-red variants
+
+-   Progress bar accent should be **white**
+
+-   Any active/focus state should fit the red/white palette
+
+-   Footer CTA area should feel cohesive with the new palette
+
+-   Continue button should match the brand palette and remain highly legible
+
+-   Form inputs should still feel modern and minimal, but aligned to the red theme
+
+#### **4) Background Styling**
+
+Redesign the current background treatment so it feels more premium and brand-aligned.
+
+Preferred direction:
+
+-   use a rich red background or red gradient
+
+-   optionally incorporate very subtle geometric overlays or soft shapes
+
+-   keep it minimal and elegant
+
+-   avoid noisy or overly abstract blue-gray background shapes
+
+Goal:
+
+The page should feel like a **premium financial intake flow**, not a generic SaaS onboarding screen.
+
+#### **5) Typography and Contrast**
+
+Maintain strong readability.
+
+Rules:
+
+-   On dark red backgrounds → use white text
+
+-   On light cards/inputs → use dark text
+
+-   Keep headings bold and confident
+
+-   Preserve the strong visual hierarchy already present
+
+#### **6) Layout Preservation**
+
+Do **not** redesign the full UX flow.
+
+Preserve:
+
+-   top-left brand placement
+
+-   top progress indicator
+
+-   large question heading
+
+-   clean input row layout
+
+-   bottom-right continue CTA
+
+-   bottom privacy/confidential note
+
+This is a **visual re-theme**, not a structural rebuild.
+
+* * * * *
+
+### **E --- Examples**
+
+**Positive / desired result:**
+
+A polished multi-step form that feels like a branded client demo for a red-themed financial advisory company. It should feel modern, minimal, premium, and trustworthy.
+
+**Edge cases:**
+
+-   logo may need sizing adjustments for responsiveness
+
+-   red background must not reduce input readability
+
+-   white progress bar must still be clearly visible
+
+**Counterexample / what not to do:**
+
+-   do not keep blue as the main accent
+
+-   do not use the placeholder "SOFA" branding
+
+-   do not make the interface overly dark, harsh, or flashy
+
+-   do not clutter the layout with too many decorative elements
+
+* * * * *
+
+### **A --- Adaptation**
+
+**Iteration protocol:**
+
+1.  First update the branding and color system globally
+
+2.  Then refine any contrast/readability issues
+
+3.  Then lightly polish spacing and cohesion if needed
+
+**Feedback signals:**
+
+-   Does the logo feel correct and naturally placed?
+
+-   Does the form look clearly red/white branded?
+
+-   Does the UI still feel modern and easy to complete?
+
+-   Would this look credible in front of a client?
+
+**Change policy:**
+
+Make focused visual changes only. Avoid unnecessary rewrites.
+
+* * * * *
+
+### **R --- Results**
+
+**Acceptance tests:**
+
+-   CJ Wealth logo appears in top-left instead of SOFA branding
+
+-   primary palette is red/white, not blue
+
+-   progress bar accent is white
+
+-   headings and key UI elements feel brand-aligned
+
+-   layout and flow remain intact
+
+-   the page looks polished enough for a discovery/demo call
+
+**Success criteria (KPIs):**
+
+-   visual brand alignment
+
+-   modern premium feel
+
+-   high readability
+
+-   minimal friction
+
+**Reporting:**
+
+After making changes, summarize:
+
+1.  what branding/color changes were made
+
+2.  any readability tradeoffs handled
+
+3.  any recommended next polish pass
+
+* * * * *
+
+### **Deliverable**
+
+A revised first version of the multi-step form with:
+
+-   correct CJ Wealth branding
+
+-   red/white visual system
+
+-   preserved UX flow
+
+-   demo-ready polish
+
+* * * * *
+
+### **Constraints / Guardrails**
+
+-   Use the uploaded logo image asset directly
+
+-   Keep the current form architecture intact
+
+-   Preserve usability above all else
+
+-   Keep the interface minimal, premium, and trustworthy
+
+-   Avoid introducing new libraries unless necessary
+
+* * * * *
+
+**Final instruction**
+---------------------
+
+Please update the current implementation to match this brand direction.
+
+This is for a **client-facing demo**, so the result should feel intentional, polished, and immediately more aligned with the uploaded CJ Wealth branding than the current version.
+
+* * * * *
+
+If you want, I can also turn this into a **shorter "agent-optimized" version** that is more tactical and less verbose for Replit.

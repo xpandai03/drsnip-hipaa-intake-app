@@ -1,0 +1,357 @@
+**🧠 CLEAR FRAMEWORK PROMPT (FOR REPLIT AGENT)**
+
+================================================
+
+* * * * *
+
+**ROLE + CONTEXT**
+
+------------------
+
+You are a **senior frontend engineer + product designer** helping build a **modern, high-conversion intake form** for a financial advisory firm.
+
+The goal is to **rebuild an existing SurveyMonkey form into a clean, step-by-step Typeform-style experience**, while preserving all original data fields and logic.
+
+You will be provided screenshots of the current form.
+
+You must **replicate all important fields**, but **improve UX drastically**.
+
+* * * * *
+
+**C --- CLARITY**
+
+---------------
+
+### **Problem**
+
+The current intake form is:
+
+-   long
+
+-   clunky
+
+-   multi-page
+
+-   has duplicate inputs (email repeated)
+
+-   causes drop-off
+
+### **Objective**
+
+Build a **multi-step, single-question-per-screen form** that:
+
+-   reduces friction
+
+-   improves clarity
+
+-   preserves all required data fields
+
+### **Success Metric (for demo)**
+
+-   User can complete form in **<60 seconds**
+
+-   No duplicate inputs
+
+-   Clear progression with progress bar
+
+-   Feels modern and simple
+
+### **Scope**
+
+✅ In scope:
+
+-   Frontend only (no backend)
+
+-   Multi-step form UI
+
+-   Basic scoring logic (mocked)
+
+-   Smooth transitions
+
+❌ Out of scope:
+
+-   API integrations
+
+-   Salesforce / Zapier
+
+-   Authentication
+
+-   Database
+
+* * * * *
+
+**L --- LOGIC**
+
+-------------
+
+### **Form Structure (based on screenshots)**
+
+Recreate these sections:
+
+* * * * *
+
+### **Step 1 --- About You**
+
+-   First Name
+
+-   Last Name
+
+* * * * *
+
+### **Step 2 --- Contact Info**
+
+-   Phone
+
+-   Email
+
+-   State of Residence
+
+* * * * *
+
+### **Step 3 --- Agency**
+
+-   Dropdown (simulate options)
+
+-   "Other agency" input field
+
+* * * * *
+
+### **Step 4 --- Retirement Timeline**
+
+-   "How many years until you plan to retire?"
+
+* * * * *
+
+### **Step 5 --- Age**
+
+Options:
+
+-   59.5+
+
+-   55--59
+
+-   50--54
+
+-   40--49
+
+-   Below 40
+
+* * * * *
+
+### **Step 6 --- Separation Status**
+
+-   Yes / No
+
+* * * * *
+
+### **Step 7 --- Marital Status**
+
+-   Yes / No / Divorced / Widowed
+
+* * * * *
+
+### **Step 8 --- Contributions**
+
+-   Are you maxing out TSP?
+
+-   If NO → show follow-up input (%)
+
+* * * * *
+
+### **Step 9 --- External Investments**
+
+-   Yes / No
+
+* * * * *
+
+### **Step 10 --- TSP Balance**
+
+Options:
+
+-   Over $1M
+
+-   $600k--$1M
+
+-   $350k--$600k
+
+-   Under $350k
+
+* * * * *
+
+### **Step 11 --- Notes**
+
+-   Open text area
+
+* * * * *
+
+* * * * *
+
+### **UI Behavior (CRITICAL)**
+
+-   One question per screen
+
+-   "Next" button
+
+-   "Back" button
+
+-   Progress bar at top
+
+* * * * *
+
+### **Transitions**
+
+-   Smooth fade or slide transitions between steps
+
+* * * * *
+
+### **Conditional Logic**
+
+-   If "No" on contribution → show % input
+
+-   Keep logic simple (frontend only)
+
+* * * * *
+
+### **Scoring (Mocked)**
+
+Add simple JS function:
+
+-   Based on:
+
+    -   Age
+
+    -   Assets
+
+Display result at end:
+
+-   "You qualify as: Priority (10)" OR
+
+-   "Standard (8)"
+
+* * * * *
+
+**E --- EXAMPLES**
+
+----------------
+
+### **✅ Positive (Desired UX)**
+
+-   Clean card layout
+
+-   Large readable inputs
+
+-   Minimal text per screen
+
+-   Clear CTA buttons
+
+* * * * *
+
+### **⚠️ Edge Cases**
+
+-   Empty fields → prevent next step
+
+-   Conditional questions appearing dynamically
+
+* * * * *
+
+### **❌ Counterexample (DO NOT DO)**
+
+-   Long scrolling form
+
+-   Multiple questions per page
+
+-   Cluttered UI like SurveyMonkey
+
+-   Repeating fields (email twice)
+
+* * * * *
+
+**A --- ADAPTATION**
+
+------------------
+
+### **Iteration Protocol**
+
+-   Build working version first
+
+-   Then refine UI polish
+
+* * * * *
+
+### **Feedback Signals**
+
+-   Ease of completion
+
+-   Visual clarity
+
+-   Speed of navigation
+
+* * * * *
+
+### **Change Policy**
+
+-   Keep structure modular
+
+-   Each step = reusable component
+
+* * * * *
+
+**R --- RESULTS**
+
+---------------
+
+### **Acceptance Tests**
+
+-   User can click through all steps
+
+-   Data persists across steps
+
+-   Progress bar updates correctly
+
+-   Conditional logic works
+
+* * * * *
+
+### **Success Criteria**
+
+-   Clean, modern UI
+
+-   No friction or confusion
+
+-   Feels significantly better than SurveyMonkey
+
+* * * * *
+
+### **Deliverable**
+
+A working frontend app with:
+
+-   Multi-step form
+
+-   Smooth UX
+
+-   Mock scoring output
+
+* * * * *
+
+### **Constraints / Guardrails**
+
+-   Use **HTML + Tailwind + Vanilla JS (or React if easier)**
+
+-   Keep code clean and readable
+
+-   Prioritize UX over complexity
+
+-   No external dependencies unless necessary
+
+* * * * *
+
+**💥 Final Instruction to Agent**
+
+=================================
+
+Build a **production-quality MVP of this form**, optimized for clarity, speed, and user experience.
+
+This is a **demo for a client**, so visual polish and flow matter more than backend functionality.
+
+* * * * *
