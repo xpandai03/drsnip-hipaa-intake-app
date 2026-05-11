@@ -114,3 +114,16 @@ shown regardless of this flag.
 The repo can still be opened in Replit. Replit-specific Vite plugins
 (`runtime-error-modal`, `cartographer`, `dev-banner`) load only when `REPL_ID`
 is present in the environment, so they don't run on Vercel builds.
+
+## Architecture decisions
+
+- **Server side: Vercel serverless functions only.** Considered a standalone
+  Express api-server (the dormant `artifacts/api-server/` package, deleted
+  in Phase 2 Sprint 0); chose Vercel functions for v1 to minimize ops
+  surface (one deploy, one env, one log stream). All new endpoints live
+  under `Intake-form/api/`. See `PLAN_PHASE_2.md`.
+- **Persistence: Vercel Postgres + Drizzle ORM** (`lib/db/`).
+- **API contracts: OpenAPI 3.1 + orval.** New endpoints get declared in
+  `lib/api-spec/openapi.yaml`; `pnpm --filter @workspace/api-spec codegen`
+  regenerates the React Query client (`lib/api-client-react`) and Zod
+  validators (`lib/api-zod`).
