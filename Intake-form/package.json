@@ -7,13 +7,21 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck:api": "tsc --noEmit -p api/tsconfig.json",
-    "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:api && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:api && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "test:api": "node --import tsx --test api/_test/auth.test.ts api/_test/login.test.ts api/_test/logout.test.ts"
   },
   "private": true,
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "bcryptjs": "catalog:",
+    "zod": "catalog:"
+  },
   "devDependencies": {
     "typescript": "~5.9.2",
     "prettier": "^3.8.1",
+    "@types/bcryptjs": "catalog:",
     "@types/node": "catalog:",
-    "@vercel/node": "^5.3.27"
+    "@vercel/node": "^5.3.27",
+    "tsx": "catalog:"
   }
 }
