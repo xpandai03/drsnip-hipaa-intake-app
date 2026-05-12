@@ -80,7 +80,7 @@ export default function LinkGenerator() {
         />
       </header>
 
-      <main className="w-full max-w-4xl mx-auto px-6 pt-12 pb-16 space-y-6">
+      <main className="w-full max-w-4xl mx-auto px-6 pt-24 pb-16 space-y-6">
         <Card className="rounded-3xl shadow-2xl shadow-black/20 border-0">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-slate-900 text-lg">
