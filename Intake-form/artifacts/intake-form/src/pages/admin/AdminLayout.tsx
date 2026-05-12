@@ -50,19 +50,32 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      {/* Floating tab nav — top-center on wide viewports, full-width on mobile.
-          On /admin/links we push the nav down so the hero CJC logo sits above
-          it; other admin pages keep the nav at top-4. */}
+      {/* Tab nav — bottom-fixed on mobile (full width, evenly distributed
+          tabs visible without horizontal scroll), top-center floating pill
+          on md+. On /admin/links the desktop pill drops to top-32 so the
+          hero CJC logo sits above it; other admin pages keep top-4. */}
       <nav
         aria-label="Admin sections"
         className={
-          "fixed left-1/2 -translate-x-1/2 z-50 max-w-[calc(100vw-2rem)] " +
+          "fixed z-50 " +
+          // Mobile: stretched along the bottom of the viewport.
+          "inset-x-3 bottom-3 " +
+          // md+: centered floating pill at the top (reset bottom).
+          "md:inset-x-auto md:bottom-auto md:left-1/2 md:-translate-x-1/2 md:max-w-[calc(100vw-2rem)] " +
           (location === "/admin/links" || location === "/admin"
-            ? "top-32"
-            : "top-4")
+            ? "md:top-32"
+            : "md:top-4")
         }
       >
-        <div className="flex items-center gap-1 bg-white/95 backdrop-blur rounded-full px-1.5 py-1.5 shadow-lg border border-slate-200 overflow-x-auto no-scrollbar">
+        <div
+          className={
+            "bg-white/95 backdrop-blur rounded-full px-1.5 py-1.5 shadow-lg border border-slate-200 " +
+            // Mobile: 4 tabs in an evenly spaced row.
+            "grid grid-cols-4 gap-0.5 " +
+            // md+: original flex layout with content-sized tabs.
+            "md:flex md:items-center md:gap-1 md:overflow-x-auto md:no-scrollbar"
+          }
+        >
           {TABS.map((tab) => {
             const isActive = tab.match(location);
             return (
@@ -72,7 +85,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                 aria-current={isActive ? "page" : undefined}
                 data-testid={`admin-tab-${tab.to.split("/").pop()}`}
                 className={
-                  "shrink-0 text-sm font-medium px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap " +
+                  // Mobile: equal-width, slightly smaller text, label may wrap if needed.
+                  "text-center text-xs sm:text-sm font-medium px-2 sm:px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap min-w-0 " +
+                  "md:shrink-0 " +
                   (isActive
                     ? "bg-[#A82020] text-white shadow-sm"
                     : "text-slate-700 hover:bg-slate-100")

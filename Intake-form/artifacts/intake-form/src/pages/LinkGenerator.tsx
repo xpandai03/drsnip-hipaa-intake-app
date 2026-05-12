@@ -69,18 +69,20 @@ export default function LinkGenerator() {
       // Exact red of the logo PNG so the image edges blend into the page.
       style={{ background: "#CD1C3A" }}
     >
-      {/* Hero logo — centered, sized to dominate the top of the page. The
-          AdminLayout tab nav is pushed down to top-32 on this route so it
-          sits below the logo. */}
-      <header className="w-full pt-6 flex justify-center">
+      {/* Hero logo — centered, sized to dominate the top of the page. On
+          desktop the AdminLayout tab nav drops to top-32 so it sits below
+          the logo; on mobile the nav lives at the bottom of the screen
+          (no overlap to worry about). The logo shrinks on small viewports
+          so it doesn't collide with the top-right user chip. */}
+      <header className="w-full pt-6 md:pt-6 px-12 sm:px-6 flex justify-center">
         <img
           src={cjLogo}
           alt="CJC Wealth Management"
-          className="h-24 w-auto object-contain"
+          className="h-16 sm:h-20 md:h-24 w-auto object-contain"
         />
       </header>
 
-      <main className="w-full max-w-4xl mx-auto px-6 pt-24 pb-16 space-y-6">
+      <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 pt-6 md:pt-24 pb-28 md:pb-16 space-y-6">
         <Card className="rounded-3xl shadow-2xl shadow-black/20 border-0">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-slate-900 text-lg">

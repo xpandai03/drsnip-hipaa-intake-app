@@ -263,7 +263,7 @@ function SubmissionsPage() {
     filters.search !== "";
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-24 pb-12 px-4 sm:px-6">
+    <div className="min-h-screen bg-slate-50 pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-slate-900">Submissions</h1>
