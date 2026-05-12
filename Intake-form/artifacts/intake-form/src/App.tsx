@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -21,10 +22,27 @@ function WithAuth({ children }: { children: React.ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>;
 }
 
+/**
+ * Public intake only when the share link includes ?source= (values come from
+ * the admin link generator). Bare `/` is the app entry for admins → sign-in.
+ */
+function RootIntakeGate() {
+  const [allowForm, setAllowForm] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("source");
+    setAllowForm(Boolean(raw?.trim()));
+  }, []);
+
+  if (allowForm === null) return null;
+  if (!allowForm) return <Redirect to="/admin/signin" />;
+  return <Home />;
+}
+
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/" component={RootIntakeGate} />
       {/* Phase 1 legacy: kept for existing bookmarks. Sprint 3 will redirect
           this to /admin/links. */}
       <Route path="/internal-tools-x9k2" component={LinkGenerator} />
