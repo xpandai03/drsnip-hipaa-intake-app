@@ -65,32 +65,22 @@ export default function LinkGenerator() {
 
   return (
     <div
-      className="min-h-screen font-sans relative overflow-hidden"
-      style={{ background: "linear-gradient(135deg, #8B1A1A 0%, #A82020 40%, #C0282B 100%)" }}
+      className="min-h-screen font-sans"
+      // Exact red of the logo PNG so the image edges blend into the page.
+      style={{ background: "#CD1C3A" }}
     >
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-white/5" />
-        <div className="absolute top-1/3 -left-24 w-64 h-64 rounded-full bg-white/4" />
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full bg-black/10" />
-      </div>
-
-      <header className="relative z-10 w-full max-w-4xl mx-auto px-6 py-6 flex items-center gap-4">
+      {/* Hero logo — centered, sized to dominate the top of the page. The
+          AdminLayout tab nav is pushed down to top-32 on this route so it
+          sits below the logo. */}
+      <header className="w-full pt-6 flex justify-center">
         <img
           src={cjLogo}
-          alt="CJ Wealth Management"
-          className="h-12 w-auto object-contain rounded-lg"
+          alt="CJC Wealth Management"
+          className="h-24 w-auto object-contain"
         />
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-white leading-tight">
-            CJC Intake Form — Link Generator
-          </h1>
-          <p className="text-sm text-white/70">
-            Generate pre-tagged URLs for internal use.
-          </p>
-        </div>
       </header>
 
-      <main className="relative z-10 w-full max-w-4xl mx-auto px-6 pb-16 space-y-6">
+      <main className="w-full max-w-4xl mx-auto px-6 pt-12 pb-16 space-y-6">
         <Card className="rounded-3xl shadow-2xl shadow-black/20 border-0">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-slate-900 text-lg">

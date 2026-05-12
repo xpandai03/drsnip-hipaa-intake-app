@@ -50,10 +50,17 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      {/* Floating tab nav — top-center on wide viewports, full-width on mobile. */}
+      {/* Floating tab nav — top-center on wide viewports, full-width on mobile.
+          On /admin/links we push the nav down so the hero CJC logo sits above
+          it; other admin pages keep the nav at top-4. */}
       <nav
         aria-label="Admin sections"
-        className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100vw-2rem)]"
+        className={
+          "fixed left-1/2 -translate-x-1/2 z-50 max-w-[calc(100vw-2rem)] " +
+          (location === "/admin/links" || location === "/admin"
+            ? "top-32"
+            : "top-4")
+        }
       >
         <div className="flex items-center gap-1 bg-white/95 backdrop-blur rounded-full px-1.5 py-1.5 shadow-lg border border-slate-200 overflow-x-auto no-scrollbar">
           {TABS.map((tab) => {
