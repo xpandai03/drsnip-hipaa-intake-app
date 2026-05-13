@@ -64,11 +64,7 @@ export default function LinkGenerator() {
   };
 
   return (
-    <div
-      className="min-h-screen font-sans"
-      // Exact red of the logo PNG so the image edges blend into the page.
-      style={{ background: "#CD1C3A" }}
-    >
+    <div className="min-h-screen font-sans">
       {/* Hero logo — centered, sized to dominate the top of the page. On
           desktop the AdminLayout tab nav drops to top-32 so it sits below
           the logo; on mobile the nav lives at the bottom of the screen
