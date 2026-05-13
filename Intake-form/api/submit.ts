@@ -12,6 +12,11 @@ import {
   createLead,
   strippedFederalAgency,
 } from "./_lib/sf";
+import {
+  SOURCE_DEFAULTS,
+  buildSalesforceFields,
+  type SourceKey,
+} from "./_lib/lead-fields";
 
 // ---------------------------------------------------------------------------
 // Body shape (mirrors FormData in artifacts/intake-form/src/pages/Home.tsx)
@@ -57,17 +62,6 @@ const bodySchema = z.object({
 
 type Body = z.infer<typeof bodySchema>;
 
-type SourceKey = "federal" | "internal" | "fnn";
-
-const SOURCE_DEFAULTS: Record<
-  SourceKey,
-  { leadSource: string; surveyDetail: string }
-> = {
-  federal: { leadSource: "SOFA: Webinar", surveyDetail: "DC SOFA" },
-  internal: { leadSource: "Internal: Webinar", surveyDetail: "DC SOFA 2" },
-  fnn: { leadSource: "FNN: Webinar", surveyDetail: "DC SOFA 3" },
-};
-
 function resolveSource(raw: unknown): SourceKey {
   if (typeof raw === "string") {
     const n = raw.trim().toLowerCase();
@@ -76,60 +70,6 @@ function resolveSource(raw: unknown): SourceKey {
     if (n === "federal") return "federal";
   }
   return "federal";
-}
-
-// ---------------------------------------------------------------------------
-// Map form Body → SF Lead fields. The Q* fields mirror what Investigation 6
-// decoded from the SF Flow. Standard Lead fields (FirstName/LastName/...) use
-// SF's well-known names.
-//
-// NOTE: this mapping replaces the field mapping the staging Zaps used to do.
-// Raunek should spot-check the first prod submission post-cutover to confirm
-// every field landed where expected. Anything found missing can be added
-// in a follow-up — the DB always has the raw_payload for forensics.
-// ---------------------------------------------------------------------------
-
-type SalesforceLeadFields = Record<string, unknown>;
-
-function buildSalesforceFields(
-  body: Body,
-  source: SourceKey,
-  agencyValue: string,
-  rank: string | undefined,
-  leadScore: string | undefined,
-): SalesforceLeadFields {
-  const defaults = SOURCE_DEFAULTS[source];
-  const fields: SalesforceLeadFields = {
-    FirstName: body.firstName,
-    LastName: body.lastName,
-    Email: body.email,
-    Phone: body.phone,
-    State: body.stateResidence,
-    Federal_Agency__c: agencyValue,
-    LeadSource: body.leadSource && body.leadSource.length > 0
-      ? body.leadSource
-      : defaults.leadSource,
-    Survey_Detail__c: body.surveyDetail && body.surveyDetail.length > 0
-      ? body.surveyDetail
-      : defaults.surveyDetail,
-  };
-  // Survey answers — only include when populated (avoid clobbering existing
-  // values on resubmits, though intake form never resubmits the same email).
-  if (body.yearsToRetire) fields.Sofa_Consultation_Survey_Q2__c = body.yearsToRetire;
-  if (body.age) fields.Sofa_Consultation_Survey_Q4__c = body.age;
-  if (body.maritalStatus) fields.Sofa_Consultation_Survey_Q5__c = body.maritalStatus;
-  if (body.maxingTsp) fields.Sofa_Consultation_Survey_Q8__c = body.maxingTsp;
-  if (body.tspContributionPct) {
-    fields.Sofa_Consultation_Survey_Q8_Other__c = body.tspContributionPct;
-  }
-  if (body.externalInvestments) fields.Sofa_Consultation_Survey_Q9__c = body.externalInvestments;
-  if (body.tspBalance) fields.Sofa_Consultation_Survey_Q10__c = body.tspBalance;
-  if (body.areasOfConcern) fields.Sofa_Consultation_Survey_Q13__c = body.areasOfConcern;
-  if (body.separating) fields.Sofa_Consultation_Survey_Q15__c = body.separating;
-  // Scoring outputs.
-  if (rank) fields.Rank__c = rank;
-  if (leadScore) fields.Lead_Score__c = leadScore;
-  return fields;
 }
 
 // ---------------------------------------------------------------------------
