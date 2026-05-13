@@ -263,11 +263,11 @@ function SubmissionsPage() {
     filters.search !== "";
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
+    <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         <header className="mb-6">
-          <h1 className="text-2xl font-semibold text-slate-900">Submissions</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-semibold text-white">Submissions</h1>
+          <p className="text-sm text-white/75 mt-1">
             Every intake-form submission, scored and pushed to Salesforce. Click any
             row for the full pipeline trace.
           </p>
@@ -283,7 +283,7 @@ function SubmissionsPage() {
           hasFilters={hasFilters}
         />
 
-        <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="mt-6 bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 overflow-hidden">
           {query.isLoading && !query.data ? (
             <TableSkeleton />
           ) : query.isError ? (
@@ -332,7 +332,7 @@ function FilterBar({
   hasFilters: boolean;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-wrap items-end gap-3">
+    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4 flex flex-wrap items-end gap-3">
       <FilterField label="Channel">
         <Select
           value={filters.source}

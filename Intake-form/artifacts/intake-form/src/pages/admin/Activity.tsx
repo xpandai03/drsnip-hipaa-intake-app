@@ -69,11 +69,11 @@ function ActivityPage() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
+    <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         <header className="mb-6">
-          <h1 className="text-2xl font-semibold text-slate-900">Activity</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-semibold text-white">Activity</h1>
+          <p className="text-sm text-white/75 mt-1">
             Submission volume over the last 90 days. Click any day on the heatmap
             to filter the Submissions tab to that date.
           </p>
@@ -139,7 +139,7 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
       </div>
 
       {/* Heatmap */}
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
         <div className="flex items-baseline justify-between mb-4">
           <h2 className="text-base font-semibold text-slate-900">Last 90 days</h2>
           <span className="text-xs text-slate-500">
@@ -150,7 +150,7 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
       </section>
 
       {/* Stacked bar by source — last 30 days */}
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
         <h2 className="text-base font-semibold text-slate-900 mb-4">By channel (last 30 days)</h2>
         {last30.every((d) => d.total === 0) ? (
           <p className="text-sm text-slate-500 py-10 text-center">
@@ -200,7 +200,7 @@ function Tile({
   sublabel?: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4">
       <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</div>
       <div className={`text-2xl font-semibold mt-1 ${accent}`}>{value}</div>
       {sublabel && <div className="text-xs text-slate-500 mt-1">{sublabel}</div>}
@@ -374,18 +374,18 @@ function ActivitySkeleton() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-2xl" />
+          <Skeleton key={i} className="h-24 rounded-3xl" />
         ))}
       </div>
-      <Skeleton className="h-48 rounded-2xl" />
-      <Skeleton className="h-72 rounded-2xl" />
+      <Skeleton className="h-48 rounded-3xl" />
+      <Skeleton className="h-72 rounded-3xl" />
     </div>
   );
 }
 
 function ActivityError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm py-16 text-center">
+    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 py-16 text-center">
       <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-3" />
       <p className="text-slate-700 font-medium">Couldn't load activity.</p>
       <p className="text-sm text-slate-500 mt-1">

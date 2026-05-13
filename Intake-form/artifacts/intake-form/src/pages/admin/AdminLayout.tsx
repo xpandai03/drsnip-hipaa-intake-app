@@ -37,11 +37,10 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   if (status !== "authenticated" || !user) {
     return (
       <div
-        className="min-h-screen flex items-center justify-center"
-        style={{
-          background:
-            "linear-gradient(135deg, #8B1A1A 0%, #A82020 40%, #C0282B 100%)",
-        }}
+        className="min-h-screen flex items-center justify-center font-sans"
+        // Same solid CJC red as the signed-in admin shell (was gradient; align
+        // with Tab 1 / LinkGenerator #CD1C3A for one consistent brand canvas).
+        style={{ background: "#CD1C3A" }}
       >
         <Loader2 className="w-6 h-6 animate-spin text-white" />
       </div>
@@ -49,7 +48,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen">
+    <div
+      className="min-h-screen font-sans"
+      // Tab 1 (LinkGenerator) reference red — exact hex from logo blend comment.
+      style={{ background: "#CD1C3A" }}
+    >
       {/* Tab nav — bottom-fixed on mobile (full width, evenly distributed
           tabs visible without horizontal scroll), top-center floating pill
           on md+. On /admin/links the desktop pill drops to top-32 so the
