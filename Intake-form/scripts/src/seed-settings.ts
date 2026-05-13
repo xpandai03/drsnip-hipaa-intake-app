@@ -13,7 +13,7 @@ const SEED_ACTOR = "system:sprint-0-seed";
 // Keys & defaults match PLAN_PHASE_2.md §6 Sprint 4. `days_out_gate` is
 // intentionally absent (cut from v1; Phase 3 candidate — see Resolved Q4).
 const DEFAULTS: Array<{ key: string; value: unknown }> = [
-  { key: "a7_valve", value: true },                  // ON by default → A-7 leads route normally
+  { key: "hold_a7_for_review", value: false },        // OFF by default → A-7 leads route normally; flip to true to hold them for manual review
   { key: "kill_switch", value: false },              // OFF → submissions accepted
   { key: "channel_federal_paused", value: false },
   { key: "channel_internal_paused", value: false },

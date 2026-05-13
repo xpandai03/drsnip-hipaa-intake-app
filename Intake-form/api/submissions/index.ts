@@ -8,7 +8,7 @@
 //   page        default 1
 //   limit       default 50, max 100
 //   source      "federal" | "internal" | "fnn"
-//   sf_status   "pending" | "sent" | "error" | "skipped"
+//   sf_status   "pending" | "sent" | "error" | "skipped" | "held" | "discarded"
 //   rank        "A" | "B+" | "B" | "C" | "N/A" | "unscored"
 //                 unscored ⇒ rank IS NULL
 //   start_date  YYYY-MM-DD inclusive
@@ -42,7 +42,14 @@ import {
 import { requireAuth } from "../_lib/auth";
 
 const ALLOWED_SOURCES = new Set(["federal", "internal", "fnn"]);
-const ALLOWED_SF_STATUSES = new Set(["pending", "sent", "error", "skipped"]);
+const ALLOWED_SF_STATUSES = new Set([
+  "pending",
+  "sent",
+  "error",
+  "skipped",
+  "held",
+  "discarded",
+]);
 const ALLOWED_RANKS = new Set(["A", "B+", "B", "C", "N/A", "unscored"]);
 
 function firstOf(value: unknown): string | undefined {

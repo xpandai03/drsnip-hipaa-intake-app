@@ -69,6 +69,12 @@ export const submissions = pgTable(
     sfAttempts: integer("sf_attempts").notNull().default(0),
     sfLastAttemptAt: timestamp("sf_last_attempt_at", { withTimezone: true }),
 
+    // Hold valve audit (populated when an admin releases or discards a held lead)
+    releasedBy: text("released_by"),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    discardedBy: text("discarded_by"),
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
+
     // Raw payload for forensics
     rawPayload: jsonb("raw_payload").notNull(),
   },

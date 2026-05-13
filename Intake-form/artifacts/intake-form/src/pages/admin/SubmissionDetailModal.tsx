@@ -93,6 +93,10 @@ type DetailSubmission = {
   sfError: string | null;
   sfAttempts: number;
   sfLastAttemptAt: string | null;
+  releasedBy: string | null;
+  releasedAt: string | null;
+  discardedBy: string | null;
+  discardedAt: string | null;
   rawPayload: unknown;
 };
 
@@ -317,6 +321,27 @@ function DetailBody({ data }: { data: DetailResponse }) {
           </div>
         )}
       </Section>
+
+      {/* Section 4b: Hold history — rendered only when this lead passed
+          through the valve (released after being held, or discarded). */}
+      {(s.releasedBy || s.releasedAt || s.discardedBy || s.discardedAt) && (
+        <Section title="Hold history">
+          <Grid>
+            {s.releasedAt && (
+              <KV
+                label="Released"
+                value={`${exactTime(s.releasedAt)}${s.releasedBy ? ` · ${s.releasedBy}` : ""}`}
+              />
+            )}
+            {s.discardedAt && (
+              <KV
+                label="Discarded"
+                value={`${exactTime(s.discardedAt)}${s.discardedBy ? ` · ${s.discardedBy}` : ""}`}
+              />
+            )}
+          </Grid>
+        </Section>
+      )}
 
       {/* Section 5: Raw payload */}
       <Section title="Raw payload">

@@ -106,6 +106,12 @@ function sfStatusBadgeClass(status: string): string {
       return "bg-amber-100 text-amber-800 border-amber-200";
     case "skipped":
       return "bg-slate-100 text-slate-600 border-slate-200";
+    case "held":
+      return "bg-orange-100 text-orange-800 border-orange-200";
+    case "releasing":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "discarded":
+      return "bg-slate-200 text-slate-500 border-slate-300 line-through";
     default:
       return "bg-slate-100 text-slate-600 border-slate-200";
   }
@@ -363,6 +369,8 @@ function FilterBar({
             <SelectItem value="sent">Sent</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="error">Error</SelectItem>
+            <SelectItem value="held">Held</SelectItem>
+            <SelectItem value="discarded">Discarded</SelectItem>
             <SelectItem value="skipped">Skipped</SelectItem>
           </SelectContent>
         </Select>

@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
@@ -16,16 +17,46 @@ import { useAuth } from "@/lib/auth-context";
  * problem on the client.
  */
 
-const TABS: Array<{ to: string; label: string; match: (path: string) => boolean }> = [
+const TABS: Array<{
+  to: string;
+  label: string;
+  match: (path: string) => boolean;
+  badgeQueryKey?: string;
+}> = [
   { to: "/admin/links", label: "Links", match: (p) => p === "/admin/links" || p === "/admin" },
   { to: "/admin/submissions", label: "Submissions", match: (p) => p.startsWith("/admin/submissions") },
+  {
+    to: "/admin/held-leads",
+    label: "Held Leads",
+    match: (p) => p.startsWith("/admin/held-leads"),
+    badgeQueryKey: "held-count",
+  },
   { to: "/admin/activity", label: "Activity", match: (p) => p.startsWith("/admin/activity") },
   { to: "/admin/scoring-rules", label: "Scoring Rules", match: (p) => p.startsWith("/admin/scoring-rules") },
 ];
 
+async function fetchHeldCount(): Promise<number> {
+  const res = await fetch("/api/submissions/held?countOnly=1", {
+    credentials: "same-origin",
+  });
+  if (!res.ok) return 0;
+  const data = (await res.json()) as { count?: number };
+  return Number(data.count ?? 0);
+}
+
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { status, user, logout } = useAuth();
+
+  // Count badge for the Held Leads tab. Enabled only when authenticated so
+  // unauthenticated visits to /admin/signin don't ping a protected endpoint.
+  const heldCountQuery = useQuery({
+    queryKey: ["held-count"],
+    queryFn: fetchHeldCount,
+    enabled: status === "authenticated",
+    refetchOnWindowFocus: true,
+  });
+  const heldCount = heldCountQuery.data ?? 0;
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -73,14 +104,15 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         <div
           className={
             "bg-white/95 backdrop-blur rounded-full px-1.5 py-1.5 shadow-lg border border-slate-200 " +
-            // Mobile: 4 tabs in an evenly spaced row.
-            "grid grid-cols-4 gap-0.5 " +
-            // md+: original flex layout with content-sized tabs.
-            "md:flex md:items-center md:gap-1 md:overflow-x-auto md:no-scrollbar"
+            // 5 tabs no longer fit equally on mobile — switch to horizontal
+            // scroll so labels stay readable. Desktop unchanged.
+            "flex items-center gap-0.5 overflow-x-auto no-scrollbar " +
+            "md:gap-1"
           }
         >
           {TABS.map((tab) => {
             const isActive = tab.match(location);
+            const showBadge = tab.badgeQueryKey === "held-count" && heldCount > 0;
             return (
               <Link
                 key={tab.to}
@@ -88,15 +120,26 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                 aria-current={isActive ? "page" : undefined}
                 data-testid={`admin-tab-${tab.to.split("/").pop()}`}
                 className={
-                  // Mobile: equal-width, slightly smaller text, label may wrap if needed.
-                  "text-center text-xs sm:text-sm font-medium px-2 sm:px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap min-w-0 " +
-                  "md:shrink-0 " +
+                  "shrink-0 inline-flex items-center gap-1.5 text-center text-xs sm:text-sm font-medium px-2 sm:px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap " +
                   (isActive
                     ? "bg-[#A82020] text-white shadow-sm"
                     : "text-slate-700 hover:bg-slate-100")
                 }
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                {showBadge && (
+                  <span
+                    data-testid="admin-tab-badge-held"
+                    className={
+                      "inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-semibold " +
+                      (isActive
+                        ? "bg-white/20 text-white"
+                        : "bg-[#A82020] text-white")
+                    }
+                  >
+                    {heldCount}
+                  </span>
+                )}
               </Link>
             );
           })}

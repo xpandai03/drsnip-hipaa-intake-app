@@ -6,7 +6,7 @@ import {
   evaluate,
   type LeadInput,
 } from "@workspace/scoring";
-import { db, eq, scoringRuleSets, submissions } from "@workspace/db";
+import { db, eq, scoringRuleSets, settings, submissions } from "@workspace/db";
 import {
   SalesforceCreateLeadError,
   createLead,
@@ -17,6 +17,7 @@ import {
   buildSalesforceFields,
   type SourceKey,
 } from "./_lib/lead-fields";
+import { HOLD_VALVE_KEY, shouldHoldLead } from "./_lib/valve";
 
 // ---------------------------------------------------------------------------
 // Body shape (mirrors FormData in artifacts/intake-form/src/pages/Home.tsx)
@@ -235,7 +236,31 @@ export default async function handler(
       .json({ success: false, error: "Submission could not be scored" });
   }
 
-  // ---- 3) Push to Salesforce. -------------------------------------------
+  // ---- 3) Hold-valve gate. Skips the SF POST and marks the row 'held'
+  // when the admin toggle (settings.hold_a7_for_review) is true AND the
+  // scored Lead_Score__c is byte-identical to '7  ($0-$350k)'. Silent —
+  // the form sees a normal success response (no email, no error). Admin
+  // releases held leads manually via the Held Leads view.
+  // -----------------------------------------------------------------------
+  const valveRow = await db
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, HOLD_VALVE_KEY))
+    .limit(1);
+  const valveOn = valveRow[0]?.value === true;
+  if (shouldHoldLead(valveOn, leadScore)) {
+    await db
+      .update(submissions)
+      .set({ sfStatus: "held" })
+      .where(eq(submissions.id, submissionId));
+    console.log("hold-valve: lead held for manual review", {
+      submissionId,
+      leadScore,
+    });
+    return res.status(200).json({ success: true, status: "held" });
+  }
+
+  // ---- 4) Push to Salesforce. -------------------------------------------
   const sfFields = buildSalesforceFields(
     body,
     source,
