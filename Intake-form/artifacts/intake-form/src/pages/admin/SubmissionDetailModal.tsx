@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Info,
   Loader2,
 } from "lucide-react";
 import {
@@ -151,7 +152,7 @@ export function SubmissionDetailModal({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-w-3xl max-h-[90vh] overflow-y-auto"
+        className="max-w-3xl max-h-[90vh] overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl sm:rounded-3xl"
         data-testid="submission-detail-modal"
       >
         <DialogHeader>
@@ -254,6 +255,7 @@ function DetailBody({ data }: { data: DetailResponse }) {
             </div>
           </div>
         </div>
+        <ScoringWhySummary submission={s} />
         {data.ruleSet ? (
           <p className="text-xs text-slate-500">
             Scored by RuleSet v{data.ruleSet.version}: {data.ruleSet.name}
@@ -327,6 +329,52 @@ function DetailBody({ data }: { data: DetailResponse }) {
 // ---------------------------------------------------------------------------
 // Sub-components: scoring trace + raw payload + layout primitives
 // ---------------------------------------------------------------------------
+
+/** Plain-language line for admins — derived from trace + survey hints. */
+function ScoringWhySummary({ submission: s }: { submission: DetailSubmission }) {
+  const trace = s.scoringTrace;
+  if (!trace) {
+    if (s.rank != null || s.leadScore != null) {
+      return (
+        <div className="mb-3 flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2.5 text-sm text-amber-950 leading-snug">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" aria-hidden />
+          <p>
+            No scoring trace was stored for this submission. The rank and lead score
+            below are what was saved to the database.
+          </p>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  const firstMatchedIdx = trace.steps.findIndex((st) => st.matched);
+  const rank = s.rank ?? trace.finalOutcome.rank ?? "N/A";
+  const score = s.leadScore ?? trace.finalOutcome.leadScore;
+
+  let body: string;
+  if (firstMatchedIdx === -1) {
+    body = `No rule in the published set matched. Default outcome: Rank ${rank}`;
+    if (score) body += `, lead score ${score}`;
+    body += ".";
+    if (s.qPreRetirement === "No") {
+      body +=
+        " They answered No to wanting a pre-retirement review, so the tiered rules (which all require Yes) did not apply.";
+    }
+  } else {
+    const rule = trace.steps[firstMatchedIdx];
+    body = `The first matching rule in the list wins: «${rule.ruleName}». Outcome — Rank ${rank}`;
+    if (score) body += `, lead score ${score}`;
+    body += ".";
+  }
+
+  return (
+    <div className="mb-3 flex gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 leading-snug">
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+      <p>{body}</p>
+    </div>
+  );
+}
 
 function ScoringTraceView({ trace }: { trace: ScoringTrace }) {
   const [open, setOpen] = useState(false);
