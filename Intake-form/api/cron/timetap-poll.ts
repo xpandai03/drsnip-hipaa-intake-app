@@ -238,9 +238,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })
         .where(eq(appointmentSyncEvents.id, eventId));
       errors += 1;
-      // Stop the batch at the first hard error so the high-water mark
-      // doesn't advance past unprocessed work. Next tick will retry the
-      // same row.
+      // Distinguish transient (5xx / unknown) from permanent (4xx) errors:
+      //
+      //   - 4xx (TimeTap's "not found", "validation failed", etc.) — the
+      //     row will never succeed without operator intervention, so we
+      //     advance past it. The error message is durable in the event
+      //     log for forensics. Without this distinction, a single bad
+      //     row froze ALL future outbound sync forever.
+      //
+      //   - 5xx / timeout / unknown — likely transient TimeTap flakiness;
+      //     stop the batch so the high-water mark doesn't advance and
+      //     the next tick retries the same row.
+      //
+      // tt() in _lib/timetap.ts already does one in-flight retry on 5xx,
+      // so by the time we see one here the upstream has actually been
+      // down for >2 seconds — escalate by pausing the batch.
+      const isPermanent =
+        err instanceof TimeTapError && err.status >= 400 && err.status < 500;
+      if (isPermanent) {
+        lastSuccessfulTimestamp = row.LastModifiedDate;
+        continue;
+      }
       break;
     }
   }

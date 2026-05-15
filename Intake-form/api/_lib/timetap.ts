@@ -65,6 +65,17 @@ export class TimeTapError extends Error {
   }
 }
 
+// Retry-on-5xx helper. TimeTap's API Gateway returns 504s intermittently
+// (observed 2/5 timeout rate during live probing on 2026-05-15). One
+// retry with a 1s delay recovers most of those without compounding load.
+function isTransientStatus(status: number): boolean {
+  return status === 504 || status === 502 || status === 503 || status === 408;
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchSessionToken(env: z.infer<typeof envSchema>): Promise<CachedSession> {
   const base = env.TIMETAP_BASE_URL.replace(/\/$/, "");
   // Signature is MD5 hex of (apiKey + privateKey) concatenated with no
@@ -81,29 +92,38 @@ async function fetchSessionToken(env: z.infer<typeof envSchema>): Promise<Cached
     `&timestamp=${timestamp}` +
     `&signature=${signature}`;
 
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new TimeTapError(res.status, text);
+  // One retry on 5xx — TimeTap's sessionToken endpoint flaps regularly.
+  let lastBody = "";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    const text = await res.text();
+    if (res.ok) {
+      let parsed: { sessionToken?: string } | null = null;
+      try {
+        parsed = JSON.parse(text) as { sessionToken?: string };
+      } catch {
+        // fall through to the missing-token branch
+      }
+      const token = parsed?.sessionToken;
+      if (!token) {
+        throw new TimeTapError(
+          res.status,
+          text,
+          "TimeTap sessionToken response missing sessionToken field",
+        );
+      }
+      return { sessionToken: token, expiresAt: Date.now() + SESSION_TTL_MS };
+    }
+    lastStatus = res.status;
+    lastBody = text;
+    if (!isTransientStatus(res.status)) break;
+    if (attempt === 0) await sleep(1000);
   }
-  let parsed: { sessionToken?: string } | null = null;
-  try {
-    parsed = JSON.parse(text) as { sessionToken?: string };
-  } catch {
-    // fall through to the missing-token branch
-  }
-  const token = parsed?.sessionToken;
-  if (!token) {
-    throw new TimeTapError(
-      res.status,
-      text,
-      "TimeTap sessionToken response missing sessionToken field",
-    );
-  }
-  return { sessionToken: token, expiresAt: Date.now() + SESSION_TTL_MS };
+  throw new TimeTapError(lastStatus, lastBody);
 }
 
 export async function getSessionToken(): Promise<string> {
@@ -154,9 +174,16 @@ async function tt<T>(init: {
     return res;
   };
 
+  // 401 path = stale bearer token, refresh and retry once.
+  // 5xx path = TimeTap upstream flake, retry once with 1s delay.
+  // 4xx (other) and 2nd-failure cases bubble to the caller as TimeTapError.
   let res = await doFetch();
   if (res.status === 401) {
     invalidateSessionToken();
+    res = await doFetch();
+  }
+  if (isTransientStatus(res.status)) {
+    await sleep(1000);
     res = await doFetch();
   }
   const text = await res.text();
@@ -179,28 +206,41 @@ export type TimeTapAppointment = Record<string, unknown> & {
 };
 
 export type ListAppointmentsParams = {
-  /** ISO 8601, used as `modifiedSince` filter. */
-  modifiedSince?: string;
+  /** Required by TimeTap — defaults to OPEN. */
+  status?: string;
+  /** Start of date range, Unix epoch in milliseconds. */
+  startDateMs?: number;
+  /** End of date range, Unix epoch in milliseconds. */
+  endDateMs?: number;
   pageNumber?: number;
   pageSize?: number;
 };
 
 /**
- * List appointments. The exact parameter names are confirmed in part by
- * public docs (pageNumber + pageSize) and inferred for modifiedSince;
- * a live smoke test should validate this before relying on it for backfill.
+ * List appointments. Verified live 2026-05-15: the endpoint requires
+ * POST (GET returns 405 with a date range), uses the `STATUS` query
+ * param (uppercase — TimeTap rejects body-based STATUS with "field
+ * required"), and accepts `startDate` / `endDate` as Unix epoch
+ * milliseconds (13-digit). Page params go in the query string too.
+ *
+ * Used for backfill / future Sales-rep tooling — the cron poller in
+ * api/cron/timetap-poll.ts does NOT call this (it queries Salesforce
+ * for changes and pushes individual updates via updateAppointment).
  */
 export async function listAppointments(
   params: ListAppointmentsParams = {},
 ): Promise<TimeTapAppointment[]> {
   const json = await tt<{ results?: TimeTapAppointment[] } | TimeTapAppointment[]>({
-    method: "GET",
+    method: "POST",
     path: "/appointments",
     query: {
-      modifiedSince: params.modifiedSince,
+      STATUS: params.status ?? "OPEN",
+      startDate: params.startDateMs,
+      endDate: params.endDateMs,
       pageNumber: params.pageNumber,
       pageSize: params.pageSize,
     },
+    body: {},
   });
   if (Array.isArray(json)) return json;
   return Array.isArray(json?.results) ? json.results : [];
@@ -221,17 +261,24 @@ export async function getAppointment(
 }
 
 /**
- * Push an update for an existing TimeTap appointment. TimeTap's API
- * documents PUT /appointments/{id} for updates; if a tenant uses PATCH
- * semantics, swap the method here. The payload shape comes from
- * sfAppointmentToTimeTapUpdate() in _lib/timetap-mapping.ts.
+ * Push an update for an existing TimeTap appointment via PATCH.
+ *
+ * Verified live 2026-05-15 against the CJC tenant: PATCH /appointments/
+ * {id} accepts partial-field bodies. PUT to the same path is a different
+ * operation (full replace; demands a STATUS field in the body). 404 from
+ * this endpoint manifests as HTTP 400 with the body
+ * `"Appointment for Id X not found!"` — callers should treat that case
+ * as a permanent-for-this-row failure, not a transient error.
+ *
+ * Payload shape comes from sfAppointmentToTimeTapUpdate() in
+ * _lib/timetap-mapping.ts.
  */
 export async function updateAppointment(
   calendarId: string | number,
   payload: Record<string, unknown>,
 ): Promise<TimeTapAppointment> {
   return await tt<TimeTapAppointment>({
-    method: "PUT",
+    method: "PATCH",
     path: `/appointments/${encodeURIComponent(String(calendarId))}`,
     body: payload,
   });
