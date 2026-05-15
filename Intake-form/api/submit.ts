@@ -17,6 +17,7 @@ import {
   buildSalesforceFields,
   type SourceKey,
 } from "./_lib/lead-fields";
+import { getLeadSourceForKey } from "./_lib/marketing-sources";
 import { getTimeTapRedirectUrl } from "./_lib/timetap-redirect";
 import { HOLD_VALVE_KEY, shouldHoldLead } from "./_lib/valve";
 
@@ -111,10 +112,34 @@ export default async function handler(
 
   const source = resolveSource(body.source);
   const channelDefaults = SOURCE_DEFAULTS[source];
+
+  // LeadSource resolution — look up the raw ?source= key against the
+  // admin-editable marketing_sources table. Fallback ladder:
+  //   1. body.leadSource (form-side override; not surfaced in the UI today)
+  //   2. marketing_sources row → row.lead_source
+  //   3. raw ?source= value (so a typo'd or just-added key still attributes
+  //      to a recognizable string instead of silently collapsing to the
+  //      federal default)
+  //   4. channelDefaults.leadSource (the legacy 3-channel default — applies
+  //      when there's no ?source= param at all, i.e. direct/organic traffic)
+  // Lookup failures (DB outage, etc.) fall back to step 3/4 silently.
+  const rawSource =
+    typeof body.source === "string" ? body.source.trim() : "";
+  let dbLeadSource: string | null = null;
+  if (rawSource.length > 0) {
+    try {
+      dbLeadSource = await getLeadSourceForKey(rawSource);
+    } catch (err) {
+      console.warn("submit: marketing-sources lookup failed", err);
+    }
+  }
+  const resolvedLeadSourceOverride: string | null =
+    dbLeadSource ?? (rawSource.length > 0 ? rawSource : null);
   const leadSource =
     body.leadSource && body.leadSource.length > 0
       ? body.leadSource
-      : channelDefaults.leadSource;
+      : resolvedLeadSourceOverride ?? channelDefaults.leadSource;
+
   const surveyDetail =
     body.surveyDetail && body.surveyDetail.length > 0
       ? body.surveyDetail
@@ -268,6 +293,7 @@ export default async function handler(
     agencyValue,
     rank,
     leadScore,
+    resolvedLeadSourceOverride,
   );
   try {
     const sfResult = await createLead(sfFields);

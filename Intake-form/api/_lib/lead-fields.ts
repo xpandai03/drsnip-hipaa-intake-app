@@ -52,8 +52,25 @@ export function buildSalesforceFields(
   agencyValue: string,
   rank: string | undefined,
   leadScore: string | undefined,
+  /**
+   * Optional pre-resolved LeadSource (from the marketing_sources table
+   * lookup in api/submit.ts). When present, takes precedence over the
+   * channel default but is overridden by an explicit body.leadSource.
+   *
+   * Fallback ladder (highest priority first):
+   *   1. body.leadSource (form-side override; not in use today)
+   *   2. leadSourceOverride (DB lookup or raw ?source= key)
+   *   3. SOURCE_DEFAULTS[source].leadSource (legacy 3-channel default)
+   */
+  leadSourceOverride?: string | null,
 ): SalesforceLeadFields {
   const defaults = SOURCE_DEFAULTS[source];
+  const resolvedLeadSource =
+    body.leadSource && body.leadSource.length > 0
+      ? body.leadSource
+      : leadSourceOverride && leadSourceOverride.length > 0
+        ? leadSourceOverride
+        : defaults.leadSource;
   const fields: SalesforceLeadFields = {
     FirstName: body.firstName,
     LastName: body.lastName,
@@ -61,9 +78,7 @@ export function buildSalesforceFields(
     Phone: body.phone,
     State: body.stateResidence,
     Federal_Agency__c: agencyValue,
-    LeadSource: body.leadSource && body.leadSource.length > 0
-      ? body.leadSource
-      : defaults.leadSource,
+    LeadSource: resolvedLeadSource,
     Survey_Detail__c: body.surveyDetail && body.surveyDetail.length > 0
       ? body.surveyDetail
       : defaults.surveyDetail,
