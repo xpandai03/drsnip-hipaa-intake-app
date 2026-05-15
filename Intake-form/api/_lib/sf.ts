@@ -220,6 +220,71 @@ export async function createLead(fields: SalesforceLeadFields): Promise<CreateLe
 }
 
 // ---------------------------------------------------------------------------
+// updateLead — partial-field PATCH on an existing Salesforce Lead
+// ---------------------------------------------------------------------------
+//
+// Used by api/submit.ts to optimistically flip Lead.Meeting_stage__c to
+// 'Scheduled' the moment a qualifying intake-form submission is about to
+// redirect the user to TimeTap. The proper webhook-driven flip happens
+// later via the Update_Lead_On_Appointment Salesforce flow (Phase 2 —
+// see cjc-sf-metadata/reports/welcome-email-investigation.md §2 for the
+// gap), but until that ships, this PATCH keeps the Lead's stage in sync
+// with user intent rather than waiting for booking confirmation.
+//
+// Best-effort: throws SalesforceCreateLeadError on failure (callers must
+// wrap in try/catch). One 401 retry, same pattern as createLead.
+
+async function sfUpdateLeadOnce(
+  leadId: string,
+  fields: SalesforceLeadFields,
+): Promise<void> {
+  const env = readEnv();
+  const token = await getAccessToken();
+  const url = `${env.SF_INSTANCE_URL.replace(/\/$/, "")}/services/data/${env.SF_API_VERSION}/sobjects/Lead/${encodeURIComponent(leadId)}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(fields),
+  });
+  if (res.status === 204) return;
+  if (res.status === 401) {
+    invalidateAccessToken();
+    const errors = await res.json().catch(() => []);
+    throw new SalesforceCreateLeadError({
+      status: 401,
+      errors: Array.isArray(errors) ? errors : [],
+    });
+  }
+  const errors = await res.json().catch(() => []);
+  throw new SalesforceCreateLeadError({
+    status: res.status,
+    errors: Array.isArray(errors) ? errors : [],
+  });
+}
+
+/**
+ * PATCH /sobjects/Lead/{leadId} with the supplied field delta. One 401
+ * retry. Throws SalesforceCreateLeadError on non-204 responses — caller
+ * must wrap in try/catch.
+ */
+export async function updateLead(
+  leadId: string,
+  fields: SalesforceLeadFields,
+): Promise<void> {
+  try {
+    return await sfUpdateLeadOnce(leadId, fields);
+  } catch (err) {
+    if (err instanceof SalesforceCreateLeadError && err.status === 401) {
+      return await sfUpdateLeadOnce(leadId, fields);
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Appointment__c — TimeTap sync (Workstream A)
 // ---------------------------------------------------------------------------
 
