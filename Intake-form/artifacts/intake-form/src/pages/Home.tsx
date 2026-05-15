@@ -656,6 +656,15 @@ export default function Home() {
       if (!res.ok || !json.success) {
         throw new Error(json.error ?? "Submission failed");
       }
+      // Self-scheduling redirect — qualifying leads (A/B+ who said yes
+      // to the consultation question, and aren't held by the valve)
+      // receive a redirectUrl from the API. Held leads and
+      // non-qualifying leads receive no redirectUrl and fall through to
+      // the existing thank-you page.
+      if (typeof json.redirectUrl === "string" && json.redirectUrl.length > 0) {
+        window.location.href = json.redirectUrl;
+        return;
+      }
       setSubmitState(data.preRetirementReview === "Yes" ? "success-yes" : "success-no");
     } catch (err) {
       console.error("Form submission failed:", err);

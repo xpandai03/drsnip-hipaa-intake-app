@@ -17,6 +17,7 @@ import {
   buildSalesforceFields,
   type SourceKey,
 } from "./_lib/lead-fields";
+import { getTimeTapRedirectUrl } from "./_lib/timetap-redirect";
 import { HOLD_VALVE_KEY, shouldHoldLead } from "./_lib/valve";
 
 // ---------------------------------------------------------------------------
@@ -279,7 +280,30 @@ export default async function handler(
         sfLastAttemptAt: new Date(),
       })
       .where(eq(submissions.id, submissionId));
-    return res.status(200).json({ success: true, leadId: sfResult.id });
+
+    // Self-scheduling redirect. Three-condition gate:
+    //   1. Consultation answer === "Yes" (the explicit opt-in question).
+    //   2. Rank is A or B+ AND the score (for A) maps to a known calendar.
+    //   3. Lead was NOT held by the valve (already returned earlier in
+    //      that branch — we only reach here on the successful-SF path).
+    // Held-lead and non-qualifying leads fall through to today's
+    // thank-you page; their response shape is unchanged.
+    const redirectUrl =
+      body.preRetirementReview === "Yes"
+        ? getTimeTapRedirectUrl(rank, leadScore, {
+            firstName: body.firstName,
+            lastName: body.lastName,
+            email: body.email,
+            phone: body.phone,
+          })
+        : null;
+
+    const response: { success: true; leadId: string; redirectUrl?: string } = {
+      success: true,
+      leadId: sfResult.id,
+    };
+    if (redirectUrl) response.redirectUrl = redirectUrl;
+    return res.status(200).json(response);
   } catch (err) {
     const message =
       err instanceof SalesforceCreateLeadError
