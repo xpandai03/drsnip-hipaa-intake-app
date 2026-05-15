@@ -710,15 +710,13 @@ export default function Home() {
       // Solid CJC red — matches the admin shell (AdminLayout.tsx) so the
       // logo PNG's edges blend seamlessly. Was a 3-stop gradient that
       // produced dark/light patches around the logo (see screenshot 2026-05-15).
+      //
+      // The bubble overlays we used to render here (bg-white/5, bg-black/10,
+      // etc.) lightened the surrounding red just enough to make the logo
+      // PNG's baked-in `#CD1C3A` background visible as a darker rectangle
+      // by contrast. Admin has no overlays — removed for parity.
       style={{ background: "#CD1C3A" }}
     >
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-white/5" />
-        <div className="absolute top-1/3 -left-24 w-64 h-64 rounded-full bg-white/4" />
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full bg-black/10" />
-        <div className="absolute top-1/2 right-0 w-48 h-96 bg-white/3 rounded-l-full" />
-      </div>
-
       {/* Hero logo — centered, sized to match the admin app's
           LinkGenerator hero. No rounded-lg (was clipping/highlighting the
           logo's edge against the gradient). */}
