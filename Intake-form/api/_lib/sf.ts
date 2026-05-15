@@ -218,3 +218,196 @@ export async function createLead(fields: SalesforceLeadFields): Promise<CreateLe
     throw err;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Appointment__c — TimeTap sync (Workstream A)
+// ---------------------------------------------------------------------------
+
+export type SalesforceAppointmentFields = Record<string, unknown> & {
+  Name: string;
+};
+
+export type UpsertAppointmentResult = {
+  id: string;
+  /** 'created' on insert, 'updated' on UPDATE of an existing row. */
+  action: "created" | "updated";
+};
+
+export class SalesforceAppointmentError extends Error {
+  readonly status: number;
+  readonly errors: unknown;
+  constructor(status: number, errors: unknown, message?: string) {
+    super(
+      message ??
+        `Salesforce Appointment__c failed: ${status} ${JSON.stringify(errors).slice(0, 300)}`,
+    );
+    this.status = status;
+    this.errors = errors;
+  }
+}
+
+async function sfRequest(
+  init: { method: string; path: string; body?: unknown },
+): Promise<Response> {
+  const env = readEnv();
+  const token = await getAccessToken();
+  const url = `${env.SF_INSTANCE_URL.replace(/\/$/, "")}/services/data/${env.SF_API_VERSION}${init.path}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
+  if (init.body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, {
+    method: init.method,
+    headers,
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+  });
+  if (res.status === 401) {
+    invalidateAccessToken();
+  }
+  return res;
+}
+
+/** SOQL query with one round of 401 retry. */
+export async function sfQuery<T>(soql: string): Promise<T[]> {
+  const tryOnce = async () => {
+    const res = await sfRequest({
+      method: "GET",
+      path: `/query?q=${encodeURIComponent(soql)}`,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new SalesforceAppointmentError(res.status, body, `SOQL query failed: ${res.status}`);
+    }
+    const json = (await res.json()) as { records?: T[] };
+    return Array.isArray(json.records) ? json.records : [];
+  };
+  try {
+    return await tryOnce();
+  } catch (err) {
+    if (err instanceof SalesforceAppointmentError && err.status === 401) {
+      return await tryOnce();
+    }
+    throw err;
+  }
+}
+
+async function findAppointmentIdByName(name: string): Promise<string | undefined> {
+  // SOQL string-literal escape: ' → \'. Name is the TimeTap calendarId
+  // (numeric stringified), so realistically no quotes; defense in depth.
+  const escaped = name.replace(/'/g, "\\'");
+  const rows = await sfQuery<{ Id: string }>(
+    `SELECT Id FROM Appointment__c WHERE Name = '${escaped}' ORDER BY CreatedDate DESC LIMIT 1`,
+  );
+  return rows[0]?.Id;
+}
+
+async function sfUpsertAppointmentOnce(
+  fields: SalesforceAppointmentFields,
+): Promise<UpsertAppointmentResult> {
+  const existingId = await findAppointmentIdByName(fields.Name);
+
+  if (existingId) {
+    // PATCH /sobjects/Appointment__c/{id} with the field delta. SF expects
+    // the Id NOT to be present in the body for PATCH-by-id; strip it
+    // defensively.
+    const { Id: _id, Name: _name, ...patchFields } = fields as Record<string, unknown>;
+    void _id;
+    void _name;
+    const res = await sfRequest({
+      method: "PATCH",
+      path: `/sobjects/Appointment__c/${existingId}`,
+      body: patchFields,
+    });
+    if (res.status === 204) return { id: existingId, action: "updated" };
+    const body = await res.json().catch(() => null);
+    throw new SalesforceAppointmentError(res.status, body);
+  }
+
+  const res = await sfRequest({
+    method: "POST",
+    path: `/sobjects/Appointment__c`,
+    body: fields,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new SalesforceAppointmentError(res.status, body);
+  }
+  const payload = (await res.json()) as { id?: string; success?: boolean };
+  if (!payload.id) {
+    throw new SalesforceAppointmentError(500, payload, "Salesforce returned no Appointment id");
+  }
+  return { id: payload.id, action: "created" };
+}
+
+/**
+ * Upsert an Appointment__c by Name (= TimeTap calendarId).
+ *
+ * Two-step: SELECT-by-Name then INSERT or UPDATE. Race condition window
+ * is short but real — if two webhooks for the same calendarId hit in the
+ * same ~150ms, both could miss the SELECT and both INSERT. The feasibility
+ * report flagged this in the decision rules; we accept the risk for v1
+ * because:
+ *   1. TimeTap webhook deliveries to a single appointment within 150ms are
+ *      rare (it implies an admin double-clicked save).
+ *   2. Switching to native SF UPSERT by external-id would require marking
+ *      Appointment__c.Name as External ID, which is a schema change the
+ *      task brief explicitly forbids.
+ *   3. If a duplicate slips through, the LATER webhook's UPDATE pass picks
+ *      it up next time the same calendarId changes (SOQL ORDER BY
+ *      CreatedDate DESC LIMIT 1).
+ *
+ * One 401-retry like createLead.
+ */
+export async function upsertAppointment(
+  fields: SalesforceAppointmentFields,
+): Promise<UpsertAppointmentResult> {
+  if (!fields.Name) {
+    throw new SalesforceAppointmentError(400, null, "upsertAppointment requires Name");
+  }
+  try {
+    return await sfUpsertAppointmentOnce(fields);
+  } catch (err) {
+    if (err instanceof SalesforceAppointmentError && err.status === 401) {
+      return await sfUpsertAppointmentOnce(fields);
+    }
+    throw err;
+  }
+}
+
+/**
+ * SOQL query for Appointment__c rows changed since a high-water mark.
+ * Used by the outbound poller (api/cron/timetap-poll.ts). Caller passes
+ * an ISO 8601 timestamp; SOQL's DateTime literal grammar accepts the
+ * full ISO form.
+ *
+ * Returns rows ordered by LastModifiedDate ASC so the caller can advance
+ * the high-water mark to the latest row processed even if the batch
+ * partially fails.
+ */
+export async function listAppointmentsModifiedSince(
+  highWaterMarkIso: string,
+  limit = 200,
+): Promise<Array<Record<string, unknown> & { Id: string; Name: string; LastModifiedDate: string }>> {
+  const fieldList = [
+    "Id",
+    "Name",
+    "LastModifiedDate",
+    "Client_Email__c",
+    "Status__c",
+    "Reason_Desc__c",
+    "Service_Class__c",
+    "Staff_Name__c",
+    "Business_Id__c",
+    "Reason_Id__c",
+    "Client_Id__c",
+    "Staff_Id__c",
+    "Start_Date_Time__c",
+    "End_Date_Time__c",
+    "Is_Created_From_DC_SOFA_Site__c",
+  ].join(", ");
+  const soql = `SELECT ${fieldList} FROM Appointment__c WHERE LastModifiedDate > ${highWaterMarkIso} ORDER BY LastModifiedDate ASC LIMIT ${limit}`;
+  return await sfQuery<Record<string, unknown> & { Id: string; Name: string; LastModifiedDate: string }>(
+    soql,
+  );
+}

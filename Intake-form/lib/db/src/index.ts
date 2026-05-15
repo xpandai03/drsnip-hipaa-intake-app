@@ -19,6 +19,7 @@ import { z } from "zod/v4";
 // Star-import the OTHER schema files into a single namespace so Drizzle's
 // query-builder can resolve every table. The auth schema is inlined below
 // (see comment above the `users` table) — DO NOT add it to this import block.
+import * as appointmentsSchema from "./schema/appointments.js";
 import * as linksSchema from "./schema/links.js";
 import * as scoringSchema from "./schema/scoring.js";
 import * as settingsSchema from "./schema/settings.js";
@@ -117,6 +118,7 @@ const authSchema = {
 
 const schema = {
   ...authSchema,
+  ...appointmentsSchema,
   ...linksSchema,
   ...scoringSchema,
   ...settingsSchema,
@@ -136,6 +138,7 @@ export const db = drizzle(pool, { schema });
 
 // Re-export the other schema files directly (file-path imports). These
 // continue to work through the standard re-export path.
+export * from "./schema/appointments.js";
 export * from "./schema/links.js";
 export * from "./schema/scoring.js";
 export * from "./schema/settings.js";
