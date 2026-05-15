@@ -21,6 +21,7 @@ import { z } from "zod/v4";
 // (see comment above the `users` table) — DO NOT add it to this import block.
 import * as appointmentsSchema from "./schema/appointments.js";
 import * as linksSchema from "./schema/links.js";
+import * as marketingSourcesSchema from "./schema/marketing-sources.js";
 import * as scoringSchema from "./schema/scoring.js";
 import * as settingsSchema from "./schema/settings.js";
 import * as submissionsSchema from "./schema/submissions.js";
@@ -120,6 +121,7 @@ const schema = {
   ...authSchema,
   ...appointmentsSchema,
   ...linksSchema,
+  ...marketingSourcesSchema,
   ...scoringSchema,
   ...settingsSchema,
   ...submissionsSchema,
@@ -140,6 +142,7 @@ export const db = drizzle(pool, { schema });
 // continue to work through the standard re-export path.
 export * from "./schema/appointments.js";
 export * from "./schema/links.js";
+export * from "./schema/marketing-sources.js";
 export * from "./schema/scoring.js";
 export * from "./schema/settings.js";
 export * from "./schema/submissions.js";

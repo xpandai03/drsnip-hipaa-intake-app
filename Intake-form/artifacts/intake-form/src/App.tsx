@@ -13,6 +13,7 @@ import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
 import AdminScoringRules from "@/pages/admin/ScoringRules";
 import AdminHeldLeads from "@/pages/admin/HeldLeads";
+import AdminSources from "@/pages/admin/Sources";
 import { AuthProvider } from "@/lib/auth-context";
 
 const queryClient = new QueryClient();
@@ -79,6 +80,11 @@ function Router() {
       <Route path="/admin/held-leads">
         <WithAuth>
           <AdminHeldLeads />
+        </WithAuth>
+      </Route>
+      <Route path="/admin/sources">
+        <WithAuth>
+          <AdminSources />
         </WithAuth>
       </Route>
       <Route component={NotFound} />

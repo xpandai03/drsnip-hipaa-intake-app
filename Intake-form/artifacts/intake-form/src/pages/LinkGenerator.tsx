@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
-import { Copy, Check, Link2 } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Copy, Check, Link2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -19,37 +20,115 @@ import {
 import { Label } from "@/components/ui/label";
 import cjLogo from "@assets/cj-ss_1773942560897.png";
 
-const QUICK_CHANNELS = [
-  { id: "fnn", label: "FNN Webinar", source: "fnn", description: "FNN: Webinar" },
-  { id: "internal", label: "Internal Marketing", source: "internal", description: "Internal: Webinar" },
-  { id: "federal", label: "Federal Agency", source: "federal", description: "SOFA: Webinar" },
-];
+// ---------------------------------------------------------------------------
+// Source list: was hardcoded {fnn, internal, federal}; now driven by the
+// admin-editable marketing_sources table via /api/admin/marketing-sources.
+// The Quick Links block below stays scoped to the three legacy webinar
+// sources for muscle-memory — marketing's day-to-day campaign URLs come
+// out of the Custom Link form instead.
+// ---------------------------------------------------------------------------
 
-const SOURCE_OPTIONS = [
-  { value: "fnn", label: "fnn — FNN: Webinar" },
-  { value: "internal", label: "internal — Internal: Webinar" },
-  { value: "federal", label: "federal — SOFA: Webinar" },
-];
+type MarketingSource = {
+  id: string;
+  sourceKey: string;
+  displayName: string;
+  leadSource: string;
+  defaultMedium: string | null;
+  isActive: boolean;
+};
 
-function buildUrl(params: Record<string, string>): string {
+const LEGACY_QUICK_LINK_KEYS = ["fnn", "internal", "federal"] as const;
+
+// utm_medium taxonomy: the four values Google Analytics 4 recognizes as
+// canonical channel buckets. Marketing teams can extend if needed, but
+// these cover paid, social, email, and unpaid web traffic without
+// further config.
+const MEDIUM_OPTIONS = [
+  { value: "cpc", label: "cpc (paid)" },
+  { value: "social", label: "social" },
+  { value: "email", label: "email" },
+  { value: "organic", label: "organic" },
+] as const;
+
+async function fetchSources(): Promise<MarketingSource[]> {
+  const res = await fetch("/api/admin/marketing-sources", {
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw new Error(`Failed to load sources (${res.status})`);
+  const data = (await res.json()) as { sources: MarketingSource[] };
+  return data.sources ?? [];
+}
+
+/**
+ * Build the campaign URL. Always includes ?source=<key> first so the
+ * existing Salesforce attribution pipeline (Home.tsx → SOURCE_MAP) is
+ * preserved byte-for-byte. UTM params are appended; any empty utm_*
+ * value is omitted so ad-platform URL builders see a clean URL.
+ */
+function buildUrl(params: {
+  source: string;
+  medium: string;
+  campaign: string;
+  content: string;
+}): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const base = `${origin}/`;
-  const search = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => v.trim() !== ""),
-  );
-  const qs = search.toString();
-  return qs ? `${base}?${qs}` : base;
+  if (!params.source) return base;
+  const sp = new URLSearchParams();
+  sp.set("source", params.source);
+  sp.set("utm_source", params.source);
+  if (params.medium.trim() !== "") sp.set("utm_medium", params.medium);
+  if (params.campaign.trim() !== "") sp.set("utm_campaign", params.campaign);
+  if (params.content.trim() !== "") sp.set("utm_content", params.content);
+  return `${base}?${sp.toString()}`;
 }
 
 export default function LinkGenerator() {
+  const sourcesQuery = useQuery({
+    queryKey: ["marketing-sources"],
+    queryFn: fetchSources,
+    refetchOnWindowFocus: false,
+  });
+  const sources = useMemo<MarketingSource[]>(
+    () => sourcesQuery.data ?? [],
+    [sourcesQuery.data],
+  );
+
   const [source, setSource] = useState("");
+  const [medium, setMedium] = useState("");
+  const [mediumTouched, setMediumTouched] = useState(false);
   const [campaign, setCampaign] = useState("");
-  const [eventName, setEventName] = useState("");
+  const [content, setContent] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
 
+  // When source changes, default medium to that source's default_medium
+  // unless the user has manually edited the field.
+  useEffect(() => {
+    if (mediumTouched) return;
+    const match = sources.find((s) => s.sourceKey === source);
+    setMedium(match?.defaultMedium ?? "");
+  }, [source, sources, mediumTouched]);
+
+  // The three legacy webinar quick-links — still hardcoded keys, but
+  // their display labels come from whatever the DB says today (admins
+  // can rename them via the Sources tab without breaking these cards).
+  const quickLinks = useMemo(
+    () =>
+      LEGACY_QUICK_LINK_KEYS.map((key) => {
+        const match = sources.find((s) => s.sourceKey === key);
+        return {
+          id: key,
+          label: match?.displayName ?? key,
+          leadSource: match?.leadSource ?? key,
+          source: key,
+        };
+      }),
+    [sources],
+  );
+
   const customUrl = useMemo(
-    () => buildUrl({ source, campaign, event: eventName }),
-    [source, campaign, eventName],
+    () => buildUrl({ source, medium, campaign, content }),
+    [source, medium, campaign, content],
   );
 
   const copy = async (url: string, key: string) => {
@@ -65,11 +144,6 @@ export default function LinkGenerator() {
 
   return (
     <div className="min-h-screen font-sans">
-      {/* Hero logo — centered, sized to dominate the top of the page. On
-          desktop the AdminLayout tab nav drops to top-32 so it sits below
-          the logo; on mobile the nav lives at the bottom of the screen
-          (no overlap to worry about). The logo shrinks on small viewports
-          so it doesn't collide with the top-right user chip. */}
       <header className="w-full pt-6 md:pt-6 px-12 sm:px-6 flex justify-center">
         <img
           src={cjLogo}
@@ -87,8 +161,13 @@ export default function LinkGenerator() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {QUICK_CHANNELS.map((ch) => {
-              const url = buildUrl({ source: ch.source });
+            {quickLinks.map((ch) => {
+              const url = buildUrl({
+                source: ch.source,
+                medium: "",
+                campaign: "",
+                content: "",
+              });
               const isCopied = copied === ch.id;
               return (
                 <div
@@ -98,7 +177,7 @@ export default function LinkGenerator() {
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold text-slate-900">{ch.label}</div>
                     <div className="text-xs text-slate-500 mb-1">
-                      Lead Source: {ch.description}
+                      Lead Source: {ch.leadSource}
                     </div>
                     <div className="font-mono text-xs text-slate-600 truncate">
                       {url}
@@ -127,60 +206,109 @@ export default function LinkGenerator() {
             <CardTitle className="text-slate-900 text-lg">Custom Link</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid gap-5 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-500">Source</Label>
-                <Select value={source} onValueChange={setSource}>
-                  <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Choose source" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCE_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {sourcesQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading sources…
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-500">Campaign</Label>
-                <Input
-                  placeholder="e.g. q2-2026"
-                  value={campaign}
-                  onChange={(e) => setCampaign(e.target.value)}
-                  className="text-base py-2.5"
-                />
+            ) : sourcesQuery.isError ? (
+              <div className="text-sm text-red-600 py-4">
+                Failed to load sources. Refresh the page to retry.
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-500">Event</Label>
-                <Input
-                  placeholder="e.g. capitol-may-15"
-                  value={eventName}
-                  onChange={(e) => setEventName(e.target.value)}
-                  className="text-base py-2.5"
-                />
-              </div>
-            </div>
-            <div className="space-y-2 pt-2">
-              <Label className="text-sm font-medium text-slate-500">Generated URL</Label>
-              <div className="flex items-center gap-3">
-                <code className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 break-all font-mono">
-                  {customUrl}
-                </code>
-                <Button
-                  onClick={() => copy(customUrl, "custom")}
-                  className="shrink-0 bg-[#A82020] text-white hover:bg-[#8B1A1A] border-[#8B1A1A]"
-                >
-                  {copied === "custom" ? (
-                    <Check className="w-4 h-4" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                  {copied === "custom" ? "Copied" : "Copy"}
-                </Button>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-500">
+                      Source
+                    </Label>
+                    <Select value={source} onValueChange={setSource}>
+                      <SelectTrigger className="h-11" data-testid="source-select">
+                        <SelectValue placeholder="Choose source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sources.map((opt) => (
+                          <SelectItem key={opt.sourceKey} value={opt.sourceKey}>
+                            {opt.sourceKey} — {opt.leadSource}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-500">
+                      Medium
+                    </Label>
+                    <Select
+                      value={medium}
+                      onValueChange={(v) => {
+                        setMediumTouched(true);
+                        setMedium(v);
+                      }}
+                    >
+                      <SelectTrigger className="h-11" data-testid="medium-select">
+                        <SelectValue placeholder="Choose medium" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MEDIUM_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-500">
+                      Campaign
+                    </Label>
+                    <Input
+                      placeholder="e.g. federal-q2-2026"
+                      value={campaign}
+                      onChange={(e) => setCampaign(e.target.value)}
+                      className="text-base py-2.5"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-500">
+                      Content
+                    </Label>
+                    <Input
+                      placeholder="e.g. carousel-a"
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      className="text-base py-2.5"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 pt-2">
+                  <Label className="text-sm font-medium text-slate-500">
+                    Generated URL
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <code
+                      className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 break-all font-mono"
+                      data-testid="generated-url"
+                    >
+                      {customUrl}
+                    </code>
+                    <Button
+                      onClick={() => copy(customUrl, "custom")}
+                      className="shrink-0 bg-[#A82020] text-white hover:bg-[#8B1A1A] border-[#8B1A1A]"
+                    >
+                      {copied === "custom" ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                      {copied === "custom" ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

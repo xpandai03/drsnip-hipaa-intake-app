@@ -33,6 +33,7 @@ const TABS: Array<{
   },
   { to: "/admin/activity", label: "Activity", match: (p) => p.startsWith("/admin/activity") },
   { to: "/admin/scoring-rules", label: "Scoring Rules", match: (p) => p.startsWith("/admin/scoring-rules") },
+  { to: "/admin/sources", label: "Sources", match: (p) => p.startsWith("/admin/sources") },
 ];
 
 async function fetchHeldCount(): Promise<number> {
