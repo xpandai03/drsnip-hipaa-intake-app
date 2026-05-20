@@ -6,7 +6,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
+  Copy,
   Loader2,
   RotateCcw,
   Search,
@@ -33,20 +33,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SubmissionDetailModal } from "./SubmissionDetailModal";
 
 // ---------------------------------------------------------------------------
-// Types — mirror the /api/submissions response shape.
+// Types — mirror the /api/submissions response shape (Phase 2 — DrSnip).
 // ---------------------------------------------------------------------------
 
 type SubmissionRow = {
   id: string;
   createdAt: string;
-  source: string;
+  formType: string;
   firstName: string;
   lastName: string;
   email: string;
-  rank: string | null;
-  leadScore: string | null;
-  sfLeadId: string | null;
-  sfStatus: string;
 };
 
 type SubmissionsResponse = {
@@ -57,7 +53,7 @@ type SubmissionsResponse = {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers — relative time, badge colors, SF link
+// Helpers
 // ---------------------------------------------------------------------------
 
 function relativeTime(iso: string): string {
@@ -79,70 +75,31 @@ function exactTime(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
-function rankBadgeClass(rank: string | null): string {
-  switch (rank) {
-    case "A":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "B+":
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    case "B":
-      return "bg-slate-200 text-slate-800 border-slate-300";
-    case "C":
-      return "bg-slate-100 text-slate-700 border-slate-200";
-    case "N/A":
-      return "bg-slate-50 text-slate-500 border-slate-200";
-    default:
-      return "bg-slate-50 text-slate-400 border-slate-200 italic";
-  }
+function formTypeLabel(formType: string): string {
+  if (formType === "consultation") return "Consultation";
+  if (formType === "registration") return "Registration";
+  return formType;
 }
 
-function sfStatusBadgeClass(status: string): string {
-  switch (status) {
-    case "sent":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "error":
-      return "bg-red-100 text-red-800 border-red-200";
-    case "pending":
-      return "bg-amber-100 text-amber-800 border-amber-200";
-    case "skipped":
-      return "bg-slate-100 text-slate-600 border-slate-200";
-    case "held":
-      return "bg-orange-100 text-orange-800 border-orange-200";
-    case "releasing":
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    case "discarded":
-      return "bg-slate-200 text-slate-500 border-slate-300 line-through";
-    default:
-      return "bg-slate-100 text-slate-600 border-slate-200";
-  }
-}
-
-function sourceBadgeClass(source: string): string {
-  switch (source) {
-    case "federal":
-      return "bg-indigo-100 text-indigo-800 border-indigo-200";
-    case "internal":
-      return "bg-violet-100 text-violet-800 border-violet-200";
-    case "fnn":
+function formTypeBadgeClass(formType: string): string {
+  switch (formType) {
+    case "registration":
+      return "bg-sky-100 text-sky-800 border-sky-200";
+    case "consultation":
       return "bg-teal-100 text-teal-800 border-teal-200";
     default:
       return "bg-slate-100 text-slate-700 border-slate-200";
   }
 }
 
-export const SF_LEAD_URL = (id: string) =>
-  `https://cjcwealth.lightning.force.com/lightning/r/Lead/${id}/view`;
-
 // ---------------------------------------------------------------------------
-// URL-state contract — every filter is encoded as a query param so refresh
-// preserves it. Empty / default values are stripped to keep URLs tidy.
+// URL-state contract — filters are encoded as query params so refresh /
+// back-forward preserve them.
 // ---------------------------------------------------------------------------
 
 type Filters = {
   page: number;
-  source: string;
-  sf_status: string;
-  rank: string;
+  form_type: string;
   start_date: string;
   end_date: string;
   search: string;
@@ -150,20 +107,18 @@ type Filters = {
 
 const DEFAULTS: Filters = {
   page: 1,
-  source: "all",
-  sf_status: "all",
-  rank: "all",
+  form_type: "all",
   start_date: "",
   end_date: "",
   search: "",
 };
 
+const FILTER_KEYS = ["page", "form_type", "start_date", "end_date", "search"];
+
 function readFilters(params: URLSearchParams): Filters {
   return {
     page: Math.max(1, Number(params.get("page") ?? 1) || 1),
-    source: params.get("source") ?? "all",
-    sf_status: params.get("sf_status") ?? "all",
-    rank: params.get("rank") ?? "all",
+    form_type: params.get("form_type") ?? "all",
     start_date: params.get("start_date") ?? "",
     end_date: params.get("end_date") ?? "",
     search: params.get("search") ?? "",
@@ -173,41 +128,29 @@ function readFilters(params: URLSearchParams): Filters {
 function writeFilters(prev: URLSearchParams, next: Filters): URLSearchParams {
   const params = new URLSearchParams();
   if (next.page > 1) params.set("page", String(next.page));
-  if (next.source && next.source !== "all") params.set("source", next.source);
-  if (next.sf_status && next.sf_status !== "all") params.set("sf_status", next.sf_status);
-  if (next.rank && next.rank !== "all") params.set("rank", next.rank);
+  if (next.form_type && next.form_type !== "all")
+    params.set("form_type", next.form_type);
   if (next.start_date) params.set("start_date", next.start_date);
   if (next.end_date) params.set("end_date", next.end_date);
   if (next.search) params.set("search", next.search);
-  // Preserve any other params (e.g., from heatmap deep-link).
   for (const [k, v] of prev.entries()) {
-    if (!params.has(k) && !["page", "source", "sf_status", "rank", "start_date", "end_date", "search"].includes(k)) {
-      params.set(k, v);
-    }
+    if (!params.has(k) && !FILTER_KEYS.includes(k)) params.set(k, v);
   }
   return params;
 }
-
-// ---------------------------------------------------------------------------
-// Fetcher
-// ---------------------------------------------------------------------------
 
 async function fetchSubmissions(filters: Filters): Promise<SubmissionsResponse> {
   const qs = new URLSearchParams();
   qs.set("page", String(filters.page));
   qs.set("limit", "50");
-  if (filters.source !== "all") qs.set("source", filters.source);
-  if (filters.sf_status !== "all") qs.set("sf_status", filters.sf_status);
-  if (filters.rank !== "all") qs.set("rank", filters.rank);
+  if (filters.form_type !== "all") qs.set("form_type", filters.form_type);
   if (filters.start_date) qs.set("start_date", filters.start_date);
   if (filters.end_date) qs.set("end_date", filters.end_date);
   if (filters.search) qs.set("search", filters.search);
   const res = await fetch(`/api/submissions?${qs.toString()}`, {
     credentials: "same-origin",
   });
-  if (!res.ok) {
-    throw new Error(`/api/submissions returned ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`/api/submissions returned ${res.status}`);
   return (await res.json()) as SubmissionsResponse;
 }
 
@@ -229,7 +172,6 @@ function SubmissionsPage() {
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Re-sync the search draft if URL changes from elsewhere (browser back/forward).
   useEffect(() => {
     setSearchDraft(filters.search);
   }, [filters.search]);
@@ -237,7 +179,6 @@ function SubmissionsPage() {
   const updateFilters = useCallback(
     (next: Partial<Filters>) => {
       const merged: Filters = { ...filters, ...next };
-      // Any filter change other than `page` resets to page 1.
       if (Object.keys(next).some((k) => k !== "page")) merged.page = 1;
       setParams(writeFilters(params, merged), { replace: true });
     },
@@ -261,9 +202,7 @@ function SubmissionsPage() {
   };
 
   const hasFilters =
-    filters.source !== "all" ||
-    filters.sf_status !== "all" ||
-    filters.rank !== "all" ||
+    filters.form_type !== "all" ||
     filters.start_date !== "" ||
     filters.end_date !== "" ||
     filters.search !== "";
@@ -274,8 +213,7 @@ function SubmissionsPage() {
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-white">Submissions</h1>
           <p className="text-sm text-white/75 mt-1">
-            Every intake-form submission, scored and pushed to Salesforce. Click any
-            row for the full pipeline trace.
+            Every patient intake submission. Click any row for the full detail.
           </p>
         </header>
 
@@ -339,56 +277,18 @@ function FilterBar({
 }) {
   return (
     <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4 flex flex-wrap items-end gap-3">
-      <FilterField label="Channel">
+      <FilterField label="Form">
         <Select
-          value={filters.source}
-          onValueChange={(v) => onChange({ source: v })}
+          value={filters.form_type}
+          onValueChange={(v) => onChange({ form_type: v })}
         >
-          <SelectTrigger className="w-[140px]" data-testid="filter-source">
+          <SelectTrigger className="w-[160px]" data-testid="filter-form-type">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="federal">Federal</SelectItem>
-            <SelectItem value="internal">Internal</SelectItem>
-            <SelectItem value="fnn">FNN</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="SF status">
-        <Select
-          value={filters.sf_status}
-          onValueChange={(v) => onChange({ sf_status: v })}
-        >
-          <SelectTrigger className="w-[140px]" data-testid="filter-sf-status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="sent">Sent</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="error">Error</SelectItem>
-            <SelectItem value="held">Held</SelectItem>
-            <SelectItem value="discarded">Discarded</SelectItem>
-            <SelectItem value="skipped">Skipped</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Rank">
-        <Select value={filters.rank} onValueChange={(v) => onChange({ rank: v })}>
-          <SelectTrigger className="w-[120px]" data-testid="filter-rank">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="A">A</SelectItem>
-            <SelectItem value="B+">B+</SelectItem>
-            <SelectItem value="B">B</SelectItem>
-            <SelectItem value="C">C</SelectItem>
-            <SelectItem value="N/A">N/A</SelectItem>
-            <SelectItem value="unscored">Unscored</SelectItem>
+            <SelectItem value="all">All forms</SelectItem>
+            <SelectItem value="registration">Registration</SelectItem>
+            <SelectItem value="consultation">Consultation</SelectItem>
           </SelectContent>
         </Select>
       </FilterField>
@@ -413,7 +313,10 @@ function FilterBar({
         />
       </FilterField>
 
-      <form onSubmit={onSearchSubmit} className="flex flex-col gap-1.5 flex-1 min-w-[220px]">
+      <form
+        onSubmit={onSearchSubmit}
+        className="flex flex-col gap-1.5 flex-1 min-w-[220px]"
+      >
         <label className="text-xs font-medium text-slate-600">Search</label>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -443,7 +346,13 @@ function FilterBar({
   );
 }
 
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-slate-600">{label}</label>
@@ -481,13 +390,10 @@ function ResultsTable({
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
                 <TableHead>Date</TableHead>
-                <TableHead>Channel</TableHead>
+                <TableHead>Form</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Rank</TableHead>
-                <TableHead>Lead Score</TableHead>
-                <TableHead>SF Status</TableHead>
-                <TableHead>SF Lead</TableHead>
+                <TableHead>Submission ID</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -507,38 +413,29 @@ function ResultsTable({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Chip className={sourceBadgeClass(row.source)}>{row.source}</Chip>
+                    <Chip className={formTypeBadgeClass(row.formType)}>
+                      {formTypeLabel(row.formType)}
+                    </Chip>
                   </TableCell>
                   <TableCell className="text-sm text-slate-900">
                     {row.firstName} {row.lastName}
                   </TableCell>
-                  <TableCell className="text-sm text-slate-700">{row.email}</TableCell>
-                  <TableCell>
-                    <Chip className={rankBadgeClass(row.rank)}>
-                      {row.rank ?? "unscored"}
-                    </Chip>
-                  </TableCell>
-                  <TableCell className="text-sm text-slate-700 whitespace-nowrap">
-                    {row.leadScore ?? <span className="text-slate-400">—</span>}
+                  <TableCell className="text-sm text-slate-700">
+                    {row.email}
                   </TableCell>
                   <TableCell>
-                    <Chip className={sfStatusBadgeClass(row.sfStatus)}>{row.sfStatus}</Chip>
-                  </TableCell>
-                  <TableCell>
-                    {row.sfLeadId ? (
-                      <a
-                        href={SF_LEAD_URL(row.sfLeadId)}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
-                      >
-                        {row.sfLeadId.slice(0, 8)}…
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 text-sm">—</span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void copyToClipboard(row.id, "Submission ID copied");
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                      title="Copy full submission ID"
+                    >
+                      {row.id.slice(0, 8)}…
+                      <Copy className="w-3 h-3" />
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -587,7 +484,13 @@ function ResultsTable({
   );
 }
 
-function Chip({ children, className }: { children: React.ReactNode; className?: string }) {
+function Chip({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <span
       className={
@@ -625,7 +528,7 @@ function EmptyState({
     return (
       <div className="py-16 text-center">
         <p className="text-slate-600">No submissions match these filters.</p>
-        <Button variant="link" onClick={onReset} className="text-indigo-600">
+        <Button variant="link" onClick={onReset} className="text-primary">
           Reset filters
         </Button>
       </div>
@@ -635,7 +538,7 @@ function EmptyState({
     <div className="py-16 text-center">
       <p className="text-slate-600 font-medium">No submissions yet.</p>
       <p className="text-sm text-slate-500 mt-1">
-        Once intake forms are submitted, they'll appear here.
+        Once patients submit an intake form, they'll appear here.
       </p>
     </div>
   );
@@ -657,10 +560,13 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Tiny copy-to-clipboard utility used by the detail modal.
+// Copy-to-clipboard utility, shared with the detail modal.
 // ---------------------------------------------------------------------------
 
-export async function copyToClipboard(value: string, label = "Copied"): Promise<void> {
+export async function copyToClipboard(
+  value: string,
+  label = "Copied",
+): Promise<void> {
   try {
     await navigator.clipboard.writeText(value);
     toast.success(label);
@@ -669,14 +575,6 @@ export async function copyToClipboard(value: string, label = "Copied"): Promise<
   }
 }
 
-// Re-export helpers consumed by SubmissionDetailModal so it can stay in a
-// single colocated file.
-export {
-  Chip,
-  exactTime,
-  rankBadgeClass,
-  relativeTime,
-  sfStatusBadgeClass,
-  sourceBadgeClass,
-};
+// Re-exports consumed by SubmissionDetailModal.
+export { Chip, exactTime, relativeTime, formTypeLabel, formTypeBadgeClass };
 export type { SubmissionRow };

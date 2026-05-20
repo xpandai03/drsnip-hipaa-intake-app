@@ -1,19 +1,12 @@
 // GET /api/submissions/activity — aggregated daily counts for the heatmap.
 //
-// Auth-guarded. Returns daily totals plus a per-source breakdown inside the
-// requested date window. Defaults to the last 90 days (matches the heatmap
-// default).
+// Auth-guarded. Returns daily totals plus a per-form-type breakdown inside the
+// requested date window. Defaults to the last 90 days.
 //
-// Phase 1 (DrSnip): the per-rank breakdown and the sent/errored summary tiles
-// were removed along with the scoring + Salesforce subsystems. The summary now
-// carries the window total only.
-//
-// Single aggregation query — buckets by DATE(created_at AT TIME ZONE 'UTC')
-// so day boundaries line up with the SVG heatmap regardless of where the
-// requester is.
-//
-// Days with zero submissions are returned with explicit zero rows so the
-// UI doesn't have to backfill gaps.
+// Phase 2 (DrSnip): aggregates by `form_type` (registration | consultation)
+// instead of the removed CJC `source`; the per-rank breakdown and the
+// sent/errored summary tiles were dropped with the scoring + Salesforce
+// subsystems.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { db, sql } from "@workspace/db";
@@ -47,7 +40,7 @@ function addDaysUtc(d: Date, n: number): Date {
 type DayBucket = {
   date: string;
   total: number;
-  by_source: { federal: number; internal: number; fnn: number };
+  by_form_type: { registration: number; consultation: number };
 };
 
 export default async function handler(
@@ -80,19 +73,17 @@ export default async function handler(
       .json({ error: "start_date must be <= end_date" });
   }
 
-  // End boundary is exclusive: the next UTC day after `endDate`.
   const endExclusive = addDaysUtc(endDate, 1);
 
-  // Single aggregation: one row per (day, source) tuple. We then fold these
-  // into per-day buckets in JS.
+  // One row per (day, form_type) tuple.
   const dailyResult = await db.execute<{
     day: string;
-    source: string;
+    form_type: string;
     total: string;
   }>(sql`
     SELECT
       TO_CHAR(DATE_TRUNC('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
-      source,
+      form_type,
       COUNT(*)::text AS total
     FROM submissions
     WHERE created_at >= ${startDate}
@@ -101,8 +92,7 @@ export default async function handler(
     ORDER BY 1
   `);
 
-  // Build a date-keyed bucket map seeded with every day in the range so
-  // the response includes zeros for empty days.
+  // Seed every day in the range so empty days return explicit zeros.
   const buckets = new Map<string, DayBucket>();
   for (
     let d = new Date(startDate.getTime());
@@ -113,7 +103,7 @@ export default async function handler(
     buckets.set(key, {
       date: key,
       total: 0,
-      by_source: { federal: 0, internal: 0, fnn: 0 },
+      by_form_type: { registration: 0, consultation: 0 },
     });
   }
 
@@ -122,26 +112,37 @@ export default async function handler(
     if (!bucket) continue;
     const n = Number(row.total) || 0;
     bucket.total += n;
-    if (row.source === "federal") bucket.by_source.federal += n;
-    else if (row.source === "internal") bucket.by_source.internal += n;
-    else if (row.source === "fnn") bucket.by_source.fnn += n;
+    if (row.form_type === "registration") {
+      bucket.by_form_type.registration += n;
+    } else if (row.form_type === "consultation") {
+      bucket.by_form_type.consultation += n;
+    }
   }
 
-  // Summary tile: total submissions over the whole window.
-  const summaryResult = await db.execute<{ total: string }>(sql`
-    SELECT COUNT(*)::text AS total
+  // Window summary — total + per-form-type.
+  const summaryResult = await db.execute<{
+    total: string;
+    registration: string;
+    consultation: string;
+  }>(sql`
+    SELECT
+      COUNT(*)::text AS total,
+      SUM(CASE WHEN form_type = 'registration' THEN 1 ELSE 0 END)::text AS registration,
+      SUM(CASE WHEN form_type = 'consultation' THEN 1 ELSE 0 END)::text AS consultation
     FROM submissions
     WHERE created_at >= ${startDate}
       AND created_at < ${endExclusive}
   `);
-  const totalAll = Number(summaryResult.rows[0]?.total ?? 0);
+  const sRow = summaryResult.rows[0];
 
   return res.status(200).json({
     start_date: toIsoDay(startDate),
     end_date: toIsoDay(endDate),
     daily_counts: Array.from(buckets.values()),
     summary: {
-      total: totalAll,
+      total: Number(sRow?.total ?? 0),
+      registration: Number(sRow?.registration ?? 0),
+      consultation: Number(sRow?.consultation ?? 0),
     },
   });
 }

@@ -17,35 +17,33 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // ---------------------------------------------------------------------------
-// Types — mirror /api/submissions/activity
+// Types — mirror /api/submissions/activity (Phase 2 — DrSnip). Aggregates by
+// form_type; the CJC per-rank / SF-status breakdowns were removed.
 // ---------------------------------------------------------------------------
 
 type DayBucket = {
   date: string;
   total: number;
-  by_source: { federal: number; internal: number; fnn: number };
-  by_rank: {
-    A: number;
-    "B+": number;
-    B: number;
-    C: number;
-    "N/A": number;
-    unscored: number;
-  };
+  by_form_type: { registration: number; consultation: number };
 };
 
 type ActivityResponse = {
   start_date: string;
   end_date: string;
   daily_counts: DayBucket[];
-  summary: { total: number; sent: number; errored: number; success_rate: number };
+  summary: { total: number; registration: number; consultation: number };
 };
+
+// Brand colors for the form-type series.
+const COLOR_REGISTRATION = "#0F4C81";
+const COLOR_CONSULTATION = "#06B6D4";
 
 async function fetchActivity(): Promise<ActivityResponse> {
   const res = await fetch(`/api/submissions/activity`, {
     credentials: "same-origin",
   });
-  if (!res.ok) throw new Error(`/api/submissions/activity returned ${res.status}`);
+  if (!res.ok)
+    throw new Error(`/api/submissions/activity returned ${res.status}`);
   return (await res.json()) as ActivityResponse;
 }
 
@@ -74,8 +72,8 @@ function ActivityPage() {
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-white">Activity</h1>
           <p className="text-sm text-white/75 mt-1">
-            Submission volume over the last 90 days. Click any day on the heatmap
-            to filter the Submissions tab to that date.
+            Submission volume over the last 90 days. Click any day on the
+            heatmap to filter the Submissions tab to that date.
           </p>
         </header>
 
@@ -99,14 +97,9 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
   const last30 = data.daily_counts.slice(-30);
   const summaryLast30 = useMemo(() => {
     let total = 0;
-    let aCount = 0;
-    for (const b of last30) {
-      total += b.total;
-      aCount += b.by_rank.A;
-    }
+    for (const b of last30) total += b.total;
     return {
       total,
-      aCount,
       avgPerDay: last30.length > 0 ? total / last30.length : 0,
     };
   }, [last30]);
@@ -118,30 +111,27 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
         <Tile
           label="Submissions (30d)"
           value={summaryLast30.total.toLocaleString()}
-          accent="text-slate-900"
         />
         <Tile
-          label="Success rate (90d)"
-          value={`${(data.summary.success_rate * 100).toFixed(1)}%`}
-          accent="text-emerald-700"
-          sublabel={`${data.summary.sent.toLocaleString()} of ${data.summary.total.toLocaleString()} sent`}
+          label="Registrations (90d)"
+          value={data.summary.registration.toLocaleString()}
+        />
+        <Tile
+          label="Consultations (90d)"
+          value={data.summary.consultation.toLocaleString()}
         />
         <Tile
           label="Avg per day (30d)"
           value={summaryLast30.avgPerDay.toFixed(1)}
-          accent="text-slate-900"
-        />
-        <Tile
-          label="A-tier (30d)"
-          value={summaryLast30.aCount.toLocaleString()}
-          accent="text-emerald-700"
         />
       </div>
 
       {/* Heatmap */}
       <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
         <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-base font-semibold text-slate-900">Last 90 days</h2>
+          <h2 className="text-base font-semibold text-slate-900">
+            Last 90 days
+          </h2>
           <span className="text-xs text-slate-500">
             {data.start_date} → {data.end_date}
           </span>
@@ -149,9 +139,11 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
         <Heatmap data={data.daily_counts} />
       </section>
 
-      {/* Stacked bar by source — last 30 days */}
+      {/* Stacked bar by form type — last 30 days */}
       <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
-        <h2 className="text-base font-semibold text-slate-900 mb-4">By channel (last 30 days)</h2>
+        <h2 className="text-base font-semibold text-slate-900 mb-4">
+          By form type (last 30 days)
+        </h2>
         {last30.every((d) => d.total === 0) ? (
           <p className="text-sm text-slate-500 py-10 text-center">
             No submissions in the last 30 days.
@@ -162,23 +154,33 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
               <BarChart
                 data={last30.map((d) => ({
                   date: d.date.slice(5),
-                  federal: d.by_source.federal,
-                  internal: d.by_source.internal,
-                  fnn: d.by_source.fnn,
+                  Registration: d.by_form_type.registration,
+                  Consultation: d.by_form_type.consultation,
                 }))}
                 margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#64748b" />
-                <YAxis tick={{ fontSize: 11 }} stroke="#64748b" allowDecimals={false} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  stroke="#64748b"
+                  allowDecimals={false}
+                />
                 <Tooltip
                   contentStyle={{ fontSize: 12, borderRadius: 6 }}
                   labelStyle={{ color: "#0f172a" }}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="federal" stackId="src" fill="#6366f1" />
-                <Bar dataKey="internal" stackId="src" fill="#8b5cf6" />
-                <Bar dataKey="fnn" stackId="src" fill="#14b8a6" />
+                <Bar
+                  dataKey="Registration"
+                  stackId="ft"
+                  fill={COLOR_REGISTRATION}
+                />
+                <Bar
+                  dataKey="Consultation"
+                  stackId="ft"
+                  fill={COLOR_CONSULTATION}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -188,31 +190,21 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
   );
 }
 
-function Tile({
-  label,
-  value,
-  accent,
-  sublabel,
-}: {
-  label: string;
-  value: string;
-  accent: string;
-  sublabel?: string;
-}) {
+function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</div>
-      <div className={`text-2xl font-semibold mt-1 ${accent}`}>{value}</div>
-      {sublabel && <div className="text-xs text-slate-500 mt-1">{sublabel}</div>}
+      <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">
+        {label}
+      </div>
+      <div className="text-2xl font-semibold mt-1 text-slate-900">{value}</div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Heatmap — hand-rolled SVG. 13 weeks × 7 days. Rectangles colored by daily
-// total relative to the window's max. Hovering a cell shows a tooltip with
-// the date and per-source breakdown; clicking deep-links into the
-// Submissions tab filtered to that day.
+// Heatmap — hand-rolled SVG. 13 weeks × 7 days, colored by daily total
+// relative to the window max. Clicking a cell deep-links into Submissions
+// filtered to that day.
 // ---------------------------------------------------------------------------
 
 const CELL_SIZE = 12;
@@ -222,18 +214,18 @@ const ROW_COUNT = 7;
 const HEATMAP_WIDTH = COL_COUNT * (CELL_SIZE + CELL_GAP) - CELL_GAP + 30;
 const HEATMAP_HEIGHT = ROW_COUNT * (CELL_SIZE + CELL_GAP) - CELL_GAP + 22;
 
+// Blue intensity scale (on-brand).
 const HEATMAP_COLORS = [
-  "#f1f5f9", // 0 (slate-100)
-  "#bbf7d0", // low
-  "#86efac",
-  "#4ade80",
-  "#16a34a",
-  "#15803d", // max
+  "#f1f5f9", // 0
+  "#cfe3f3",
+  "#93c5e8",
+  "#4a90c2",
+  "#1d6aa3",
+  "#0F4C81", // max
 ];
 
 function heatmapColor(value: number, max: number): string {
   if (value === 0 || max === 0) return HEATMAP_COLORS[0];
-  // Buckets 1..5 — keep zero distinct from the lightest "had activity" color.
   const ratio = value / max;
   if (ratio < 0.2) return HEATMAP_COLORS[1];
   if (ratio < 0.4) return HEATMAP_COLORS[2];
@@ -251,9 +243,6 @@ function Heatmap({ data }: { data: DayBucket[] }) {
     [data],
   );
 
-  // Lay out the days right-to-left, oldest at top-left of the leftmost
-  // column. The grid is fixed at 91 cells (13 × 7). If the API returns
-  // fewer days (e.g., shorter window), we pad with placeholders.
   const days = data.slice(-91);
   const placeholders = Math.max(0, 91 - days.length);
   const cells: Array<DayBucket | null> = [
@@ -277,7 +266,6 @@ function Heatmap({ data }: { data: DayBucket[] }) {
         role="img"
         aria-label="Submissions heatmap — last 90 days"
       >
-        {/* Day-of-week labels (left side) */}
         {["", "Mon", "", "Wed", "", "Fri", ""].map((lbl, i) => (
           <text
             key={i}
@@ -322,9 +310,10 @@ function Heatmap({ data }: { data: DayBucket[] }) {
               style={{ cursor: "pointer" }}
             >
               <title>
-                {cell.date}: {cell.total} submission{cell.total === 1 ? "" : "s"}
+                {cell.date}: {cell.total} submission
+                {cell.total === 1 ? "" : "s"}
                 {cell.total > 0
-                  ? ` (federal ${cell.by_source.federal}, internal ${cell.by_source.internal}, fnn ${cell.by_source.fnn})`
+                  ? ` (registration ${cell.by_form_type.registration}, consultation ${cell.by_form_type.consultation})`
                   : ""}
               </title>
             </rect>
@@ -338,9 +327,12 @@ function Heatmap({ data }: { data: DayBucket[] }) {
         <div className="mt-2 text-xs text-slate-600 inline-flex flex-wrap gap-x-3 gap-y-1">
           <span className="font-medium text-slate-900">{hover.date}</span>
           <span>{hover.total} total</span>
-          <span className="text-indigo-700">federal {hover.by_source.federal}</span>
-          <span className="text-violet-700">internal {hover.by_source.internal}</span>
-          <span className="text-teal-700">fnn {hover.by_source.fnn}</span>
+          <span className="text-sky-700">
+            registration {hover.by_form_type.registration}
+          </span>
+          <span className="text-teal-700">
+            consultation {hover.by_form_type.consultation}
+          </span>
         </div>
       )}
     </div>
