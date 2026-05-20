@@ -1,914 +1,460 @@
-import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowLeft, ShieldCheck, CheckCircle2, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import { RadioCard } from "@/components/ui/RadioCard";
-import { Input } from "@/components/ui/Input";
-import { cn } from "@/lib/utils";
-import cjLogo from "@assets/cj-ss_1773942560897.png";
+import { useState } from "react";
+import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
+import {
+  TextField,
+  TextAreaField,
+  SelectField,
+  YesNoField,
+  Reveal,
+} from "@/components/ui/form-fields";
+import { DatePicker } from "@/components/ui/DatePicker";
+import { FieldShell } from "@/components/ui/form-fields";
+import {
+  FileUploadStub,
+  type StubFileRef,
+} from "@/components/ui/FileUploadStub";
 
-// --- Feature flags ---
+// DrSnip — Patient Registration form. Five screens: Patient Information,
+// Contact & Consent, Medical Background, Insurance, Review & Submit.
+// Question content is sourced from the DrSnip Registration Jotform — see
+// DRSNIP_FORMS.md.
 
-const SHOW_FEEDBACK_QUESTIONS = true;
+// ---- Reference data -------------------------------------------------------
 
-// --- Types & State ---
+// DrSnip clinic locations (per drsnip.com).
+const OFFICE_LOCATIONS = ["Seattle, WA", "Portland, OR", "Plano, TX"];
 
-type FormData = {
-  // Q1 ABOUT YOU
-  firstName: string;
-  lastName: string;
-  // Q2 Contact Information
-  email: string;
-  phone: string;
-  stateResidence: string;
-  // Q3 Agency
-  agency: string;
-  agencyOther: string;
-  // Q4 Speaker rating (feedback)
-  speakerRating: string;
-  // Q5 Workshop content (feedback)
-  workshopContent: string;
-  // Q6 Pre-retirement review (qualifying — always shown)
-  preRetirementReview: string;
-  // Q7 Eval comments (feedback)
-  evalComments: string;
-  // Q8 Years to retire
-  yearsToRetire: string;
-  // Q9 Age
-  age: string;
-  // Q10 Separating
-  separating: string;
-  // Q11 Marital
-  maritalStatus: string;
-  // Q12 Maxing TSP
-  maxingTsp: string;
-  tspContributionPct: string;
-  // Q13 Contributing elsewhere
-  externalInvestments: string;
-  // Q14 TSP balance
-  tspBalance: string;
-  // Q15 Areas of concern
-  areasOfConcern: string;
-  // Source attribution (URL params, not user-facing)
-  source: string;
-  leadSource: string;
-  surveyDetail: string;
-  campaign: string;
-  event: string;
-  utmSource: string;
-  utmMedium: string;
-  utmCampaign: string;
-};
-
-const initialData: FormData = {
-  firstName: "",
-  lastName: "",
-  email: "",
-  phone: "",
-  stateResidence: "",
-  agency: "",
-  agencyOther: "",
-  speakerRating: "",
-  workshopContent: "",
-  preRetirementReview: "",
-  evalComments: "",
-  yearsToRetire: "",
-  age: "",
-  separating: "",
-  maritalStatus: "",
-  maxingTsp: "",
-  tspContributionPct: "",
-  externalInvestments: "",
-  tspBalance: "",
-  areasOfConcern: "",
-  // Source attribution: pre-hydration defaults are empty strings; the
-  // useEffect on mount populates them from the URL's ?source= param and
-  // related UTM params. Hardcoding "federal"/"SOFA: Webinar" here used to
-  // override the URL-driven source for any non-legacy channel — fixed.
-  source: "",
-  leadSource: "",
-  surveyDetail: "",
-  campaign: "",
-  event: "",
-  utmSource: "",
-  utmMedium: "",
-  utmCampaign: "",
-};
-
-// Agency dropdown options. `value` is sent to Zapier -> Salesforce
-// Lead.Federal_Agency__c, which is a RESTRICTED picklist — values MUST match
-// the SF picklist exactly or Lead creation fails ("bad value for restricted
-// picklist field" was the production failure that prompted this list).
-//
-// Sourced from the Lead.Federal_Agency__c picklist in Salesforce: 80 values
-// total. We exclude the two non-agency channel markers ("SOFA", "FNN") since
-// the form is for federal employees, not internal channel routing. Sub-agency
-// values are prefixed with "    ► " (4 spaces + U+25BA + 1 space) — that
-// prefix is part of the SF picklist value, not just display formatting.
-//
-// Order: top-level agencies alphabetical; each parent's children listed
-// immediately below it. NNSA is an orphan in the picklist (no parent prefix
-// despite being part of DOE), placed under Dept of Energy where it belongs.
-// "Other" appended last; it is NOT a SF picklist value — it triggers the
-// agencyOther free-text reveal, and submit.ts converts agency==="Other" to
-// agencyOther's value before forwarding to the Zap.
-type AgencyOption = { label: string; value: string };
-
-const AGENCIES: AgencyOption[] = [
-  { label: "Architect of the Capitol", value: "Architect of the Capitol" },
-  { label: "DC Courts", value: "DC Courts" },
-  { label: "    ► DC Courts: Court of Appeals", value: "    ► DC Courts: Court of Appeals" },
-  { label: "    ► DC Courts: Superior Court", value: "    ► DC Courts: Superior Court" },
-  { label: "    ► DC Courts: US Tax Court", value: "    ► DC Courts: US Tax Court" },
-  { label: "DC Public Defender Service", value: "DC Public Defender Service" },
-  { label: "Defense Nuclear Facilities Safety Board", value: "Defense Nuclear Facilities Safety Board" },
-  { label: "Dept of Agriculture (USDA)", value: "Dept of Agriculture (USDA)" },
-  { label: "Dept of Commerce (DOC)", value: "Dept of Commerce (DOC)" },
-  { label: "    ► Dept of Commerce (DOC): Bureau of Industry and Security (BIS)", value: "    ► Dept of Commerce (DOC): Bureau of Industry and Security (BIS)" },
-  { label: "    ► Dept of Commerce (DOC): National Institute of Standards and Technology (NIST)", value: "    ► Dept of Commerce (DOC): National Institute of Standards and Technology (NIST)" },
-  { label: "    ► Dept of Commerce (DOC): National Oceanic and Atmospheric Administration (NOAA)", value: "    ► Dept of Commerce (DOC): National Oceanic and Atmospheric Administration (NOAA)" },
-  { label: "    ► Dept of Commerce (DOC): U.S. Census Bureau", value: "    ► Dept of Commerce (DOC): U.S. Census Bureau" },
-  { label: "Dept of Defense (DOD)", value: "Dept of Defense (DOD)" },
-  { label: "    ► Dept of Defense (DOD): Army", value: "    ► Dept of Defense (DOD): Army" },
-  { label: "    ► Dept of Defense (DOD): National Guard", value: "    ► Dept of Defense (DOD): National Guard" },
-  { label: "    ► Dept of Defense (DOD): Navy", value: "    ► Dept of Defense (DOD): Navy" },
-  { label: "    ► Dept of Defense (DOD): NGA (Nat'l Geospatial Agency)", value: "    ► Dept of Defense (DOD): NGA (Nat'l Geospatial Agency)" },
-  { label: "    ► Dept of Defense (DOD): NSA (Natl Security Agency)", value: "    ► Dept of Defense (DOD): NSA (Natl Security Agency)" },
-  { label: "Dept of Education", value: "Dept of Education" },
-  { label: "    ► Dept of Education: Office for Civil Rights", value: "    ► Dept of Education: Office for Civil Rights" },
-  { label: "Dept of Energy (DOE)", value: "Dept of Energy (DOE)" },
-  // NNSA is an orphan in the SF picklist (no DOE: parent prefix in the value).
-  // Placed here under DOE where it logically belongs.
-  { label: "    ► National Nuclear Security Administration (NNSA)", value: "    ► National Nuclear Security Administration (NNSA)" },
-  { label: "Dept of Homeland Security", value: "Dept of Homeland Security" },
-  { label: "    ► Dept of Homeland Security: Customs and Border Protection", value: "    ► Dept of Homeland Security: Customs and Border Protection" },
-  { label: "    ► Dept of Homeland Security: ICE (Immigration and Customs Enforcement)", value: "    ► Dept of Homeland Security: ICE (Immigration and Customs Enforcement)" },
-  { label: "Dept of Justice (DOJ)", value: "Dept of Justice (DOJ)" },
-  { label: "Dept of Labor", value: "Dept of Labor" },
-  { label: "Dept of the Interior (DOI)", value: "Dept of the Interior (DOI)" },
-  { label: "    ► Dept of the Interior (DOI): Fish and Wildlife Service (FWS)", value: "    ► Dept of the Interior (DOI): Fish and Wildlife Service (FWS)" },
-  { label: "Dept of the Treasury", value: "Dept of the Treasury" },
-  { label: "    ► Dept of the Treasury: U.S. Mint", value: "    ► Dept of the Treasury: U.S. Mint" },
-  { label: "Dept of Transportation (DOT)", value: "Dept of Transportation (DOT)" },
-  { label: "    ► Dept of Transportation (DOT)Federal Aviation Administration (FAA)", value: "    ► Dept of Transportation (DOT)Federal Aviation Administration (FAA)" },
-  { label: "    ► Dept of Transportation (DOT): Federal Railroad Administration (FRA)", value: "    ► Dept of Transportation (DOT): Federal Railroad Administration (FRA)" },
-  { label: "Environmental Protection Agency (EPA)", value: "Environmental Protection Agency (EPA)" },
-  { label: "Equal Employment Opportunity Commission (EEOC)", value: "Equal Employment Opportunity Commission (EEOC)" },
-  { label: "Export-Import Bank of the United States (EXIM)", value: "Export-Import Bank of the United States (EXIM)" },
-  { label: "Farm Credit Admin (FCA)", value: "Farm Credit Admin (FCA)" },
-  { label: "Federal Communications Commission (FCC)", value: "Federal Communications Commission (FCC)" },
-  { label: "Federal Deposit Insurance Corp (FDIC)", value: "Federal Deposit Insurance Corp (FDIC)" },
-  { label: "Federal Election Commission (FEC)", value: "Federal Election Commission (FEC)" },
-  { label: "Federal Energy Regulatory Commission (FERC)", value: "Federal Energy Regulatory Commission (FERC)" },
-  { label: "Federal Housing Finance Agency (FHFA)", value: "Federal Housing Finance Agency (FHFA)" },
-  { label: "Federal Maritime Commission (FMC)", value: "Federal Maritime Commission (FMC)" },
-  { label: "Federal Mediation and Conciliation Service (FMCS)", value: "Federal Mediation and Conciliation Service (FMCS)" },
-  { label: "Federal Trade Commission (FTFC)", value: "Federal Trade Commission (FTFC)" },
-  { label: "General Svcs Administration (GSA)", value: "General Svcs Administration (GSA)" },
-  { label: "Government Publishing Office (GPO)", value: "Government Publishing Office (GPO)" },
-  { label: "Govt Accountability Office (GAO)", value: "Govt Accountability Office (GAO)" },
-  { label: "Health and Human Svcs (HHS)", value: "Health and Human Svcs (HHS)" },
-  { label: "    ► Health and Human Svcs (HHS): Administration for Children and Families (ACF)", value: "    ► Health and Human Svcs (HHS): Administration for Children and Families (ACF)" },
-  { label: "    ► Health and Human Svcs (HHS): Centers for Disease Control and Prevention (CDC)", value: "    ► Health and Human Svcs (HHS): Centers for Disease Control and Prevention (CDC)" },
-  { label: "    ► Health and Human Svcs (HHS): Centers for Medicare & Medicaid (CMS)", value: "    ► Health and Human Svcs (HHS): Centers for Medicare & Medicaid (CMS)" },
-  { label: "    ► Health and Human Svcs (HHS): Food and Drug Administration (FDA)", value: "    ► Health and Human Svcs (HHS): Food and Drug Administration (FDA)" },
-  { label: "    ► Health and Human Svcs (HHS): Health Resources and Services Administration (HRSA)", value: "    ► Health and Human Svcs (HHS): Health Resources and Services Administration (HRSA)" },
-  { label: "    ► Health and Human Svcs (HHS): Indian Health Service (IHS)", value: "    ► Health and Human Svcs (HHS): Indian Health Service (IHS)" },
-  { label: "    ► Health and Human Svcs (HHS): Natl Institute of Health (NIH)", value: "    ► Health and Human Svcs (HHS): Natl Institute of Health (NIH)" },
-  { label: "    ► Health and Human Svcs (HHS): Substance Abuse and Mental Health Services Admin (SAMSHA)", value: "    ► Health and Human Svcs (HHS): Substance Abuse and Mental Health Services Admin (SAMSHA)" },
-  { label: "Housing and Urban Development (HUD)", value: "Housing and Urban Development (HUD)" },
-  { label: "N/A", value: "N/A" },
-  { label: "National Aeronautics and Space Administration (NASA)", value: "National Aeronautics and Space Administration (NASA)" },
-  { label: "National Archives Admin (NARA)", value: "National Archives Admin (NARA)" },
-  { label: "National Capital Planning Commission (NCPC)", value: "National Capital Planning Commission (NCPC)" },
-  { label: "National Defense University (NDU)", value: "National Defense University (NDU)" },
-  { label: "National Endowment for the Arts (NEA)", value: "National Endowment for the Arts (NEA)" },
-  { label: "National Labor Relations Board (NLRB)", value: "National Labor Relations Board (NLRB)" },
-  { label: "National Science Foundation (NSF)", value: "National Science Foundation (NSF)" },
-  { label: "Natl Active & Retired Federal Employees Assoc (NARFE)", value: "Natl Active & Retired Federal Employees Assoc (NARFE)" },
-  { label: "Nuclear Regulatory Commission (NRC)", value: "Nuclear Regulatory Commission (NRC)" },
-  { label: "Peace Corps", value: "Peace Corps" },
-  { label: "Senate", value: "Senate" },
-  { label: "Small Business Administration (SBA)", value: "Small Business Administration (SBA)" },
-  { label: "Smithsonian", value: "Smithsonian" },
-  { label: "U.S. Agency for Global Media (USAGM) & Voice of America (VOA)", value: "U.S. Agency for Global Media (USAGM) & Voice of America (VOA)" },
-  { label: "U.S. Agency for International Development (USAID)", value: "U.S. Agency for International Development (USAID)" },
-  { label: "U.S. International Development Finance Corporation (DFC)", value: "U.S. International Development Finance Corporation (DFC)" },
-  { label: "U.S. International Trade Commission (USITC)", value: "U.S. International Trade Commission (USITC)" },
-  { label: "U.S. Patent & Trademark Office (USPTO)", value: "U.S. Patent & Trademark Office (USPTO)" },
-  { label: "University of Maryland", value: "University of Maryland" },
-  { label: "Other", value: "Other" },
+const INSURANCE_OPTIONS = [
+  "Private / Commercial insurance",
+  "Medicare",
+  "Medicaid",
+  "Self-pay / No insurance",
+  "Other",
 ];
 
-const SOURCE_MAP: Record<string, string> = {
-  fnn: "FNN: Webinar",
-  internal: "Internal: Webinar",
-  federal: "SOFA: Webinar",
+// The 13 medical-history screening questions (all Yes/No).
+const MEDICAL_QUESTIONS: { key: MedicalKey; label: string }[] = [
+  { key: "mhTesticleAbnormality", label: "Have you ever had a testicle abnormality, scrotum abnormality, hernia, infection, or tumor?" },
+  { key: "mhTesticleInjury", label: "Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?" },
+  { key: "mhSTI", label: "Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?" },
+  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?" },
+  { key: "mhMedications", label: "Do you take medication regularly, or have you taken any in the last 2 weeks?" },
+  { key: "mhSurgeries", label: "Have you had any surgeries?" },
+  { key: "mhFainting", label: "Have you ever fainted, or almost fainted, during or after a medical procedure?" },
+  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?" },
+  { key: "mhChronic", label: "Do you have any major or chronic medical problems?" },
+  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?" },
+  { key: "mhSurgeryComplications", label: "Have you had complications, or excessive pain or bleeding, after surgery?" },
+  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?" },
+  { key: "mhAspirin", label: "Are you taking — or will you take — aspirin products in the 5 days before your procedure?" },
+];
+
+type MedicalKey =
+  | "mhTesticleAbnormality"
+  | "mhTesticleInjury"
+  | "mhSTI"
+  | "mhKidney"
+  | "mhMedications"
+  | "mhSurgeries"
+  | "mhFainting"
+  | "mhAllergies"
+  | "mhChronic"
+  | "mhBleeding"
+  | "mhSurgeryComplications"
+  | "mhPainSensitive"
+  | "mhAspirin";
+
+// ---- Form state ----------------------------------------------------------
+
+type RegistrationData = Record<MedicalKey, string> & {
+  // Screen 1 — Patient Information
+  officeLocation: string;
+  legalFirstName: string;
+  preferredFirstName: string;
+  middleInitial: string;
+  legalLastName: string;
+  dateOfBirth: string;
+  // Screen 2 — Contact & Consent
+  streetAddress: string;
+  state: string;
+  mobileNumber: string;
+  email: string;
+  consentVoicemail: string;
+  consentText: string;
+  // Screen 3 — Medical Background
+  primaryCarePhysician: string;
+  mhDetails: string;
+  // Screen 4 — Insurance
+  insuranceCoverage: string;
+  insuranceCompany: string;
+  insuranceIdNo: string;
+  insuranceGroupNo: string;
+  insuredFirstName: string;
+  insuredLastName: string;
+  insuredDob: string;
+  insuredEmployer: string;
+  insuranceCardFront: StubFileRef | null;
+  insuranceCardBack: StubFileRef | null;
 };
 
-// Maps the URL ?source= param to the Salesforce `Survey_Detail__c` value that
-// LeadHandler.addLeadInCampaign reads to route the Lead to a Campaign.
-//   "DC SOFA 3" -> FNN Marketing Campaign
-//   "DC SOFA 2" -> Internal Marketing Campaign
-//   "DC SOFA"   -> falls through to Federal_Agency__c lookup (agency-specific Campaign)
-const SURVEY_DETAIL_MAP: Record<string, string> = {
-  fnn: "DC SOFA 3",
-  internal: "DC SOFA 2",
-  federal: "DC SOFA",
-};
-const SURVEY_DETAIL_DEFAULT = "DC SOFA";
-
-// --- Animation Variants ---
-
-const variants = {
-  enter: (direction: number) => ({
-    x: direction > 0 ? 50 : -50,
-    opacity: 0,
-    scale: 0.98,
-  }),
-  center: {
-    zIndex: 1,
-    x: 0,
-    opacity: 1,
-    scale: 1,
-  },
-  exit: (direction: number) => ({
-    zIndex: 0,
-    x: direction < 0 ? 50 : -50,
-    opacity: 0,
-    scale: 0.98,
-  }),
-};
-
-// --- Screen type ---
-
-type Screen = {
-  id: string;
-  category?: "feedback";
-  title: string;
-  description?: string;
-  render: () => React.ReactNode;
-  isValid: () => boolean;
+const initialData: RegistrationData = {
+  officeLocation: "",
+  legalFirstName: "",
+  preferredFirstName: "",
+  middleInitial: "",
+  legalLastName: "",
+  dateOfBirth: "",
+  streetAddress: "",
+  state: "",
+  mobileNumber: "",
+  email: "",
+  consentVoicemail: "",
+  consentText: "",
+  primaryCarePhysician: "",
+  mhTesticleAbnormality: "",
+  mhTesticleInjury: "",
+  mhSTI: "",
+  mhKidney: "",
+  mhMedications: "",
+  mhSurgeries: "",
+  mhFainting: "",
+  mhAllergies: "",
+  mhChronic: "",
+  mhBleeding: "",
+  mhSurgeryComplications: "",
+  mhPainSensitive: "",
+  mhAspirin: "",
+  mhDetails: "",
+  insuranceCoverage: "",
+  insuranceCompany: "",
+  insuranceIdNo: "",
+  insuranceGroupNo: "",
+  insuredFirstName: "",
+  insuredLastName: "",
+  insuredDob: "",
+  insuredEmployer: "",
+  insuranceCardFront: null,
+  insuranceCardBack: null,
 };
 
-// --- Main Component ---
+// ---- Component -----------------------------------------------------------
 
 export default function Home() {
-  const [stepIndex, setStepIndex] = useState(0);
-  const [direction, setDirection] = useState(0);
-  const [data, setData] = useState<FormData>(initialData);
-  const [isClient, setIsClient] = useState(false);
-  const [submitState, setSubmitState] = useState<
-    "idle" | "submitting" | "success-yes" | "success-no"
-  >("idle");
+  const [data, setData] = useState<RegistrationData>(initialData);
+  const update = (patch: Partial<RegistrationData>) =>
+    setData((d) => ({ ...d, ...patch }));
 
-  useEffect(() => {
-    setIsClient(true);
-    const params = new URLSearchParams(window.location.search);
-    const sourceKey = (params.get("source") ?? "").toLowerCase();
-    // Pass the raw source key through to the server. The marketing_sources
-    // table lookup in api/submit.ts resolves it to the right LeadSource +
-    // Survey_Detail__c. This file used to narrow unknown keys to "federal"
-    // (and hardcode leadSource="SOFA: Webinar"), which silently broke
-    // attribution for any new marketing channel — Instagram leads landed
-    // in Salesforce as LeadSource=SOFA Webinar regardless of the URL.
-    //
-    // For legacy keys (fnn/internal/federal) the server still resolves to
-    // the byte-exact same LeadSource it always has — the migration seeded
-    // those rows verbatim.
-    setData((prev) => ({
-      ...prev,
-      source: sourceKey,
-      // leadSource and surveyDetail intentionally left at their defaults
-      // ("" once seeded properly — see initialData) so the server's
-      // marketing_sources lookup is what decides. Legacy seeded values
-      // preserve byte-exact attribution.
-      leadSource: "",
-      surveyDetail: "",
-      campaign: params.get("campaign") ?? "",
-      event: params.get("event") ?? "",
-      utmSource: params.get("utm_source") ?? "",
-      utmMedium: params.get("utm_medium") ?? "",
-      utmCampaign: params.get("utm_campaign") ?? "",
-    }));
-  }, []);
+  const anyMedicalYes = MEDICAL_QUESTIONS.some(
+    (q) => data[q.key] === "Yes",
+  );
+  const needsInsurance =
+    data.insuranceCoverage !== "" &&
+    data.insuranceCoverage !== "Self-pay / No insurance";
 
-  const updateData = (fields: Partial<FormData>) => {
-    setData((prev) => ({ ...prev, ...fields }));
-  };
-
-  const allScreens: Screen[] = [
+  const screens: FormScreen[] = [
     {
-      id: "about-you",
-      title: "About You",
+      id: "patient-info",
+      title: "Patient Information",
+      description: "Let's start with the basics. Fields marked * are required.",
       render: () => (
         <div className="grid gap-6">
+          <SelectField
+            label="Office Location"
+            value={data.officeLocation}
+            onChange={(v) => update({ officeLocation: v })}
+            options={OFFICE_LOCATIONS}
+            required
+          />
           <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-500 ml-1">First Name</label>
-              <Input
-                placeholder="e.g. Jane"
-                value={data.firstName}
-                onChange={(e) => updateData({ firstName: e.target.value })}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-500 ml-1">Last Name</label>
-              <Input
-                placeholder="e.g. Doe"
-                value={data.lastName}
-                onChange={(e) => updateData({ lastName: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-500 ml-1">Email Address</label>
-            <Input
-              type="email"
-              placeholder="jane.doe@example.com"
-              value={data.email}
-              onChange={(e) => updateData({ email: e.target.value })}
+            <TextField
+              label="Legal First Name"
+              value={data.legalFirstName}
+              onChange={(v) => update({ legalFirstName: v })}
+              placeholder="e.g. James"
+              required
+            />
+            <TextField
+              label="Legal Last Name"
+              value={data.legalLastName}
+              onChange={(v) => update({ legalLastName: v })}
+              placeholder="e.g. Carter"
+              required
             />
           </div>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <TextField
+              label="Preferred First Name (if different)"
+              value={data.preferredFirstName}
+              onChange={(v) => update({ preferredFirstName: v })}
+            />
+            <TextField
+              label="Middle Initial"
+              value={data.middleInitial}
+              onChange={(v) => update({ middleInitial: v.slice(0, 1) })}
+            />
+          </div>
+          <FieldShell label="Date of Birth" required>
+            <DatePicker
+              value={data.dateOfBirth}
+              onChange={(v) => update({ dateOfBirth: v })}
+              placeholder="Select your date of birth"
+            />
+          </FieldShell>
         </div>
       ),
       isValid: () =>
-        data.firstName.trim() !== "" &&
-        data.lastName.trim() !== "" &&
-        data.email.trim() !== "",
+        data.officeLocation !== "" &&
+        data.legalFirstName.trim() !== "" &&
+        data.legalLastName.trim() !== "" &&
+        data.dateOfBirth !== "",
     },
     {
       id: "contact",
-      title: "Contact Details",
+      title: "Contact & Consent",
+      description: "How can the DrSnip team reach you about your appointment?",
       render: () => (
         <div className="grid gap-6">
+          <TextAreaField
+            label="Street Address"
+            value={data.streetAddress}
+            onChange={(v) => update({ streetAddress: v })}
+            placeholder="Street, city, ZIP"
+            required
+          />
           <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-500 ml-1">Phone Number</label>
-              <Input
-                type="tel"
-                placeholder="(555) 000-0000"
-                value={data.phone}
-                onChange={(e) => updateData({ phone: e.target.value })}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-500 ml-1">State of Residence</label>
-              <Input
-                placeholder="e.g. California"
-                value={data.stateResidence}
-                onChange={(e) => updateData({ stateResidence: e.target.value })}
-              />
-            </div>
+            <TextField
+              label="State"
+              value={data.state}
+              onChange={(v) => update({ state: v })}
+              placeholder="e.g. WA"
+            />
+            <TextField
+              label="Mobile Number"
+              type="tel"
+              value={data.mobileNumber}
+              onChange={(v) => update({ mobileNumber: v })}
+              placeholder="(555) 000-0000"
+              required
+            />
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-500 ml-1">Federal Agency</label>
-            <div className="relative">
-              <select
-                value={data.agency}
-                onChange={(e) => updateData({ agency: e.target.value })}
-                className="w-full px-5 py-4 text-lg appearance-none bg-white border-2 rounded-2xl border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm cursor-pointer text-slate-800"
-              >
-                <option value="" disabled>Select your agency...</option>
-                {AGENCIES.map((a) => (
-                  <option key={a.value} value={a.value}>{a.label}</option>
-                ))}
-              </select>
-              <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-              </div>
-            </div>
-            <AnimatePresence>
-              {data.agency === "Other" && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                  animate={{ opacity: 1, height: "auto", marginTop: 16 }}
-                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
-                  className="space-y-2 overflow-hidden"
-                >
-                  <label className="text-sm font-medium text-slate-500 ml-1">Please specify your agency</label>
-                  <Input
-                    placeholder="Enter your agency name"
-                    value={data.agencyOther}
-                    onChange={(e) => updateData({ agencyOther: e.target.value })}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <TextField
+            label="Email"
+            type="email"
+            value={data.email}
+            onChange={(v) => update({ email: v })}
+            placeholder="james.carter@example.com"
+            hint="I agree to receive emails about my appointment."
+            required
+          />
+          <YesNoField
+            label="I consent to receiving detailed voicemails at the phone number provided."
+            value={data.consentVoicemail}
+            onChange={(v) => update({ consentVoicemail: v })}
+            required
+          />
+          <YesNoField
+            label="I consent to receiving care-related text messages at the phone number provided."
+            value={data.consentText}
+            onChange={(v) => update({ consentText: v })}
+            required
+          />
         </div>
       ),
       isValid: () =>
-        data.phone.trim() !== "" &&
-        data.stateResidence.trim() !== "" &&
-        data.agency !== "" &&
-        (data.agency !== "Other" || data.agencyOther.trim() !== ""),
+        data.streetAddress.trim() !== "" &&
+        data.mobileNumber.trim() !== "" &&
+        data.email.trim() !== "" &&
+        data.consentVoicemail !== "" &&
+        data.consentText !== "",
     },
     {
-      id: "feedback",
-      category: "feedback",
-      title: "Presentation Feedback",
+      id: "medical",
+      title: "Medical Background",
+      description:
+        "These help our physicians prepare for your visit. Answer every question.",
       render: () => (
-        <div className="grid gap-8">
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              How would you rate the effectiveness of the speaker?
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {["Excellent", "Good", "Average", "Needs work"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.speakerRating === opt}
-                  onClick={() => updateData({ speakerRating: opt })}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              Was the workshop content informative?
-            </label>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {["Helpful", "Neutral", "Needs work"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.workshopContent === opt}
-                  onClick={() => updateData({ workshopContent: opt })}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              Any additional comments or questions?
-            </label>
-            <textarea
-              className="w-full min-h-[120px] p-5 text-base transition-all duration-200 bg-white border-2 rounded-2xl border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 placeholder:text-slate-400 shadow-sm resize-none text-slate-800"
-              placeholder="Optional"
-              value={data.evalComments}
-              onChange={(e) => updateData({ evalComments: e.target.value })}
-            />
-          </div>
-        </div>
-      ),
-      isValid: () => data.speakerRating !== "" && data.workshopContent !== "",
-    },
-    {
-      id: "pre-retirement",
-      title: "Would you like a complimentary pre-retirement review?",
-      description: "Recommended for those within ten years of retirement.",
-      render: () => (
-        <div className="grid gap-4 sm:grid-cols-2 max-w-xl">
-          {["Yes", "No"].map((opt) => (
-            <RadioCard
-              key={opt}
-              label={opt}
-              selected={data.preRetirementReview === opt}
-              onClick={() => updateData({ preRetirementReview: opt })}
+        <div className="grid gap-7">
+          <TextField
+            label="Current Primary Care Physician (name and location)"
+            value={data.primaryCarePhysician}
+            onChange={(v) => update({ primaryCarePhysician: v })}
+            placeholder="Optional"
+          />
+          {MEDICAL_QUESTIONS.map((q) => (
+            <YesNoField
+              key={q.key}
+              label={q.label}
+              value={data[q.key]}
+              onChange={(v) => update({ [q.key]: v } as Partial<RegistrationData>)}
+              required
             />
           ))}
+          <Reveal show={anyMedicalYes}>
+            <TextAreaField
+              label="You answered Yes above — please share details, including a general timeframe."
+              value={data.mhDetails}
+              onChange={(v) => update({ mhDetails: v })}
+            />
+          </Reveal>
         </div>
       ),
-      isValid: () => data.preRetirementReview !== "",
+      isValid: () => MEDICAL_QUESTIONS.every((q) => data[q.key] !== ""),
     },
     {
-      id: "demographics",
-      title: "Demographics",
+      id: "insurance",
+      title: "Insurance",
+      description: "If you're using insurance, add your plan details below.",
       render: () => (
-        <div className="grid gap-8">
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">What is your age?</label>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {["59 1/2 or over", "55 - 59", "50-54", "40-49", "below 40"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.age === opt}
-                  onClick={() => updateData({ age: opt })}
+        <div className="grid gap-6">
+          <SelectField
+            label="Select your current insurance coverage"
+            value={data.insuranceCoverage}
+            onChange={(v) => update({ insuranceCoverage: v })}
+            options={INSURANCE_OPTIONS}
+            required
+          />
+          <Reveal show={needsInsurance}>
+            <div className="grid gap-6">
+              <TextField
+                label="Insurance Company"
+                value={data.insuranceCompany}
+                onChange={(v) => update({ insuranceCompany: v })}
+                required
+              />
+              <div className="grid gap-6 sm:grid-cols-2">
+                <TextField
+                  label="ID No."
+                  value={data.insuranceIdNo}
+                  onChange={(v) => update({ insuranceIdNo: v })}
+                  required
                 />
-              ))}
-            </div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">Are you married?</label>
-            <div className="grid gap-3 sm:grid-cols-4">
-              {["Yes", "No", "DIVORCED", "WIDOWED"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.maritalStatus === opt}
-                  onClick={() => updateData({ maritalStatus: opt })}
+                <TextField
+                  label="Group No."
+                  value={data.insuranceGroupNo}
+                  onChange={(v) => update({ insuranceGroupNo: v })}
                 />
-              ))}
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <TextField
+                  label="Insured's Legal First Name"
+                  value={data.insuredFirstName}
+                  onChange={(v) => update({ insuredFirstName: v })}
+                />
+                <TextField
+                  label="Insured's Legal Last Name"
+                  value={data.insuredLastName}
+                  onChange={(v) => update({ insuredLastName: v })}
+                />
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <FieldShell label="Insured's Date of Birth">
+                  <DatePicker
+                    value={data.insuredDob}
+                    onChange={(v) => update({ insuredDob: v })}
+                  />
+                </FieldShell>
+                <TextField
+                  label="Insured's Employer"
+                  value={data.insuredEmployer}
+                  onChange={(v) => update({ insuredEmployer: v })}
+                />
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <FileUploadStub
+                  label="Insurance card — front"
+                  value={data.insuranceCardFront}
+                  onChange={(f) => update({ insuranceCardFront: f })}
+                />
+                <FileUploadStub
+                  label="Insurance card — back"
+                  value={data.insuranceCardBack}
+                  onChange={(f) => update({ insuranceCardBack: f })}
+                />
+              </div>
             </div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              How many years until you plan to retire?
-            </label>
-            <Input
-              type="number"
-              min="0"
-              placeholder="e.g. 5"
-              value={data.yearsToRetire}
-              onChange={(e) => updateData({ yearsToRetire: e.target.value })}
-              className="text-xl py-5 max-w-xs"
-            />
-          </div>
+          </Reveal>
         </div>
       ),
       isValid: () =>
-        data.age !== "" &&
-        data.maritalStatus !== "" &&
-        data.yearsToRetire.trim() !== "",
+        data.insuranceCoverage !== "" &&
+        (!needsInsurance ||
+          (data.insuranceCompany.trim() !== "" &&
+            data.insuranceIdNo.trim() !== "")),
     },
     {
-      id: "financials",
-      title: "Financials",
+      id: "review",
+      title: "Review & Submit",
+      description:
+        "Please confirm your information is accurate, then submit your registration.",
       render: () => (
-        <div className="grid gap-8">
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              Which category best describes your TSP balance?
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {["Over $1 million", "$600k - $1 million", "$350k - $600k", "Under $350k"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.tspBalance === opt}
-                  onClick={() => updateData({ tspBalance: opt })}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              Are you maxing out your TSP/401K/403B/457 contributions?
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2 max-w-md">
-              {["YES", "NO"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.maxingTsp === opt}
-                  onClick={() => updateData({ maxingTsp: opt })}
-                />
-              ))}
-            </div>
-            <AnimatePresence>
-              {data.maxingTsp === "NO" && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                  animate={{ opacity: 1, height: "auto", marginTop: 12 }}
-                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
-                  className="space-y-2 overflow-hidden"
-                >
-                  <label className="text-sm font-medium text-slate-500 ml-1">
-                    If NO, what percentage are you contributing?
-                  </label>
-                  <div className="relative max-w-xs">
-                    <Input
-                      type="number"
-                      placeholder="e.g. 5"
-                      value={data.tspContributionPct}
-                      onChange={(e) => updateData({ tspContributionPct: e.target.value })}
-                      className="pr-12"
-                    />
-                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-medium">%</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              Are you regularly contributing money elsewhere (brokerage acct, savings, credit unions, IRA, Roth IRA etc)?
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2 max-w-md">
-              {["YES", "NO"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.externalInvestments === opt}
-                  onClick={() => updateData({ externalInvestments: opt })}
-                />
-              ))}
-            </div>
-          </div>
+        <div className="grid gap-3">
+          <ReviewRow label="Name" value={`${data.legalFirstName} ${data.legalLastName}`.trim()} />
+          <ReviewRow label="Date of Birth" value={data.dateOfBirth} />
+          <ReviewRow label="Office" value={data.officeLocation} />
+          <ReviewRow label="Email" value={data.email} />
+          <ReviewRow label="Mobile" value={data.mobileNumber} />
+          <ReviewRow label="Insurance" value={data.insuranceCoverage} />
+          <ReviewRow
+            label="Insurance cards"
+            value={
+              [data.insuranceCardFront, data.insuranceCardBack].filter(Boolean)
+                .length + " uploaded"
+            }
+          />
+          <p className="text-sm text-slate-500 mt-4 leading-relaxed">
+            By submitting, you confirm the information above is accurate to the
+            best of your knowledge.
+          </p>
         </div>
       ),
-      isValid: () =>
-        data.tspBalance !== "" &&
-        data.maxingTsp !== "" &&
-        (data.maxingTsp !== "NO" || data.tspContributionPct.trim() !== "") &&
-        data.externalInvestments !== "",
-    },
-    {
-      id: "status",
-      title: "Status & Comments",
-      render: () => (
-        <div className="grid gap-8">
-          <div className="space-y-3">
-            <label className="text-base font-semibold text-slate-700">
-              Are you separating from Federal service within the next two months (or are you already separated)?
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2 max-w-md">
-              {["YES", "NO"].map((opt) => (
-                <RadioCard
-                  key={opt}
-                  label={opt}
-                  selected={data.separating === opt}
-                  onClick={() => updateData({ separating: opt })}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-base font-semibold text-slate-700">
-              Anything else you'd like us to know?
-            </label>
-            <p className="text-sm text-slate-500">
-              Areas of concern/focus (debt consolidation, investments, retirement, etc.)
-            </p>
-            <textarea
-              className="w-full min-h-[150px] p-5 text-base transition-all duration-200 bg-white border-2 rounded-2xl border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 placeholder:text-slate-400 shadow-sm resize-none text-slate-800 mt-2"
-              placeholder="Optional"
-              value={data.areasOfConcern}
-              onChange={(e) => updateData({ areasOfConcern: e.target.value })}
-            />
-          </div>
-        </div>
-      ),
-      isValid: () => data.separating !== "",
+      isValid: () => true,
     },
   ];
 
-  const screens = allScreens.filter(
-    (s) => s.category !== "feedback" || SHOW_FEEDBACK_QUESTIONS,
-  );
-
-  const currentScreen = screens[stepIndex];
-  const totalSteps = screens.length;
-  const isLastStep = stepIndex === totalSteps - 1;
-  const isPreRetirementNo =
-    currentScreen?.id === "pre-retirement" && data.preRetirementReview === "No";
-  const isFinalAction = isLastStep || isPreRetirementNo;
-
-  const submit = async () => {
-    setSubmitState("submitting");
+  const onSubmit = async (): Promise<boolean> => {
+    const payload = {
+      ...data,
+      formType: "registration" as const,
+      firstName: data.legalFirstName,
+      lastName: data.legalLastName,
+      email: data.email,
+      phone: data.mobileNumber,
+      dateOfBirth: data.dateOfBirth,
+      stateResidence: data.state,
+      insuranceCardFront: data.insuranceCardFront,
+      insuranceCardBack: data.insuranceCardBack,
+    };
     try {
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.success) {
-        throw new Error(json.error ?? "Submission failed");
-      }
-      // Self-scheduling redirect — qualifying leads (A/B+ who said yes
-      // to the consultation question, and aren't held by the valve)
-      // receive a redirectUrl from the API. Held leads and
-      // non-qualifying leads receive no redirectUrl and fall through to
-      // the existing thank-you page.
-      if (typeof json.redirectUrl === "string" && json.redirectUrl.length > 0) {
-        window.location.href = json.redirectUrl;
-        return;
-      }
-      setSubmitState(data.preRetirementReview === "Yes" ? "success-yes" : "success-no");
-    } catch (err) {
-      console.error("Form submission failed:", err);
-      toast.error("We couldn't submit your form. Please try again.");
-      setSubmitState("idle");
+      return res.ok && json.success === true;
+    } catch {
+      // HIPAA: never log the submission body.
+      return false;
     }
   };
-
-  const handleNext = () => {
-    if (!currentScreen?.isValid()) return;
-    if (isFinalAction) {
-      submit();
-      return;
-    }
-    setDirection(1);
-    setStepIndex((prev) => prev + 1);
-  };
-
-  const handleBack = () => {
-    if (stepIndex > 0) {
-      setDirection(-1);
-      setStepIndex((prev) => prev - 1);
-    }
-  };
-
-  if (!isClient) return null;
-
-  if (submitState === "success-yes" || submitState === "success-no") {
-    return (
-      <SuccessScreen
-        variant={submitState === "success-yes" ? "yes" : "no"}
-        firstName={data.firstName}
-      />
-    );
-  }
-
-  const isSubmitting = submitState === "submitting";
-  const canProceed = currentScreen.isValid() && !isSubmitting;
 
   return (
-    <div
-      className="min-h-screen flex flex-col font-sans relative overflow-hidden"
-      // Solid CJC red — matches the admin shell (AdminLayout.tsx) so the
-      // logo PNG's edges blend seamlessly. Was a 3-stop gradient that
-      // produced dark/light patches around the logo (see screenshot 2026-05-15).
-      //
-      // The bubble overlays we used to render here (bg-white/5, bg-black/10,
-      // etc.) lightened the surrounding red just enough to make the logo
-      // PNG's baked-in `#CD1C3A` background visible as a darker rectangle
-      // by contrast. Admin has no overlays — removed for parity.
-      style={{ background: "#CD1C3A" }}
-    >
-      {/* Hero logo — centered, sized to match the admin app's
-          LinkGenerator hero. No rounded-lg (was clipping/highlighting the
-          logo's edge against the gradient). */}
-      <header className="relative z-10 w-full pt-6 px-12 sm:px-6 flex justify-center">
-        <img
-          src={cjLogo}
-          alt="CJ Wealth Management"
-          className="h-16 sm:h-20 md:h-24 w-auto object-contain"
-        />
-      </header>
-
-      <div className="relative z-10 w-full max-w-5xl mx-auto px-6 mt-6 mb-2 flex justify-end">
-        <span className="text-sm font-medium text-white/70">
-          Step {stepIndex + 1} of {totalSteps}
-        </span>
-      </div>
-
-      <div className="relative z-10 w-full max-w-5xl mx-auto px-6 mb-8">
-        <div className="h-1.5 w-full bg-white/20 rounded-full overflow-hidden">
-          <motion.div
-            className="h-full bg-white rounded-full"
-            initial={{ width: 0 }}
-            animate={{ width: `${((stepIndex + 1) / totalSteps) * 100}%` }}
-            transition={{ duration: 0.5, ease: "easeInOut" }}
-          />
-        </div>
-      </div>
-
-      <main className="relative z-10 flex-1 flex flex-col items-center px-6 pb-32">
-        <div className="w-full max-w-3xl flex-1 flex flex-col relative pt-4 md:pt-8">
-          <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 p-8 md:p-12 min-h-[340px]">
-            <AnimatePresence mode="wait" custom={direction} initial={false}>
-              <motion.div
-                key={currentScreen.id}
-                custom={direction}
-                variants={variants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                className="w-full"
-              >
-                <StepContainer
-                  title={currentScreen.title}
-                  description={currentScreen.description}
-                >
-                  {currentScreen.render()}
-                </StepContainer>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-      </main>
-
-      <footer
-        className="fixed bottom-0 left-0 w-full z-20 backdrop-blur-xl border-t border-white/10"
-        style={{ background: "rgba(120, 20, 20, 0.85)" }}
-      >
-        <div className="w-full max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center">
-            {stepIndex > 0 ? (
-              <button
-                onClick={handleBack}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 px-4 py-3 text-white/80 font-semibold rounded-xl hover:bg-white/10 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                Back
-              </button>
-            ) : (
-              <div />
-            )}
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="hidden sm:flex items-center gap-2 text-sm text-white/60 font-medium">
-              <ShieldCheck className="w-4 h-4 text-white/70" />
-              Private &amp; Confidential
-            </div>
-            <button
-              onClick={handleNext}
-              disabled={!canProceed}
-              className={cn(
-                "flex items-center gap-2 px-8 py-3.5 font-semibold rounded-xl shadow-lg transition-all duration-300",
-                canProceed
-                  ? "bg-white text-[#A82020] hover:bg-white/90 shadow-black/20 hover:shadow-xl hover:-translate-y-0.5"
-                  : "bg-white/20 text-white/40 cursor-not-allowed shadow-none",
-              )}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  {isFinalAction ? "Submit" : "Continue"}
-                  {isFinalAction ? <CheckCircle2 className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />}
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </footer>
-    </div>
+    <MultiStepForm
+      screens={screens}
+      onSubmit={onSubmit}
+      successTitle="Thank you — your registration is in."
+      successMessage="Our team at DrSnip will review your information and reach out to schedule your consultation. If we need anything else, we'll contact you at the email or phone number you provided."
+    />
   );
 }
 
-// --- Helpers ---
-
-function StepContainer({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
+function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="w-full">
-      <h2 className="text-3xl md:text-4xl lg:text-4xl font-bold text-slate-900 leading-tight mb-3">
-        {title}
-      </h2>
-      {description && (
-        <p className="text-base text-slate-500 mb-7 max-w-2xl">{description}</p>
-      )}
-      <div className={cn("w-full", !description && "mt-7")}>{children}</div>
-    </div>
-  );
-}
-
-function SuccessScreen({
-  variant,
-  firstName,
-}: {
-  variant: "yes" | "no";
-  firstName: string;
-}) {
-  const headline =
-    variant === "yes"
-      ? "Thanks — we'll be in touch shortly"
-      : "Thanks for attending — we appreciate your time";
-  const subhead =
-    variant === "yes"
-      ? "A member of the CJC team will reach out within 24 hours to schedule your consultation."
-      : "Feel free to reach out anytime if your situation changes.";
-
-  return (
-    <div
-      className="min-h-screen flex flex-col font-sans relative overflow-hidden items-center justify-center"
-      style={{ background: "linear-gradient(135deg, #8B1A1A 0%, #A82020 40%, #C0282B 100%)" }}
-    >
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-white/5" />
-        <div className="absolute top-1/3 -left-24 w-64 h-64 rounded-full bg-white/4" />
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full bg-black/10" />
-      </div>
-      <div className="relative z-10 w-full max-w-3xl mx-auto px-6 py-12">
-        <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 p-10 md:p-14 text-center">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
-            className="w-20 h-20 rounded-2xl bg-red-100 flex items-center justify-center shadow-lg mx-auto mb-6"
-          >
-            <CheckCircle2 className="w-10 h-10 text-[#A82020]" />
-          </motion.div>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-3">
-            {headline}
-            {firstName ? `, ${firstName}` : ""}.
-          </h1>
-          <p className="text-base text-slate-500 max-w-xl mx-auto leading-relaxed">
-            {subhead}
-          </p>
-        </div>
-      </div>
+    <div className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-100">
+      <span className="text-sm font-medium text-slate-500">{label}</span>
+      <span className="text-sm font-semibold text-slate-900 text-right">
+        {value || "—"}
+      </span>
     </div>
   );
 }
