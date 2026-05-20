@@ -3,11 +3,11 @@
 **Date:** 2026-05-20
 **Live URL:** **https://drsnip-intake-demo.fly.dev**
 
-**Status:** ⚠️ **Deployed and live, but NOT yet fully functional.** The app is
-running on Fly.io and both forms render, but the database has no tables yet —
-the migration + admin-seed step is **blocked by an environment network issue**
-(see §4). Two short commands remain for you to run from a normal terminal —
-see §5.
+**Status:** ✅ **FULLY FUNCTIONAL** (as of 2026-05-20 22:19 UTC). Migrations and
+the admin seed have been applied; both forms submit end-to-end and the admin
+console is usable. The §4 tunnel blocker was resolved by running migrations
+server-side via a Fly `release_command` — see **§9** for the completion record.
+(§4/§5 below are kept for history.)
 
 ---
 
@@ -155,3 +155,64 @@ Forms 1–4 confirm the deploy, branding, routing, and static serving all work.
   recommends Managed Postgres (`fly mpg`); migrating is a future option.
 - **HIPAA:** this is a demo. Do not put real patient data through the live URL.
   App logs carry IDs + error types only — no request bodies.
+
+---
+
+## 9. Migration completion — 2026-05-20 ~22:19 UTC
+
+The §4 blocker (WireGuard tunnel to Fly Postgres blocked from the build
+environment — `fly proxy` / `fly postgres connect` fail at the TLS handshake)
+was re-confirmed and **resolved without the tunnel**: migrations now run
+**server-side**, inside Fly's network, via a Fly `release_command`.
+
+### How
+- `api-server/migrate.ts` — applies the 4 migration files + `scripts/seed-admin.sql`
+  in order, using the `@workspace/db` pool over the private `.flycast` address.
+- The SQL is inlined into `dist/migrate.cjs` at build time (esbuild `.sql` text
+  loader), so the bundle is self-contained.
+- `fly.toml` → `[deploy] release_command = "node dist/migrate.cjs"`. It runs
+  once per deploy in a temporary machine; all steps are idempotent
+  (`CREATE … IF NOT EXISTS`, `ON CONFLICT DO NOTHING`) so re-runs are safe.
+- Deploy log confirmed: `✔ release_command … completed successfully`.
+
+### Migrations applied
+`0000_core_tables` → `0001_appointment_sync_events` → `0002_marketing_sources`
+→ `0003_drsnip_schema` → `seed-admin` — all succeeded (the release_command
+exits non-zero on any failure and would have aborted the deploy; it did not).
+This creates all 9 tables: `users`, `sessions`, `login_attempts`, `settings`,
+`settings_audit`, `submissions`, `link_generations`, `appointment_sync_events`,
+`marketing_sources` (the last seeded with 10 source rows by 0002).
+
+### Admin console
+- **URL:** https://drsnip-intake-demo.fly.dev/admin/signin
+- **Email:** `raunek@xpandai.com`
+- **Password:** `DrSnipDemo2026!`  — **TEMPORARY — ROTATE BEFORE PRODUCTION USE.**
+  Demo credential only. Rotate: generate a new bcrypt hash
+  (`node -e "console.log(require('bcryptjs').hashSync('NEW_PW',10))"`) and
+  `UPDATE users SET password_hash='…' WHERE email='raunek@xpandai.com';`.
+
+### Smoke-test results (2026-05-20 ~22:19 UTC)
+| Test | Result |
+|---|---|
+| `GET /healthz` | `200 {"status":"ok"}` |
+| `POST /api/submit` (registration) | `200 {"success":true,"id":"d9e4ea0f-3eaf-4a03-902f-5ca0ff0409d6"}` |
+| `POST /api/submit` (consultation) | `200 {"success":true,"id":"5733b4b8-2ec0-4a4b-ae48-18aa19203fd4"}` |
+| `POST /api/auth/login` (seeded admin) | `200` — session cookie issued |
+| `GET /api/auth/me` | `200` — `raunek@xpandai.com` |
+| `GET /api/submissions` | `200` — both rows, `total: 2`, correct `form_type` |
+| `GET /api/submissions/{id}` | `200` — full detail incl. `raw_payload` |
+| `GET /api/submissions/activity` | `200` |
+| `GET /api/admin/marketing-sources` | `200` — 10 seeded rows |
+| `/admin/*` SPA routes (5) | all `200` |
+
+### Admin UI audit (Phase 1 D7 carry-over)
+No fixes were needed. `Submissions.tsx`, `SubmissionDetailModal.tsx`, and
+`Activity.tsx` were rewritten for the DrSnip schema in Phase 2; their API
+responses were verified end-to-end above and contain no `rank` / `sfStatus` /
+`ruleSet` / `by_rank` references. Browser-render verification (logging in and
+clicking through the 5 pages) is recommended as a final visual check, but the
+data layer every page depends on is confirmed working.
+
+### Note
+The `release_command` re-runs the (idempotent) migrations on every future
+deploy — standard Fly practice; no action needed.
