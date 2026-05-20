@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   jsonb,
   pgTable,
@@ -9,12 +10,12 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-// Phase 1 (DrSnip adaptation): the lead-scoring, Salesforce-push, and
-// hold-valve column groups were removed along with their subsystems. The
-// channel-attribution and `q_*` survey columns are retained as-is for now —
-// Phase 2 replaces them with DrSnip's patient-intake fields. `raw_payload`
-// always holds the full submission regardless.
-
+// Phase 2 (DrSnip): the `submissions` table holds intake submissions from both
+// DrSnip forms. `form_type` discriminates Registration vs Consultation. Patient
+// identity + insurance-card-stub fields are dedicated columns; every form
+// answer is also kept verbatim in `raw_payload` (jsonb) — the admin detail
+// view renders from there. The CJC survey (q_*) and channel-attribution
+// columns were dropped — see migrations/0003_drsnip_schema.sql.
 export const submissions = pgTable(
   "submissions",
   {
@@ -22,47 +23,35 @@ export const submissions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
 
-    // Channel attribution
-    source: text("source").notNull(),
-    surveyDetail: text("survey_detail").notNull(),
-    leadSource: text("lead_source").notNull(),
-    campaign: text("campaign"),
-    event: text("event"),
-    utmSource: text("utm_source"),
-    utmMedium: text("utm_medium"),
-    utmCampaign: text("utm_campaign"),
+    // 'registration' | 'consultation' — allowed set enforced in the app layer.
+    formType: text("form_type").notNull().default("registration"),
 
-    // Lead identity
+    // Patient identity.
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
     email: text("email").notNull(),
     phone: text("phone").notNull(),
-    stateResidence: text("state_residence").notNull(),
-    federalAgency: text("federal_agency").notNull(),
+    dateOfBirth: text("date_of_birth"),
+    stateResidence: text("state_residence"),
 
-    // Survey answers (mirror SF Sofa_Consultation_Survey_Q* fields)
-    qSpeakerRating: text("q_speaker_rating"),
-    qWorkshopContent: text("q_workshop_content"),
-    qPreRetirement: text("q_pre_retirement").notNull(),
-    qEvalComments: text("q_eval_comments"),
-    qYearsToRetire: text("q_years_to_retire"),
-    qAge: text("q_age"),
-    qSeparating: text("q_separating"),
-    qMaritalStatus: text("q_marital_status"),
-    qMaxingTsp: text("q_maxing_tsp"),
-    qTspContributionPct: text("q_tsp_contribution_pct"),
-    qExternalInvestments: text("q_external_investments"),
-    qTspBalance: text("q_tsp_balance"),
-    qAreasOfConcern: text("q_areas_of_concern"),
+    // Insurance card upload — STUBBED (see components/ui/FileUploadStub.tsx and
+    // PHASE_2_NOTES.md). Only the filename + a flag are stored; no file bytes
+    // are ever persisted. Real object storage with a BAA is a later phase.
+    insuranceCardFrontFilename: text("insurance_card_front_filename"),
+    insuranceCardBackFilename: text("insurance_card_back_filename"),
+    hasInsuranceCards: boolean("has_insurance_cards").notNull().default(false),
 
-    // Raw payload — full submission JSON, retained for audit/forensics.
+    // Full submission JSON — every form answer lives here.
     rawPayload: jsonb("raw_payload").notNull(),
   },
   (table) => [
     index("submissions_created_at_idx").on(table.createdAt),
     index("submissions_email_idx").on(table.email),
-    index("submissions_source_idx").on(table.source),
+    index("submissions_form_type_idx").on(table.formType),
   ],
 );
 
