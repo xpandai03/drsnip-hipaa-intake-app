@@ -66,7 +66,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* LIGHT MODE — CJ Wealth Red/White Brand */
+/* LIGHT MODE — DrSnip clinical blue / white brand */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
@@ -74,59 +74,60 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* Brand red: CJ Wealth crimson */
-  --primary: 0 73% 37%;           /* #A71B1B rich crimson */
+  /* Brand: DrSnip deep clinical blue */
+  --primary: 208 79% 28%;         /* #0F4C81 deep clinical blue */
   --primary-foreground: 0 0% 100%;
 
-  /* Page background: deep red */
-  --background: 0 70% 30%;        /* #822020 deep red */
-  --foreground: 0 0% 98%;
+  /* Page background: white */
+  --background: 0 0% 100%;
+  --foreground: 215 25% 18%;
 
   /* Cards: crisp white */
   --card: 0 0% 100%;
-  --card-foreground: 0 0% 10%;
-  --card-border: 0 0% 90%;
+  --card-foreground: 215 25% 18%;
+  --card-border: 214 20% 90%;
 
   /* Borders, inputs */
-  --border: 0 0% 88%;
-  --input: 0 0% 85%;
-  --ring: 0 73% 37%;
+  --border: 214 20% 88%;
+  --input: 214 20% 85%;
+  --ring: 208 79% 28%;
 
   /* Muted surfaces */
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 45%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 15% 45%;
 
-  /* Accent = lighter red tint */
-  --accent: 0 60% 96%;
-  --accent-foreground: 0 73% 32%;
+  /* Accent = light blue tint (subtle hover surfaces) */
+  --accent: 200 80% 95%;
+  --accent-foreground: 208 79% 28%;
 
   /* Secondary */
-  --secondary: 0 0% 96%;
-  --secondary-foreground: 0 0% 10%;
+  --secondary: 210 20% 96%;
+  --secondary-foreground: 215 25% 18%;
 
-  /* Destructive */
-  --destructive: 0 84% 60%;
+  /* Destructive (standard error red) */
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
 
   /* Sidebar (unused but required) */
-  --sidebar: 0 70% 28%;
+  --sidebar: 208 79% 24%;
   --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 50% 40%;
-  --sidebar-primary: 0 73% 37%;
+  --sidebar-border: 208 40% 40%;
+  --sidebar-primary: 208 79% 28%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 60% 35%;
+  --sidebar-accent: 208 50% 35%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 0 73% 37%;
+  --sidebar-ring: 208 79% 28%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 10%;
-  --popover-border: 0 0% 88%;
+  --popover-foreground: 215 25% 18%;
+  --popover-border: 214 20% 88%;
 
-  --chart-1: 0 73% 37%;
-  --chart-2: 0 50% 55%;
-  --chart-3: 0 30% 70%;
-  --chart-4: 0 10% 80%;
-  --chart-5: 0 0% 90%;
+  /* Charts: blue → teal accent (#06B6D4) range */
+  --chart-1: 208 79% 38%;
+  --chart-2: 189 95% 43%;
+  --chart-3: 208 50% 60%;
+  --chart-4: 189 55% 65%;
+  --chart-5: 210 20% 80%;
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
@@ -160,40 +161,40 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --primary: 0 73% 45%;
+  --primary: 208 80% 55%;
   --primary-foreground: 0 0% 100%;
-  --background: 0 70% 18%;
+  --background: 215 35% 12%;
   --foreground: 0 0% 98%;
-  --card: 0 60% 22%;
+  --card: 215 30% 16%;
   --card-foreground: 0 0% 98%;
-  --card-border: 0 50% 30%;
-  --border: 0 50% 30%;
-  --input: 0 50% 32%;
-  --ring: 0 73% 45%;
-  --muted: 0 55% 25%;
-  --muted-foreground: 0 20% 65%;
-  --accent: 0 60% 30%;
+  --card-border: 215 25% 26%;
+  --border: 215 25% 26%;
+  --input: 215 25% 28%;
+  --ring: 208 80% 55%;
+  --muted: 215 25% 22%;
+  --muted-foreground: 215 15% 65%;
+  --accent: 208 50% 28%;
   --accent-foreground: 0 0% 98%;
-  --secondary: 0 55% 25%;
+  --secondary: 215 25% 22%;
   --secondary-foreground: 0 0% 98%;
-  --destructive: 0 84% 60%;
+  --destructive: 0 72% 55%;
   --destructive-foreground: 0 0% 98%;
-  --sidebar: 0 70% 18%;
+  --sidebar: 215 35% 12%;
   --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 50% 28%;
-  --sidebar-primary: 0 73% 45%;
+  --sidebar-border: 215 25% 24%;
+  --sidebar-primary: 208 80% 55%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 60% 28%;
+  --sidebar-accent: 208 50% 28%;
   --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 0 73% 45%;
-  --popover: 0 60% 22%;
+  --sidebar-ring: 208 80% 55%;
+  --popover: 215 30% 16%;
   --popover-foreground: 0 0% 98%;
-  --popover-border: 0 50% 30%;
-  --chart-1: 0 73% 55%;
-  --chart-2: 0 50% 60%;
-  --chart-3: 0 30% 65%;
-  --chart-4: 0 10% 75%;
-  --chart-5: 0 0% 85%;
+  --popover-border: 215 25% 26%;
+  --chart-1: 208 80% 60%;
+  --chart-2: 189 85% 55%;
+  --chart-3: 208 50% 65%;
+  --chart-4: 189 50% 70%;
+  --chart-5: 210 20% 80%;
 
   --shadow-2xs: 0px 2px 0px 0px rgba(0,0,0,0.08);
   --shadow-xs: 0px 2px 4px 0px rgba(0,0,0,0.12);

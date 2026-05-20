@@ -43,23 +43,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
   if (status !== "authenticated" || !user) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center font-sans"
-        // Same solid CJC red as the signed-in admin shell (was gradient; align
-        // with Tab 1 / LinkGenerator #CD1C3A for one consistent brand canvas).
-        style={{ background: "#CD1C3A" }}
-      >
+      <div className="min-h-screen flex items-center justify-center font-sans bg-primary">
         <Loader2 className="w-6 h-6 animate-spin text-white" />
       </div>
     );
   }
 
   return (
-    <div
-      className="min-h-screen font-sans"
-      // Tab 1 (LinkGenerator) reference red — exact hex from logo blend comment.
-      style={{ background: "#CD1C3A" }}
-    >
+    <div className="min-h-screen font-sans bg-primary">
       {/* Tab nav — bottom-fixed on mobile (full width, evenly distributed
           tabs visible without horizontal scroll), top-center floating pill
           on md+. On /admin/links the desktop pill drops to top-32 so the
@@ -97,7 +88,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                 className={
                   "shrink-0 inline-flex items-center gap-1.5 text-center text-xs sm:text-sm font-medium px-2 sm:px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap " +
                   (isActive
-                    ? "bg-[#A82020] text-white shadow-sm"
+                    ? "bg-primary text-white shadow-sm"
                     : "text-slate-700 hover:bg-slate-100")
                 }
               >

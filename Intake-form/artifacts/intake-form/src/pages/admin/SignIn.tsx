@@ -10,8 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import cjLogo from "@assets/cj-ss_1773942560897.png";
 import { useAuth } from "@/lib/auth-context";
+
+const DRSNIP_LOGO = "/images/drsnip-logo.png";
 
 function readNextParam(): string {
   if (typeof window === "undefined") return "/admin/links";
@@ -76,13 +77,7 @@ export default function SignIn() {
   };
 
   return (
-    <div
-      className="min-h-screen font-sans relative overflow-hidden flex items-center justify-center px-6"
-      style={{
-        background:
-          "linear-gradient(135deg, #8B1A1A 0%, #A82020 40%, #C0282B 100%)",
-      }}
-    >
+    <div className="min-h-screen font-sans relative overflow-hidden flex items-center justify-center px-6 bg-primary">
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-white/5" />
         <div className="absolute top-1/3 -left-24 w-64 h-64 rounded-full bg-white/4" />
@@ -92,11 +87,11 @@ export default function SignIn() {
       <div className="relative z-10 w-full max-w-md">
         <div className="flex flex-col items-center mb-6">
           <img
-            src={cjLogo}
-            alt="CJ Wealth Management"
-            className="h-14 w-auto object-contain rounded-lg mb-3"
+            src={DRSNIP_LOGO}
+            alt="DrSnip"
+            className="h-12 w-auto object-contain mb-3"
           />
-          <h1 className="text-xl font-bold text-white">CJC Intake Console</h1>
+          <h1 className="text-xl font-bold text-white">DrSnip Intake Console</h1>
         </div>
 
         <Card className="rounded-3xl shadow-2xl shadow-black/20 border-0">
@@ -154,7 +149,7 @@ export default function SignIn() {
               <Button
                 type="submit"
                 disabled={submitting || !email || !password}
-                className="w-full bg-[#A82020] text-white hover:bg-[#8B1A1A] border-[#8B1A1A] py-2.5 font-semibold"
+                className="w-full bg-primary text-white hover:bg-primary/90 border-primary py-2.5 font-semibold"
                 data-testid="signin-submit"
               >
                 {submitting ? (

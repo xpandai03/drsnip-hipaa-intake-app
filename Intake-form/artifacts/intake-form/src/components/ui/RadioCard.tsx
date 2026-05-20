@@ -19,7 +19,7 @@ export function RadioCard({ label, selected, onClick, className }: RadioCardProp
       className={cn(
         "relative flex items-center justify-between w-full p-5 text-left transition-all duration-200 ease-out border-2 rounded-2xl cursor-pointer group outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
         selected
-          ? "border-primary bg-red-50 shadow-md shadow-primary/10"
+          ? "border-primary bg-primary/5 shadow-md shadow-primary/10"
           : "border-slate-200 bg-white hover:border-primary/40 hover:bg-slate-50 hover:shadow-lg hover:shadow-black/5",
         className
       )}
