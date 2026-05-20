@@ -1,16 +1,16 @@
 // GET /api/submissions — paginated list of submissions for the admin tab.
 //
 // Auth-guarded via requireAuth. Returns ONLY the lean columns needed for the
-// table view; raw_payload + scoring_trace are heavy and live on the detail
-// endpoint instead. Pagination is always bounded — no unbounded SELECT.
+// table view; raw_payload lives on the detail endpoint instead. Pagination is
+// always bounded — no unbounded SELECT.
+//
+// Phase 1 (DrSnip): the sf_status / rank / lead_score filters and columns were
+// removed along with the scoring + Salesforce subsystems.
 //
 // Query params (all optional):
 //   page        default 1
 //   limit       default 50, max 100
-//   source      "federal" | "internal" | "fnn"
-//   sf_status   "pending" | "sent" | "error" | "skipped" | "held" | "discarded"
-//   rank        "A" | "B+" | "B" | "C" | "N/A" | "unscored"
-//                 unscored ⇒ rank IS NULL
+//   source      marketing source key — exact match
 //   start_date  YYYY-MM-DD inclusive
 //   end_date    YYYY-MM-DD inclusive (treated as end-of-day)
 //   search      free-text — case-insensitive substring across email,
@@ -18,8 +18,7 @@
 //
 // Response:
 //   {
-//     submissions: [{ id, createdAt, source, firstName, lastName, email,
-//                     rank, leadScore, sfLeadId, sfStatus }],
+//     submissions: [{ id, createdAt, source, firstName, lastName, email }],
 //     total: number,
 //     page: number,
 //     hasMore: boolean
@@ -36,21 +35,9 @@ import {
   ilike,
   lte,
   or,
-  sql,
   submissions,
 } from "@workspace/db";
 import { requireAuth } from "../_lib/auth";
-
-const ALLOWED_SOURCES = new Set(["federal", "internal", "fnn"]);
-const ALLOWED_SF_STATUSES = new Set([
-  "pending",
-  "sent",
-  "error",
-  "skipped",
-  "held",
-  "discarded",
-]);
-const ALLOWED_RANKS = new Set(["A", "B+", "B", "C", "N/A", "unscored"]);
 
 function firstOf(value: unknown): string | undefined {
   if (Array.isArray(value)) return value[0] as string | undefined;
@@ -101,25 +88,13 @@ export default async function handler(
   const offset = (page - 1) * limit;
 
   const sourceParam = firstOf(q.source);
-  const sfStatusParam = firstOf(q.sf_status);
-  const rankParam = firstOf(q.rank);
   const search = firstOf(q.search);
   const startDate = parseDateStart(q.start_date);
   const endDateExclusive = parseDateEndExclusive(q.end_date);
 
   const filters: Array<ReturnType<typeof eq> | ReturnType<typeof and>> = [];
-  if (sourceParam && ALLOWED_SOURCES.has(sourceParam)) {
-    filters.push(eq(submissions.source, sourceParam));
-  }
-  if (sfStatusParam && ALLOWED_SF_STATUSES.has(sfStatusParam)) {
-    filters.push(eq(submissions.sfStatus, sfStatusParam));
-  }
-  if (rankParam && ALLOWED_RANKS.has(rankParam)) {
-    if (rankParam === "unscored") {
-      filters.push(sql`${submissions.rank} IS NULL`);
-    } else {
-      filters.push(eq(submissions.rank, rankParam));
-    }
+  if (sourceParam && sourceParam.trim().length > 0) {
+    filters.push(eq(submissions.source, sourceParam.trim()));
   }
   if (startDate) filters.push(gte(submissions.createdAt, startDate));
   if (endDateExclusive) filters.push(lte(submissions.createdAt, endDateExclusive));
@@ -144,10 +119,6 @@ export default async function handler(
         firstName: submissions.firstName,
         lastName: submissions.lastName,
         email: submissions.email,
-        rank: submissions.rank,
-        leadScore: submissions.leadScore,
-        sfLeadId: submissions.sfLeadId,
-        sfStatus: submissions.sfStatus,
       })
       .from(submissions)
       .where(whereClause)

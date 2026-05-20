@@ -5,5 +5,7 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node"]
   },
-  "include": ["**/*.ts"]
+  "//": "Phase 1 (DrSnip): also type-checks the Hono server entry in ../api-server. The _test suite is excluded — it predates the subsystem strip and needs a refresh (see PHASE_1_NOTES.md).",
+  "include": ["**/*.ts", "../api-server/**/*.ts"],
+  "exclude": ["_test/**"]
 }

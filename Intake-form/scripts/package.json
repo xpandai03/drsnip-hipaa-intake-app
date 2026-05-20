@@ -7,13 +7,11 @@
     "hello": "tsx ./src/hello.ts",
     "seed-settings": "tsx ./src/seed-settings.ts",
     "seed-admin-users": "tsx ./src/seed-admin-users.ts",
-    "seed-rule-set-v1": "tsx ./src/seed-rule-set-v1.ts",
     "test": "node --test --import tsx ./test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
-    "@workspace/scoring": "workspace:*",
     "bcryptjs": "catalog:",
     "drizzle-orm": "catalog:"
   },

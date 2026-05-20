@@ -1,8 +1,12 @@
 // GET /api/submissions/activity — aggregated daily counts for the heatmap.
 //
-// Auth-guarded. Returns daily totals plus per-source and per-rank
-// breakdowns inside the requested date window. Defaults to the last 90
-// days (matches the heatmap default).
+// Auth-guarded. Returns daily totals plus a per-source breakdown inside the
+// requested date window. Defaults to the last 90 days (matches the heatmap
+// default).
+//
+// Phase 1 (DrSnip): the per-rank breakdown and the sent/errored summary tiles
+// were removed along with the scoring + Salesforce subsystems. The summary now
+// carries the window total only.
 //
 // Single aggregation query — buckets by DATE(created_at AT TIME ZONE 'UTC')
 // so day boundaries line up with the SVG heatmap regardless of where the
@@ -44,14 +48,6 @@ type DayBucket = {
   date: string;
   total: number;
   by_source: { federal: number; internal: number; fnn: number };
-  by_rank: {
-    A: number;
-    "B+": number;
-    B: number;
-    C: number;
-    "N/A": number;
-    unscored: number;
-  };
 };
 
 export default async function handler(
@@ -87,24 +83,21 @@ export default async function handler(
   // End boundary is exclusive: the next UTC day after `endDate`.
   const endExclusive = addDaysUtc(endDate, 1);
 
-  // Single aggregation: one row per (day, source, rank) tuple. We then fold
-  // these into per-day buckets in JS — cheaper than emitting 12 SUM(CASE)
-  // expressions and just as fast for a 90-day window.
+  // Single aggregation: one row per (day, source) tuple. We then fold these
+  // into per-day buckets in JS.
   const dailyResult = await db.execute<{
     day: string;
     source: string;
-    rank: string | null;
     total: string;
   }>(sql`
     SELECT
       TO_CHAR(DATE_TRUNC('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
       source,
-      rank,
       COUNT(*)::text AS total
     FROM submissions
     WHERE created_at >= ${startDate}
       AND created_at < ${endExclusive}
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2
     ORDER BY 1
   `);
 
@@ -121,7 +114,6 @@ export default async function handler(
       date: key,
       total: 0,
       by_source: { federal: 0, internal: 0, fnn: 0 },
-      by_rank: { A: 0, "B+": 0, B: 0, C: 0, "N/A": 0, unscored: 0 },
     });
   }
 
@@ -133,39 +125,16 @@ export default async function handler(
     if (row.source === "federal") bucket.by_source.federal += n;
     else if (row.source === "internal") bucket.by_source.internal += n;
     else if (row.source === "fnn") bucket.by_source.fnn += n;
-    const rankKey: keyof DayBucket["by_rank"] | null =
-      row.rank === "A" ||
-      row.rank === "B+" ||
-      row.rank === "B" ||
-      row.rank === "C" ||
-      row.rank === "N/A"
-        ? row.rank
-        : row.rank === null
-          ? "unscored"
-          : null;
-    if (rankKey) bucket.by_rank[rankKey] += n;
   }
 
-  // Summary tiles: count sent/errored/total over the whole window.
-  const summaryResult = await db.execute<{
-    total: string;
-    sent: string;
-    errored: string;
-  }>(sql`
-    SELECT
-      COUNT(*)::text AS total,
-      SUM(CASE WHEN sf_status = 'sent' THEN 1 ELSE 0 END)::text AS sent,
-      SUM(CASE WHEN sf_status = 'error' THEN 1 ELSE 0 END)::text AS errored
+  // Summary tile: total submissions over the whole window.
+  const summaryResult = await db.execute<{ total: string }>(sql`
+    SELECT COUNT(*)::text AS total
     FROM submissions
     WHERE created_at >= ${startDate}
       AND created_at < ${endExclusive}
   `);
-
-  const sRow = summaryResult.rows[0];
-  const totalAll = Number(sRow?.total ?? 0);
-  const sent = Number(sRow?.sent ?? 0);
-  const errored = Number(sRow?.errored ?? 0);
-  const successRate = totalAll > 0 ? sent / totalAll : 0;
+  const totalAll = Number(summaryResult.rows[0]?.total ?? 0);
 
   return res.status(200).json({
     start_date: toIsoDay(startDate),
@@ -173,9 +142,6 @@ export default async function handler(
     daily_counts: Array.from(buckets.values()),
     summary: {
       total: totalAll,
-      sent,
-      errored,
-      success_rate: successRate,
     },
   });
 }

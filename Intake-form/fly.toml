@@ -1,0 +1,35 @@
+# Fly.io deployment config — DrSnip intake form (Phase 1 scaffold).
+#
+# First-time setup:  fly apps create drsnip-intake-demo
+# Set the database:  fly secrets set DATABASE_URL=postgres://...
+# Deploy:            fly deploy
+
+app = "drsnip-intake-demo"
+primary_region = "lax"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+
+# Single web process serving both the SPA and the /api/* routes.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

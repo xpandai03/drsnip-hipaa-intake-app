@@ -1,7 +1,5 @@
 import {
-  boolean,
   index,
-  integer,
   jsonb,
   pgTable,
   text,
@@ -10,7 +8,12 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { scoringRuleSets } from "./scoring.js";
+
+// Phase 1 (DrSnip adaptation): the lead-scoring, Salesforce-push, and
+// hold-valve column groups were removed along with their subsystems. The
+// channel-attribution and `q_*` survey columns are retained as-is for now —
+// Phase 2 replaces them with DrSnip's patient-intake fields. `raw_payload`
+// always holds the full submission regardless.
 
 export const submissions = pgTable(
   "submissions",
@@ -53,36 +56,13 @@ export const submissions = pgTable(
     qTspBalance: text("q_tsp_balance"),
     qAreasOfConcern: text("q_areas_of_concern"),
 
-    // Scoring outputs
-    scoringRuleSetId: uuid("scoring_rule_set_id").references(
-      () => scoringRuleSets.id,
-    ),
-    rank: text("rank"),
-    leadScore: text("lead_score"),
-    scoringTrace: jsonb("scoring_trace"),
-    autoScheduleHold: boolean("auto_schedule_hold").notNull().default(false),
-
-    // Salesforce push
-    sfLeadId: text("sf_lead_id"),
-    sfStatus: text("sf_status").notNull().default("pending"),
-    sfError: text("sf_error"),
-    sfAttempts: integer("sf_attempts").notNull().default(0),
-    sfLastAttemptAt: timestamp("sf_last_attempt_at", { withTimezone: true }),
-
-    // Hold valve audit (populated when an admin releases or discards a held lead)
-    releasedBy: text("released_by"),
-    releasedAt: timestamp("released_at", { withTimezone: true }),
-    discardedBy: text("discarded_by"),
-    discardedAt: timestamp("discarded_at", { withTimezone: true }),
-
-    // Raw payload for forensics
+    // Raw payload — full submission JSON, retained for audit/forensics.
     rawPayload: jsonb("raw_payload").notNull(),
   },
   (table) => [
     index("submissions_created_at_idx").on(table.createdAt),
     index("submissions_email_idx").on(table.email),
     index("submissions_source_idx").on(table.source),
-    index("submissions_sf_status_idx").on(table.sfStatus),
   ],
 );
 

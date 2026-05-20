@@ -1,6 +1,5 @@
 import { useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
@@ -10,54 +9,30 @@ import { useAuth } from "@/lib/auth-context";
  * from AuthProvider; on unauthenticated, redirects to /admin/signin with a
  * `?next=` pointing at the current path so the user lands back here after
  * a successful login. Shows a floating tab nav (Links / Submissions /
- * Activity / Scoring Rules) and a user chip with logout.
+ * Activity / Sources) and a user chip with logout.
  *
  * The server is the gate (every protected /api/* handler uses requireAuth).
  * This guard is UX, not security — but it removes the flash-of-content
  * problem on the client.
+ *
+ * Phase 1 (DrSnip): the "Held Leads" and "Scoring Rules" tabs were removed
+ * along with the hold-valve and scoring subsystems.
  */
 
 const TABS: Array<{
   to: string;
   label: string;
   match: (path: string) => boolean;
-  badgeQueryKey?: string;
 }> = [
   { to: "/admin/links", label: "Links", match: (p) => p === "/admin/links" || p === "/admin" },
   { to: "/admin/submissions", label: "Submissions", match: (p) => p.startsWith("/admin/submissions") },
-  {
-    to: "/admin/held-leads",
-    label: "Held Leads",
-    match: (p) => p.startsWith("/admin/held-leads"),
-    badgeQueryKey: "held-count",
-  },
   { to: "/admin/activity", label: "Activity", match: (p) => p.startsWith("/admin/activity") },
-  { to: "/admin/scoring-rules", label: "Scoring Rules", match: (p) => p.startsWith("/admin/scoring-rules") },
   { to: "/admin/sources", label: "Sources", match: (p) => p.startsWith("/admin/sources") },
 ];
-
-async function fetchHeldCount(): Promise<number> {
-  const res = await fetch("/api/submissions/held?countOnly=1", {
-    credentials: "same-origin",
-  });
-  if (!res.ok) return 0;
-  const data = (await res.json()) as { count?: number };
-  return Number(data.count ?? 0);
-}
 
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { status, user, logout } = useAuth();
-
-  // Count badge for the Held Leads tab. Enabled only when authenticated so
-  // unauthenticated visits to /admin/signin don't ping a protected endpoint.
-  const heldCountQuery = useQuery({
-    queryKey: ["held-count"],
-    queryFn: fetchHeldCount,
-    enabled: status === "authenticated",
-    refetchOnWindowFocus: true,
-  });
-  const heldCount = heldCountQuery.data ?? 0;
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -113,7 +88,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         >
           {TABS.map((tab) => {
             const isActive = tab.match(location);
-            const showBadge = tab.badgeQueryKey === "held-count" && heldCount > 0;
             return (
               <Link
                 key={tab.to}
@@ -128,19 +102,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                 }
               >
                 <span>{tab.label}</span>
-                {showBadge && (
-                  <span
-                    data-testid="admin-tab-badge-held"
-                    className={
-                      "inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-semibold " +
-                      (isActive
-                        ? "bg-white/20 text-white"
-                        : "bg-[#A82020] text-white")
-                    }
-                  >
-                    {heldCount}
-                  </span>
-                )}
               </Link>
             );
           })}

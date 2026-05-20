@@ -1,22 +1,35 @@
-# CJC Intake Form
+# DrSnip Intake Form
 
-Single Vite + React form that replaces the SOFA Evaluation SurveyMonkey form.
-Submits to a Zapier Catch Hook via a Vercel serverless function, which routes
-to Salesforce.
+Patient-intake web form for **DrSnip**, a HIPAA-regulated vasectomy clinic.
+Adapted from a prior client's (CJC) intake codebase.
+
+> **Phase status.** This repo is mid-adaptation. **Phase 1 (complete)** stripped
+> the prior client's subsystems (lead scoring, Salesforce push, TimeTap sync,
+> hold-valve) and migrated hosting from Vercel to Fly.io. **The form content is
+> still the prior client's** — Phase 2 replaces it with DrSnip's questions and
+> rebrands the UI; Phase 3 adds insurance-card upload and PDF generation. See
+> `PHASE_1_NOTES.md` at the repo root.
+
+## Stack
+
+- **Frontend:** Vite + React 19 + TypeScript, Tailwind CSS v4, wouter (routing).
+- **Backend:** a single [Hono](https://hono.dev) server (`api-server/`) that
+  serves the built SPA and the `/api/*` routes in one process.
+- **Database:** PostgreSQL via Drizzle ORM (`lib/db/`).
+- **Repo:** pnpm workspace monorepo — packages: `artifacts/intake-form` (SPA),
+  `lib/db` (database), `scripts` (seed scripts).
+- **Hosting:** Fly.io (Docker image; `Dockerfile` + `fly.toml`).
 
 ## Project layout
 
 ```
-Intake-form/                    ← pnpm-workspace root + Vercel project root
-├── api/
-│   └── submit.ts               ← Vercel serverless function
-├── artifacts/
-│   └── intake-form/            ← Vite + React SPA
-│       └── src/pages/
-│           ├── Home.tsx        ← The form
-│           └── LinkGenerator.tsx ← Internal admin tool
-├── lib/                        ← Shared workspace packages
-├── vercel.json
+Intake-form/                     ← pnpm-workspace root
+├── api/                         ← API route handlers (one file per route)
+├── api-server/                  ← Hono server: mounts api/* handlers + serves the SPA
+├── artifacts/intake-form/       ← Vite + React SPA
+├── lib/db/                      ← Drizzle ORM schema + Postgres client
+├── scripts/                     ← seed scripts (admin users, settings)
+├── Dockerfile, fly.toml         ← Fly.io deployment
 └── .env.local.example
 ```
 
@@ -24,106 +37,51 @@ Intake-form/                    ← pnpm-workspace root + Vercel project root
 
 ```sh
 pnpm install
-pnpm --filter @workspace/intake-form dev    # form on http://localhost:5173
+
+# Frontend only (fast iteration on the form UI) — http://localhost:5173
+pnpm --filter @workspace/intake-form dev
+
+# Full server (SPA + /api/* on one port) — http://localhost:8080
+# Requires DATABASE_URL for database-backed routes to work.
+pnpm build      # typecheck + build SPA/libs + bundle the server
+pnpm start      # runs dist/server.cjs
 ```
 
-For end-to-end testing of `/api/submit` locally, install the Vercel CLI and run:
-
-```sh
-vercel dev
-```
-
-This serves both the SPA and the `api/submit.ts` function, reading the
-`ZAPIER_WEBHOOK_*` vars below from `.env.local`.
-
-## Environment variables
-
-`/api/submit` dispatches to one of three Zapier Catch Hooks based on the
-`?source=` URL param the form was loaded with. All three should be set in any
-environment that handles real submissions.
-
-| Var | `?source=` | Survey_Detail__c | Salesforce Campaign route |
-|---|---|---|---|
-| `ZAPIER_WEBHOOK_FEDERAL` | `federal` (default) | `DC SOFA` | Federal_Agency__c → agency-specific Campaign |
-| `ZAPIER_WEBHOOK_INTERNAL` | `internal` | `DC SOFA 2` | "INTERNAL MARKETING" Campaign |
-| `ZAPIER_WEBHOOK_FNN` | `fnn` | `DC SOFA 3` | FNN Campaign |
-
-If `?source=` is missing or unrecognized, the request is treated as `federal`.
-If the matching env var is unset for an incoming request, `/api/submit` returns
-500 with `Webhook URL not configured for source: <source>`.
-
-Copy `.env.local.example` → `.env.local` and fill in the values before running
-`vercel dev` or deploying. The legacy single-webhook var `ZAPIER_WEBHOOK_URL`
-is no longer read.
-
-## Deploy to Vercel
-
-1. Set Vercel **Root Directory** to `Intake-form/` (this folder).
-2. Add `ZAPIER_WEBHOOK_FEDERAL`, `ZAPIER_WEBHOOK_INTERNAL`, and
-   `ZAPIER_WEBHOOK_FNN` as Project Environment Variables.
-3. Build settings auto-load from `vercel.json`:
-   - Build command: `pnpm --filter @workspace/intake-form build`
-   - Output directory: `artifacts/intake-form/dist/public`
-   - Install command: `pnpm install --frozen-lockfile=false`
-4. SPA fallback rewrite is configured so `/internal-tools-x9k2` and other
-   client-side routes work after deployment.
+Copy `.env.local.example` → `.env.local` and set `DATABASE_URL` before running
+the full server.
 
 ## Routes
 
-- `/` — public intake form
-- `/internal-tools-x9k2` — link generator for the team (not linked from the form,
-  not public-facing). Bookmark the URL or share manually.
-- `POST /api/submit` — Vercel serverless function; routes the payload to one of
-  the three `ZAPIER_WEBHOOK_*` URLs based on the `source` field in the body.
+- `/` — public intake form (renders when loaded with a `?source=` param).
+- `/admin/*` — auth-gated admin console (submissions, activity, sources, links).
+- `POST /api/submit` — accepts a form submission, persists it to `submissions`.
+- `GET /healthz` — health check (used by Fly.io).
 
-## Source attribution via URL params
+## Build & deploy (Fly.io)
 
-The form reads `source`, `campaign`, `event`, and standard `utm_*` params on
-mount and includes them in the submission payload. `source` drives both the
-client-side `leadSource` label (preserved for downstream Zaps that still set
-`Lead.LeadSource`) and the `surveyDetail` field that the Salesforce Apex
-trigger `LeadHandler.addLeadInCampaign` reads to pick a Campaign:
-
-| `?source=` | `leadSource` (in payload) | `surveyDetail` (in payload, drives Campaign routing) |
-|---|---|---|
-| `fnn` | `FNN: Webinar` | `DC SOFA 3` |
-| `internal` | `Internal: Webinar` | `DC SOFA 2` |
-| `federal` | `SOFA: Webinar` | `DC SOFA` |
-| (none / unknown) | `SOFA: Webinar` (default) | `DC SOFA` (default) |
-
-`leadSource` was the original channel signal but is unreliable for attribution
-(Apex doesn't read it; the Zaps hardcode a value). `surveyDetail` is what Apex
-actually routes on. See `CAMPAIGN_AUDIT_FINDINGS.md` for details.
-
-Use the `/internal-tools-x9k2` page to generate pre-tagged URLs.
-
-## Feature flags
-
-Edit `artifacts/intake-form/src/pages/Home.tsx`:
-
-```ts
-const SHOW_FEEDBACK_QUESTIONS = true;  // Q4, Q5, Q7
+```sh
+fly apps create drsnip-intake-demo          # one time
+fly secrets set DATABASE_URL=postgres://...  # one time
+fly deploy                                   # builds the Dockerfile, ships it
 ```
 
-When `false`, the Presentation Feedback step is removed and the progress bar
-adjusts. Q6 (pre-retirement review) is the qualifying question and is always
-shown regardless of this flag.
+The Docker build runs `pnpm build`, which compiles the SPA and bundles the Hono
+server into `dist/server.cjs`. The runtime image is Node 20 + that bundle + the
+static SPA.
 
-## Replit dev (legacy)
+## Environment variables
 
-The repo can still be opened in Replit. Replit-specific Vite plugins
-(`runtime-error-modal`, `cartographer`, `dev-banner`) load only when `REPL_ID`
-is present in the environment, so they don't run on Vercel builds.
+| Var | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | yes | PostgreSQL connection string (`lib/db`). |
+| `NODE_ENV` | no | `production` makes session cookies Secure-only. |
+| `PORT` | no | api-server listen port (default `8080`). |
 
-## Architecture decisions
+See `.env.local.example`.
 
-- **Server side: Vercel serverless functions only.** Considered a standalone
-  Express api-server (the dormant `artifacts/api-server/` package, deleted
-  in Phase 2 Sprint 0); chose Vercel functions for v1 to minimize ops
-  surface (one deploy, one env, one log stream). All new endpoints live
-  under `Intake-form/api/`. See `PLAN_PHASE_2.md`.
-- **Persistence: Vercel Postgres + Drizzle ORM** (`lib/db/`).
-- **API contracts: OpenAPI 3.1 + orval.** New endpoints get declared in
-  `lib/api-spec/openapi.yaml`; `pnpm --filter @workspace/api-spec codegen`
-  regenerates the React Query client (`lib/api-client-react`) and Zod
-  validators (`lib/api-zod`).
+## HIPAA note
+
+This app will handle PHI in production. Application code logs **IDs and error
+types only — never request-body content**. Keep it that way. A HIPAA-compliance
+pass (PHI access auditing, BAAs, at-rest encryption review) is tracked for a
+later phase.

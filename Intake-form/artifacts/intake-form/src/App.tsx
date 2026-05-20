@@ -11,8 +11,6 @@ import SignIn from "@/pages/admin/SignIn";
 import AdminLinks from "@/pages/admin/Links";
 import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
-import AdminScoringRules from "@/pages/admin/ScoringRules";
-import AdminHeldLeads from "@/pages/admin/HeldLeads";
 import AdminSources from "@/pages/admin/Sources";
 import { AuthProvider } from "@/lib/auth-context";
 
@@ -70,16 +68,6 @@ function Router() {
       <Route path="/admin/activity">
         <WithAuth>
           <AdminActivity />
-        </WithAuth>
-      </Route>
-      <Route path="/admin/scoring-rules">
-        <WithAuth>
-          <AdminScoringRules />
-        </WithAuth>
-      </Route>
-      <Route path="/admin/held-leads">
-        <WithAuth>
-          <AdminHeldLeads />
         </WithAuth>
       </Route>
       <Route path="/admin/sources">

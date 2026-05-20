@@ -1,20 +1,16 @@
 // GET /api/submissions/[id] — full detail for a single submission.
 //
 // Auth-guarded. Returns every column on the row including the heavy
-// raw_payload and scoring_trace blobs, plus a LEFT JOIN against
-// scoring_rule_sets so the UI can show "Scored by RuleSet v3: <name>"
-// without a second round-trip.
+// raw_payload blob.
 //
-// 404 when the id doesn't match a submission. 400 when the id isn't a
-// valid UUID — keeps the DB from running a useless cast.
+// Phase 1 (DrSnip): the scoring_rule_sets LEFT JOIN was removed along with
+// the scoring subsystem — the response no longer includes a `ruleSet` field.
+//
+// 404 when the id doesn't match a submission. 400 when the id isn't a valid
+// UUID — keeps the DB from running a useless cast.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import {
-  db,
-  eq,
-  scoringRuleSets,
-  submissions,
-} from "@workspace/db";
+import { db, eq, submissions } from "@workspace/db";
 import { requireAuth } from "../_lib/auth";
 
 const UUID_PATTERN =
@@ -43,16 +39,8 @@ export default async function handler(
   }
 
   const rows = await db
-    .select({
-      submission: submissions,
-      ruleSetVersion: scoringRuleSets.version,
-      ruleSetName: scoringRuleSets.name,
-    })
+    .select()
     .from(submissions)
-    .leftJoin(
-      scoringRuleSets,
-      eq(submissions.scoringRuleSetId, scoringRuleSets.id),
-    )
     .where(eq(submissions.id, id))
     .limit(1);
 
@@ -61,14 +49,5 @@ export default async function handler(
     return res.status(404).json({ error: "Submission not found" });
   }
 
-  return res.status(200).json({
-    submission: row.submission,
-    ruleSet: row.submission.scoringRuleSetId
-      ? {
-          id: row.submission.scoringRuleSetId,
-          version: row.ruleSetVersion,
-          name: row.ruleSetName,
-        }
-      : null,
-  });
+  return res.status(200).json({ submission: row });
 }

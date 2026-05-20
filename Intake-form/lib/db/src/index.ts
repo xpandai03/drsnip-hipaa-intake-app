@@ -22,7 +22,6 @@ import { z } from "zod/v4";
 import * as appointmentsSchema from "./schema/appointments.js";
 import * as linksSchema from "./schema/links.js";
 import * as marketingSourcesSchema from "./schema/marketing-sources.js";
-import * as scoringSchema from "./schema/scoring.js";
 import * as settingsSchema from "./schema/settings.js";
 import * as submissionsSchema from "./schema/submissions.js";
 
@@ -122,16 +121,19 @@ const schema = {
   ...appointmentsSchema,
   ...linksSchema,
   ...marketingSourcesSchema,
-  ...scoringSchema,
   ...settingsSchema,
   ...submissionsSchema,
 };
 
 const { Pool } = pg;
 
+// Phase 1 (DrSnip): downgraded from a hard throw at import time to a warning.
+// The single-process server (api-server/) must be able to boot — to serve the
+// SPA and answer health checks — even before DATABASE_URL is configured.
+// Connection errors then surface per-request on routes that touch the DB.
 if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+  console.warn(
+    "[db] DATABASE_URL is not set — database-backed routes will fail until it is configured.",
   );
 }
 
@@ -143,7 +145,6 @@ export const db = drizzle(pool, { schema });
 export * from "./schema/appointments.js";
 export * from "./schema/links.js";
 export * from "./schema/marketing-sources.js";
-export * from "./schema/scoring.js";
 export * from "./schema/settings.js";
 export * from "./schema/submissions.js";
 

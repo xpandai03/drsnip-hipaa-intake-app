@@ -1,0 +1,20 @@
+# Build artifacts and deps — reinstalled / rebuilt inside the image.
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+
+# Version control.
+.git
+.gitignore
+
+# Secrets — never bake these into the image.
+.env
+.env.local
+.env.*.local
+.vercel
+
+# Misc.
+.DS_Store
+*.log
