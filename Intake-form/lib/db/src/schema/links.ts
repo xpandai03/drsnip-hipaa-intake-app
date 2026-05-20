@@ -23,6 +23,9 @@ export const linkGenerations = pgTable(
     utmMedium: text("utm_medium"),
     utmCampaign: text("utm_campaign"),
     generatedUrl: text("generated_url").notNull(),
+    // Phase 2 polish — DrSnip link generator (migration 0004).
+    formType: text("form_type"),
+    notes: text("notes"),
   },
   (table) => [
     index("link_generations_created_at_idx").on(table.createdAt),
