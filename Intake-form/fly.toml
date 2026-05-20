@@ -10,6 +10,12 @@ primary_region = "lax"
 [build]
   dockerfile = "Dockerfile"
 
+# Runs once per deploy, in a temporary machine inside Fly's network (reaches
+# Postgres over .flycast — no tunnel). Applies the SQL migrations + admin
+# seed; all steps are idempotent.
+[deploy]
+  release_command = "node dist/migrate.cjs"
+
 [env]
   NODE_ENV = "production"
   PORT = "8080"

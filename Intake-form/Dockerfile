@@ -42,9 +42,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# The server bundle is self-contained; only the built SPA must travel with it.
+# Both bundles are self-contained; only the built SPA must travel with them.
 # STATIC_ROOT in api-server/index.ts resolves to this same relative path.
+# migrate.cjs is the Fly release_command (see fly.toml).
 COPY --from=builder /app/dist/server.cjs ./dist/server.cjs
+COPY --from=builder /app/dist/migrate.cjs ./dist/migrate.cjs
 COPY --from=builder /app/artifacts/intake-form/dist/public ./artifacts/intake-form/dist/public
 
 EXPOSE 8080
