@@ -24,8 +24,13 @@ RUN pnpm install --frozen-lockfile=false
 
 # Compile the @workspace/db library up front, as its own step, so its dist/
 # (and the .d.ts the api typecheck + esbuild bundle resolve) exist before
-# `pnpm run build` runs. The `ls` makes a missing emit fail loudly here.
-RUN pnpm --filter @workspace/db run build && ls -la lib/db/dist
+# `pnpm run build` runs. `--force` ignores any stale incremental tsbuildinfo
+# (a plain `tsc --build` was exiting 0 without emitting); the `test` makes a
+# missing emit fail loudly right here.
+RUN rm -rf lib/db/dist \
+ && pnpm --filter @workspace/db exec tsc --build --force \
+ && test -f lib/db/dist/index.d.ts \
+ && echo "lib/db compiled OK"
 
 # `pnpm run build` = typecheck + per-package build (SPA) + build:server
 # (the esbuild bundle of the Hono server).
