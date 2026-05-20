@@ -1,14 +1,19 @@
 # syntax=docker/dockerfile:1
 #
-# DrSnip intake form — Fly.io image (Phase 1 scaffold).
+# DrSnip intake form — Fly.io image.
 #
 # Stage 1 builds the Vite SPA, compiles the workspace libs, and bundles the
 # Hono API server (api-server/index.ts) into a single self-contained
 # dist/server.cjs via esbuild. Stage 2 is a minimal runtime carrying only
 # Node, that bundle, and the built static SPA — no node_modules.
+#
+# Base is node:20-slim (Debian / glibc) — NOT alpine. The pnpm platform
+# overrides in pnpm-workspace.yaml keep the linux-x64-GNU native binaries
+# (lightningcss, rollup, @tailwindcss/oxide) but strip the musl variants, so
+# an alpine/musl image would have no usable native binaries for the build.
 
 # ---- Stage 1: build --------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 RUN npm install -g pnpm@10.33.4
 WORKDIR /app
 
@@ -17,12 +22,17 @@ WORKDIR /app
 COPY . .
 RUN pnpm install --frozen-lockfile=false
 
-# `pnpm run build` = typecheck + per-package build (SPA + libs) + build:server
+# Compile the @workspace/db library up front, as its own step, so its dist/
+# (and the .d.ts the api typecheck + esbuild bundle resolve) exist before
+# `pnpm run build` runs. The `ls` makes a missing emit fail loudly here.
+RUN pnpm --filter @workspace/db run build && ls -la lib/db/dist
+
+# `pnpm run build` = typecheck + per-package build (SPA) + build:server
 # (the esbuild bundle of the Hono server).
 RUN pnpm run build
 
 # ---- Stage 2: runtime ------------------------------------------------------
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
