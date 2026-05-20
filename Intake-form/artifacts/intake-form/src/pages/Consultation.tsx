@@ -469,7 +469,7 @@ export default function Consultation() {
     },
     {
       id: "family-planning",
-      title: "Family Planning & Birth Control",
+      title: "Family Planning",
       description: "Your family-planning history helps guide the consultation.",
       render: () => (
         <div className="grid gap-7">
@@ -492,6 +492,16 @@ export default function Consultation() {
             onChange={(v) => update({ vasectomyConsideredDuration: v })}
             placeholder="e.g. about a year"
           />
+        </div>
+      ),
+      isValid: () => data.wantMoreChildren !== "",
+    },
+    {
+      id: "birth-control",
+      title: "Birth Control",
+      description: "Your birth-control history — current and prior methods.",
+      render: () => (
+        <div className="grid gap-7">
           <YesNoField
             label="Have you considered tubal ligation as an alternative sterilization choice?"
             value={data.consideredTubal}
@@ -523,7 +533,7 @@ export default function Consultation() {
           />
         </div>
       ),
-      isValid: () => data.wantMoreChildren !== "",
+      isValid: () => true,
     },
     {
       id: "considerations",
