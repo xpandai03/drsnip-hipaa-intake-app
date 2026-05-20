@@ -83,7 +83,8 @@ type RegistrationData = Record<MedicalKey, string> & {
   consentText: string;
   // Screen 3 — Medical Background
   primaryCarePhysician: string;
-  mhDetails: string;
+  // Per-question explanation for each medical question answered "Yes".
+  medicalDetails: Partial<Record<MedicalKey, string>>;
   // Screen 4 — Insurance
   insuranceCoverage: string;
   insuranceCompany: string;
@@ -124,7 +125,7 @@ const initialData: RegistrationData = {
   mhSurgeryComplications: "",
   mhPainSensitive: "",
   mhAspirin: "",
-  mhDetails: "",
+  medicalDetails: {},
   insuranceCoverage: "",
   insuranceCompany: "",
   insuranceIdNo: "",
@@ -144,9 +145,13 @@ export default function Home() {
   const update = (patch: Partial<RegistrationData>) =>
     setData((d) => ({ ...d, ...patch }));
 
-  const anyMedicalYes = MEDICAL_QUESTIONS.some(
-    (q) => data[q.key] === "Yes",
-  );
+  // Records a per-question explanation for a "Yes" medical answer.
+  const updateMedicalDetail = (key: MedicalKey, value: string) =>
+    setData((d) => ({
+      ...d,
+      medicalDetails: { ...d.medicalDetails, [key]: value },
+    }));
+
   const needsInsurance =
     data.insuranceCoverage !== "" &&
     data.insuranceCoverage !== "Self-pay / No insurance";
@@ -281,21 +286,26 @@ export default function Home() {
             placeholder="Optional"
           />
           {MEDICAL_QUESTIONS.map((q) => (
-            <YesNoField
-              key={q.key}
-              label={q.label}
-              value={data[q.key]}
-              onChange={(v) => update({ [q.key]: v } as Partial<RegistrationData>)}
-              required
-            />
+            <div key={q.key}>
+              <YesNoField
+                label={q.label}
+                value={data[q.key]}
+                onChange={(v) =>
+                  update({ [q.key]: v } as Partial<RegistrationData>)
+                }
+                required
+              />
+              {/* A "Yes" reveals an explanation box directly under that
+                  question — its answer is "Yes" plus this detail. */}
+              <Reveal show={data[q.key] === "Yes"}>
+                <TextAreaField
+                  label="Please share details, including a general timeframe."
+                  value={data.medicalDetails[q.key] ?? ""}
+                  onChange={(v) => updateMedicalDetail(q.key, v)}
+                />
+              </Reveal>
+            </div>
           ))}
-          <Reveal show={anyMedicalYes}>
-            <TextAreaField
-              label="You answered Yes above — please share details, including a general timeframe."
-              value={data.mhDetails}
-              onChange={(v) => update({ mhDetails: v })}
-            />
-          </Reveal>
         </div>
       ),
       isValid: () => MEDICAL_QUESTIONS.every((q) => data[q.key] !== ""),
