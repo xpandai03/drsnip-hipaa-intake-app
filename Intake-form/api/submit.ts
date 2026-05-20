@@ -3,60 +3,40 @@ import { z } from "zod";
 import { db, submissions } from "@workspace/db";
 
 // ---------------------------------------------------------------------------
-// Body shape — mirrors FormData in artifacts/intake-form/src/pages/Home.tsx.
+// POST /api/submit — accepts a submission from either DrSnip form.
 //
-// Phase 1 (DrSnip adaptation) keeps the existing CJC form fields so the form
-// still renders and submits. Phase 2 replaces the form content with DrSnip's
-// patient-intake questions and revises this schema accordingly.
-// ---------------------------------------------------------------------------
-
-const bodySchema = z.object({
-  // Identity
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
-  email: z.string().email().max(80),
-  phone: z.string().min(1).max(40),
-  stateResidence: z.string().min(1).max(80),
-
-  // Agency
-  agency: z.string().optional(),
-  agencyOther: z.string().optional(),
-
-  // Survey
-  speakerRating: z.string().optional(),
-  workshopContent: z.string().optional(),
-  preRetirementReview: z.string().optional(),
-  evalComments: z.string().optional(),
-  yearsToRetire: z.string().optional(),
-  age: z.string().optional(),
-  separating: z.string().optional(),
-  maritalStatus: z.string().optional(),
-  maxingTsp: z.string().optional(),
-  tspContributionPct: z.string().optional(),
-  externalInvestments: z.string().optional(),
-  tspBalance: z.string().optional(),
-  areasOfConcern: z.string().optional(),
-
-  // Channel attribution
-  source: z.string().optional(),
-  leadSource: z.string().optional(),
-  surveyDetail: z.string().optional(),
-  campaign: z.string().optional(),
-  event: z.string().optional(),
-  utmSource: z.string().optional(),
-  utmMedium: z.string().optional(),
-  utmCampaign: z.string().optional(),
-});
-
-// ---------------------------------------------------------------------------
-// Handler — POST /api/submit
-//
-// Phase 1: validate the body, persist one row to `submissions`, return its id.
-// The CJC-era lead scoring, Salesforce push, TimeTap self-scheduling redirect,
-// and hold-valve gate have all been removed.
+// Identity + insurance-card-stub fields land in dedicated columns; every form
+// answer (including all medical-history fields) is kept verbatim in
+// `raw_payload`. `.passthrough()` keeps the form-specific answer keys so they
+// reach raw_payload without each needing a schema entry.
 //
 // HIPAA: never log request-body content. Logs carry IDs and error types only.
 // ---------------------------------------------------------------------------
+
+// A stubbed file reference — filename + size only. No bytes (see
+// components/ui/FileUploadStub.tsx).
+const fileRefSchema = z
+  .object({
+    filename: z.string().min(1).max(255),
+    size: z.number().int().nonnegative(),
+  })
+  .nullable()
+  .optional();
+
+const bodySchema = z
+  .object({
+    formType: z.enum(["registration", "consultation"]).default("registration"),
+    firstName: z.string().min(1).max(120),
+    lastName: z.string().min(1).max(120),
+    email: z.string().email().max(160),
+    phone: z.string().min(1).max(40),
+    dateOfBirth: z.string().max(40).optional(),
+    stateResidence: z.string().max(120).optional(),
+    insuranceCardFront: fileRefSchema,
+    insuranceCardBack: fileRefSchema,
+  })
+  // Keep every other form answer so it flows through into raw_payload.
+  .passthrough();
 
 export default async function handler(
   req: VercelRequest,
@@ -77,48 +57,25 @@ export default async function handler(
   }
   const body = parsed.data;
 
-  // Agency: the form sends "Other" + agencyOther for free text, otherwise the
-  // picklist value. Collapse to a single string for the federal_agency column.
-  const agencyValue =
-    body.agency === "Other"
-      ? (body.agencyOther ?? "").trim()
-      : (body.agency ?? "").trim();
+  const front = body.insuranceCardFront ?? null;
+  const back = body.insuranceCardBack ?? null;
 
   try {
     const [row] = await db
       .insert(submissions)
       .values({
-        // Channel attribution — passed through as-is.
-        source: body.source ?? "",
-        surveyDetail: body.surveyDetail ?? "",
-        leadSource: body.leadSource ?? "",
-        campaign: body.campaign || null,
-        event: body.event || null,
-        utmSource: body.utmSource || null,
-        utmMedium: body.utmMedium || null,
-        utmCampaign: body.utmCampaign || null,
-        // Identity
+        formType: body.formType,
         firstName: body.firstName,
         lastName: body.lastName,
         email: body.email,
         phone: body.phone,
-        stateResidence: body.stateResidence,
-        federalAgency: agencyValue,
-        // Survey answers
-        qSpeakerRating: body.speakerRating || null,
-        qWorkshopContent: body.workshopContent || null,
-        qPreRetirement: body.preRetirementReview ?? "",
-        qEvalComments: body.evalComments || null,
-        qYearsToRetire: body.yearsToRetire || null,
-        qAge: body.age || null,
-        qSeparating: body.separating || null,
-        qMaritalStatus: body.maritalStatus || null,
-        qMaxingTsp: body.maxingTsp || null,
-        qTspContributionPct: body.tspContributionPct || null,
-        qExternalInvestments: body.externalInvestments || null,
-        qTspBalance: body.tspBalance || null,
-        qAreasOfConcern: body.areasOfConcern || null,
-        // Full payload, retained for audit/forensics.
+        dateOfBirth: body.dateOfBirth || null,
+        stateResidence: body.stateResidence || null,
+        // Stubbed insurance-card refs — filename only, never bytes.
+        insuranceCardFrontFilename: front?.filename ?? null,
+        insuranceCardBackFilename: back?.filename ?? null,
+        hasInsuranceCards: Boolean(front || back),
+        // Full submission JSON, retained for the admin detail view + audit.
         rawPayload: body,
       })
       .returning({ id: submissions.id });

@@ -1,109 +1,43 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  Info,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, Copy, FileText, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import {
   Chip,
   copyToClipboard,
   exactTime,
-  rankBadgeClass,
-  sfStatusBadgeClass,
-  sourceBadgeClass,
-  SF_LEAD_URL,
+  formTypeBadgeClass,
+  formTypeLabel,
 } from "./Submissions";
 
 // ---------------------------------------------------------------------------
-// Types — mirror /api/submissions/[id]
+// Types — mirror /api/submissions/[id] (Phase 2 — DrSnip).
+// The CJC scoring-trace / Salesforce sections were removed; the detail view
+// now renders the dedicated patient columns plus the full raw_payload.
 // ---------------------------------------------------------------------------
-
-type RuleTraceCondition = {
-  field: string;
-  op: string;
-  target?: string | string[];
-  actual: string | null | undefined;
-  result: boolean;
-};
-
-type RuleTraceStep = {
-  ruleId: string;
-  ruleName: string;
-  matched: boolean;
-  conditions: RuleTraceCondition[];
-};
-
-type ScoringTrace = {
-  ruleSetId: string;
-  ruleSetVersion: number;
-  evaluatedAt: string;
-  steps: RuleTraceStep[];
-  finalOutcome: { rank?: string; leadScore?: string };
-};
 
 type DetailSubmission = {
   id: string;
   createdAt: string;
-  source: string;
-  surveyDetail: string;
-  leadSource: string;
-  campaign: string | null;
-  event: string | null;
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
+  updatedAt: string;
+  formType: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  stateResidence: string;
-  federalAgency: string;
-  qSpeakerRating: string | null;
-  qWorkshopContent: string | null;
-  qPreRetirement: string;
-  qEvalComments: string | null;
-  qYearsToRetire: string | null;
-  qAge: string | null;
-  qSeparating: string | null;
-  qMaritalStatus: string | null;
-  qMaxingTsp: string | null;
-  qTspContributionPct: string | null;
-  qExternalInvestments: string | null;
-  qTspBalance: string | null;
-  qAreasOfConcern: string | null;
-  scoringRuleSetId: string | null;
-  rank: string | null;
-  leadScore: string | null;
-  scoringTrace: ScoringTrace | null;
-  autoScheduleHold: boolean;
-  sfLeadId: string | null;
-  sfStatus: string;
-  sfError: string | null;
-  sfAttempts: number;
-  sfLastAttemptAt: string | null;
-  releasedBy: string | null;
-  releasedAt: string | null;
-  discardedBy: string | null;
-  discardedAt: string | null;
-  rawPayload: unknown;
+  dateOfBirth: string | null;
+  stateResidence: string | null;
+  insuranceCardFrontFilename: string | null;
+  insuranceCardBackFilename: string | null;
+  hasInsuranceCards: boolean;
+  rawPayload: Record<string, unknown>;
 };
 
-type DetailResponse = {
-  submission: DetailSubmission;
-  ruleSet: { id: string; version: number; name: string } | null;
-};
+type DetailResponse = { submission: DetailSubmission };
 
 async function fetchDetail(id: string): Promise<DetailResponse> {
   const res = await fetch(`/api/submissions/${id}`, {
@@ -114,25 +48,56 @@ async function fetchDetail(id: string): Promise<DetailResponse> {
 }
 
 // ---------------------------------------------------------------------------
-// The survey fields the user sees in section 2 — in display order. Labels
-// match what would make sense to a non-technical admin reading the page.
+// raw_payload rendering helpers
 // ---------------------------------------------------------------------------
 
-const SURVEY_FIELDS: Array<{ key: keyof DetailSubmission; label: string }> = [
-  { key: "qSpeakerRating", label: "Speaker rating" },
-  { key: "qWorkshopContent", label: "Workshop content rating" },
-  { key: "qPreRetirement", label: "Pre-retirement review requested" },
-  { key: "qEvalComments", label: "Evaluation comments" },
-  { key: "qYearsToRetire", label: "Years to retirement" },
-  { key: "qAge", label: "Age bracket" },
-  { key: "qSeparating", label: "Separating from service" },
-  { key: "qMaritalStatus", label: "Marital status" },
-  { key: "qMaxingTsp", label: "Maxing out TSP" },
-  { key: "qTspContributionPct", label: "TSP contribution %" },
-  { key: "qExternalInvestments", label: "External investments" },
-  { key: "qTspBalance", label: "TSP balance" },
-  { key: "qAreasOfConcern", label: "Areas of concern" },
-];
+// camelCase → "Camel Case"
+function humanize(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "—";
+    return v.map((item) => formatValue(item)).join(", ");
+  }
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.filename === "string") {
+      return typeof o.size === "number"
+        ? `${o.filename} (${o.size} bytes)`
+        : o.filename;
+    }
+    return Object.entries(o)
+      .map(([k, val]) => `${humanize(k)}: ${formatValue(val)}`)
+      .join("; ");
+  }
+  return String(v);
+}
+
+// Keys already shown in the dedicated patient/insurance sections — skipped in
+// the generic Form Data list to avoid duplication.
+const PROMOTED_KEYS = new Set([
+  "formType",
+  "firstName",
+  "lastName",
+  "legalFirstName",
+  "legalLastName",
+  "email",
+  "phone",
+  "mobileNumber",
+  "dateOfBirth",
+  "stateResidence",
+  "state",
+  "insuranceCardFront",
+  "insuranceCardBack",
+]);
 
 // ---------------------------------------------------------------------------
 // Modal
@@ -150,379 +115,146 @@ export function SubmissionDetailModal({
   const query = useQuery({
     queryKey: ["submission-detail", id],
     queryFn: () => fetchDetail(id as string),
-    enabled: open && !!id,
+    enabled: open && id !== null,
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
-        className="max-w-3xl max-h-[90vh] overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl sm:rounded-3xl"
-        data-testid="submission-detail-modal"
-      >
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="sr-only">Submission detail</DialogTitle>
+          <DialogTitle>Submission detail</DialogTitle>
         </DialogHeader>
-        {query.isLoading || !query.data ? (
-          query.isError ? (
-            <DetailError onRetry={() => query.refetch()} />
-          ) : (
-            <DetailLoading />
-          )
-        ) : (
-          <DetailBody data={query.data} />
-        )}
+
+        {query.isLoading ? (
+          <div className="py-16 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+          </div>
+        ) : query.isError ? (
+          <div className="py-12 text-center">
+            <AlertCircle className="w-7 h-7 text-red-500 mx-auto mb-2" />
+            <p className="text-sm text-slate-600">
+              Couldn't load this submission.
+            </p>
+          </div>
+        ) : query.data ? (
+          <DetailBody submission={query.data.submission} />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function DetailLoading() {
-  return (
-    <div className="py-16 flex flex-col items-center text-slate-500">
-      <Loader2 className="w-6 h-6 animate-spin mb-2" />
-      <p className="text-sm">Loading submission…</p>
-    </div>
+function DetailBody({ submission }: { submission: DetailSubmission }) {
+  const s = submission;
+  const raw = s.rawPayload ?? {};
+  const formEntries = Object.entries(raw).filter(
+    ([k]) => !PROMOTED_KEYS.has(k),
   );
-}
 
-function DetailError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="py-16 text-center">
-      <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-3" />
-      <p className="text-slate-700 font-medium">Couldn't load this submission.</p>
-      <Button variant="outline" className="mt-4" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
-  );
-}
-
-function DetailBody({ data }: { data: DetailResponse }) {
-  const s = data.submission;
-  return (
-    <div className="space-y-6 pt-2">
+    <div className="space-y-6">
       {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
-        <div className="flex items-center gap-2">
-          <Chip className={sourceBadgeClass(s.source)}>{s.source}</Chip>
-          <span className="text-sm text-slate-500">{exactTime(s.createdAt)}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span className="font-mono">{s.id}</span>
-          <button
-            type="button"
-            onClick={() => void copyToClipboard(s.id, "Submission ID copied")}
-            className="text-slate-400 hover:text-slate-600"
-            aria-label="Copy submission ID"
-          >
-            <Copy className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </header>
-
-      {/* Section 1: Lead Info */}
-      <Section title="Lead">
-        <Grid>
-          <KV label="Name" value={`${s.firstName} ${s.lastName}`} />
-          <KV label="Email" value={s.email} />
-          <KV label="Phone" value={s.phone} />
-          <KV label="State" value={s.stateResidence} />
-          <KV label="Federal agency" value={s.federalAgency} />
-          <KV label="Lead source" value={s.leadSource} />
-        </Grid>
-      </Section>
-
-      {/* Section 2: Survey Answers */}
-      <Section title="Survey answers">
-        <Grid>
-          {SURVEY_FIELDS.map((f) => {
-            const v = s[f.key] as string | null | undefined;
-            if (v === null || v === undefined || v === "") return null;
-            return <KV key={String(f.key)} label={f.label} value={String(v)} />;
-          })}
-        </Grid>
-      </Section>
-
-      {/* Section 3: Scoring */}
-      <Section title="Scoring">
-        <div className="flex items-baseline gap-4 mb-3">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Rank</div>
-            <Chip className={rankBadgeClass(s.rank) + " text-base px-3 py-1"}>
-              {s.rank ?? "unscored"}
-            </Chip>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Lead score</div>
-            <div className="text-base text-slate-800 font-medium">
-              {s.leadScore ?? <span className="text-slate-400">—</span>}
-            </div>
-          </div>
-        </div>
-        <ScoringWhySummary submission={s} />
-        {data.ruleSet ? (
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-lg font-semibold text-slate-900">
+            {s.firstName} {s.lastName}
+          </p>
           <p className="text-xs text-slate-500">
-            Scored by RuleSet v{data.ruleSet.version}: {data.ruleSet.name}
-          </p>
-        ) : (
-          <p className="text-xs text-slate-500 italic">No RuleSet recorded — scoring did not complete.</p>
-        )}
-        {s.scoringTrace ? (
-          <ScoringTraceView trace={s.scoringTrace} />
-        ) : (
-          <p className="text-xs text-slate-400 mt-3">
-            Scoring did not complete — see the Salesforce section below for the error.
-          </p>
-        )}
-      </Section>
-
-      {/* Section 4: Salesforce */}
-      <Section title="Salesforce">
-        <Grid>
-          <div>
-            <KVLabel>SF Lead</KVLabel>
-            {s.sfLeadId ? (
-              <div className="flex items-center gap-2">
-                <a
-                  href={SF_LEAD_URL(s.sfLeadId)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:underline"
-                >
-                  {s.sfLeadId}
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => void copyToClipboard(s.sfLeadId!, "SF Lead ID copied")}
-                  className="text-slate-400 hover:text-slate-600"
-                  aria-label="Copy SF Lead ID"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <span className="text-sm text-slate-500 italic">Not created in Salesforce</span>
-            )}
-          </div>
-          <div>
-            <KVLabel>Status</KVLabel>
-            <Chip className={sfStatusBadgeClass(s.sfStatus)}>{s.sfStatus}</Chip>
-          </div>
-          <KV label="Attempts" value={String(s.sfAttempts)} />
-          <KV
-            label="Last attempt"
-            value={s.sfLastAttemptAt ? exactTime(s.sfLastAttemptAt) : "—"}
-          />
-        </Grid>
-        {s.sfError && (
-          <div className="mt-3 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-900">
-            <span className="font-medium">Error:</span> {s.sfError}
-          </div>
-        )}
-      </Section>
-
-      {/* Section 4b: Hold history — rendered only when this lead passed
-          through the valve (released after being held, or discarded). */}
-      {(s.releasedBy || s.releasedAt || s.discardedBy || s.discardedAt) && (
-        <Section title="Hold history">
-          <Grid>
-            {s.releasedAt && (
-              <KV
-                label="Released"
-                value={`${exactTime(s.releasedAt)}${s.releasedBy ? ` · ${s.releasedBy}` : ""}`}
-              />
-            )}
-            {s.discardedAt && (
-              <KV
-                label="Discarded"
-                value={`${exactTime(s.discardedAt)}${s.discardedBy ? ` · ${s.discardedBy}` : ""}`}
-              />
-            )}
-          </Grid>
-        </Section>
-      )}
-
-      {/* Section 5: Raw payload */}
-      <Section title="Raw payload">
-        <RawPayloadCollapsible payload={s.rawPayload} />
-      </Section>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components: scoring trace + raw payload + layout primitives
-// ---------------------------------------------------------------------------
-
-/** Plain-language line for admins — derived from trace + survey hints. */
-function ScoringWhySummary({ submission: s }: { submission: DetailSubmission }) {
-  const trace = s.scoringTrace;
-  if (!trace) {
-    if (s.rank != null || s.leadScore != null) {
-      return (
-        <div className="mb-3 flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2.5 text-sm text-amber-950 leading-snug">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" aria-hidden />
-          <p>
-            No scoring trace was stored for this submission. The rank and lead score
-            below are what was saved to the database.
+            Submitted {exactTime(s.createdAt)}
           </p>
         </div>
-      );
-    }
-    return null;
-  }
+        <Chip className={formTypeBadgeClass(s.formType)}>
+          {formTypeLabel(s.formType)}
+        </Chip>
+      </div>
 
-  const firstMatchedIdx = trace.steps.findIndex((st) => st.matched);
-  const rank = s.rank ?? trace.finalOutcome.rank ?? "N/A";
-  const score = s.leadScore ?? trace.finalOutcome.leadScore;
+      {/* Patient */}
+      <Section title="Patient">
+        <KeyValue label="Email" value={s.email} />
+        <KeyValue label="Phone" value={s.phone} />
+        <KeyValue label="Date of Birth" value={s.dateOfBirth ?? "—"} />
+        <KeyValue label="State" value={s.stateResidence ?? "—"} />
+      </Section>
 
-  let body: string;
-  if (firstMatchedIdx === -1) {
-    body = `No rule in the published set matched. Default outcome: Rank ${rank}`;
-    if (score) body += `, lead score ${score}`;
-    body += ".";
-    if (s.qPreRetirement === "No") {
-      body +=
-        " They answered No to wanting a pre-retirement review, so the tiered rules (which all require Yes) did not apply.";
-    }
-  } else {
-    const rule = trace.steps[firstMatchedIdx];
-    body = `The first matching rule in the list wins: «${rule.ruleName}». Outcome — Rank ${rank}`;
-    if (score) body += `, lead score ${score}`;
-    body += ".";
-  }
+      {/* Insurance cards (stub) */}
+      <Section title="Insurance Cards">
+        <KeyValue
+          label="Cards provided"
+          value={s.hasInsuranceCards ? "Yes" : "No"}
+        />
+        <KeyValue
+          label="Front"
+          value={s.insuranceCardFrontFilename ?? "—"}
+        />
+        <KeyValue label="Back" value={s.insuranceCardBackFilename ?? "—"} />
+        <p className="text-xs text-slate-400 mt-1">
+          Demo mode — only filenames are stored; no file bytes are persisted.
+        </p>
+      </Section>
 
-  return (
-    <div className="mb-3 flex gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 leading-snug">
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-      <p>{body}</p>
+      {/* Full form answers from raw_payload */}
+      <Section title="Form Data" icon>
+        {formEntries.length === 0 ? (
+          <p className="text-sm text-slate-500">No additional fields.</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {formEntries.map(([k, v]) => (
+              <KeyValue key={k} label={humanize(k)} value={formatValue(v)} />
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Submission ID */}
+      <div className="pt-2 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={() => void copyToClipboard(s.id, "Submission ID copied")}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+          title="Copy submission ID"
+        >
+          ID: {s.id}
+          <Copy className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   );
 }
 
-function ScoringTraceView({ trace }: { trace: ScoringTrace }) {
-  const [open, setOpen] = useState(false);
-  const matched = trace.steps.filter((s) => s.matched).length;
-  return (
-    <div className="mt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900"
-        aria-expanded={open}
-        data-testid="trace-toggle"
-      >
-        {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        {open ? "Hide" : "Show"} scoring trace
-        <span className="text-xs text-slate-500 ml-1">
-          ({matched}/{trace.steps.length} rules matched)
-        </span>
-      </button>
-      {open && (
-        <ol className="mt-3 space-y-3">
-          {trace.steps.map((step, i) => (
-            <li
-              key={step.ruleId + i}
-              className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2"
-            >
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="text-sm font-medium text-slate-900">{step.ruleName}</div>
-                <Chip
-                  className={
-                    step.matched
-                      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                      : "bg-slate-100 text-slate-600 border-slate-200"
-                  }
-                >
-                  {step.matched ? "matched" : "no match"}
-                </Chip>
-              </div>
-              <ul className="space-y-1 text-xs text-slate-700">
-                {step.conditions.map((c, ci) => (
-                  <li key={ci} className="flex flex-wrap items-center gap-1">
-                    <code className="bg-white border border-slate-200 rounded px-1.5 py-0.5 font-mono text-[11px]">
-                      {c.field} {c.op}
-                      {c.target !== undefined && (
-                        <>
-                          {" "}'{Array.isArray(c.target) ? c.target.join("|") : c.target}'
-                        </>
-                      )}
-                    </code>
-                    <span className={c.result ? "text-emerald-700" : "text-slate-500"}>
-                      →{" "}
-                      {c.result ? (
-                        "matched ✓"
-                      ) : (
-                        <>
-                          no match{" "}
-                          <span className="text-slate-400">
-                            (actual: {c.actual === null || c.actual === undefined || c.actual === ""
-                              ? "—"
-                              : `'${c.actual}'`}
-                            )
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
-function RawPayloadCollapsible({ payload }: { payload: unknown }) {
-  const [open, setOpen] = useState(false);
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900"
-        aria-expanded={open}
-        data-testid="raw-payload-toggle"
-      >
-        {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        {open ? "Hide" : "Show"} raw payload
-      </button>
-      {open && (
-        <pre className="mt-3 max-h-80 overflow-auto rounded-md bg-slate-900 text-slate-100 text-xs p-3 font-mono">
-          <code>{JSON.stringify(payload, null, 2)}</code>
-        </pre>
-      )}
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 mb-2">
+        {icon && <FileText className="w-4 h-4 text-primary" />}
+        {title}
+      </h3>
+      <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-1">
+        {children}
+      </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function KeyValue({ label, value }: { label: string; value: string }) {
   return (
-    <section>
-      <h3 className="text-xs uppercase tracking-wide font-semibold text-slate-500 mb-3">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Grid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">{children}</div>;
-}
-
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <KVLabel>{label}</KVLabel>
-      <div className="text-sm text-slate-800 break-words">{value}</div>
+    <div className="flex items-start justify-between gap-6 py-2">
+      <span className="text-sm text-slate-500 shrink-0">{label}</span>
+      <span className="text-sm font-medium text-slate-900 text-right break-words">
+        {value}
+      </span>
     </div>
-  );
-}
-
-function KVLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-xs uppercase tracking-wide text-slate-500 mb-0.5">{children}</div>
   );
 }

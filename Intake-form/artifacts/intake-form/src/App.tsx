@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/Home";
+import Consultation from "@/pages/Consultation";
 import NotFound from "@/pages/not-found";
 import LinkGenerator from "@/pages/LinkGenerator";
 import SignIn from "@/pages/admin/SignIn";
@@ -23,28 +24,33 @@ function WithAuth({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Public intake only when the share link includes ?source= (values come from
- * the admin link generator). Bare `/` is the app entry for admins → sign-in.
+ * The Consultation form is gated: it opens only with a `?source=` or
+ * `?patient_id=` param (a consultation link is sent to a known patient).
+ * Without one, visitors are sent to the public Registration form at `/`.
  */
-function RootIntakeGate() {
-  const [allowForm, setAllowForm] = useState<boolean | null>(null);
+function ConsultationGate() {
+  const [allow, setAllow] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const raw = new URLSearchParams(window.location.search).get("source");
-    setAllowForm(Boolean(raw?.trim()));
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get("source")?.trim();
+    const patientId = params.get("patient_id")?.trim();
+    setAllow(Boolean(source || patientId));
   }, []);
 
-  if (allowForm === null) return null;
-  if (!allowForm) return <Redirect to="/admin/signin" />;
-  return <Home />;
+  if (allow === null) return null;
+  if (!allow) return <Redirect to="/" />;
+  return <Consultation />;
 }
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={RootIntakeGate} />
-      {/* Phase 1 legacy: kept for existing bookmarks. Sprint 3 will redirect
-          this to /admin/links. */}
+      {/* Public patient Registration form. */}
+      <Route path="/" component={Home} />
+      {/* Pre-appointment Consultation — gated (see ConsultationGate). */}
+      <Route path="/consultation" component={ConsultationGate} />
+      {/* Internal link-generator tool (not linked from the public forms). */}
       <Route path="/internal-tools-x9k2" component={LinkGenerator} />
       {/* Phase 2 admin tree. */}
       <Route path="/admin">

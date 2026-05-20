@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import cjLogo from "@assets/cj-ss_1773942560897.png";
+
+const DRSNIP_LOGO = "/images/drsnip-logo.png";
 
 // ---------------------------------------------------------------------------
 // Source list: was hardcoded {fnn, internal, federal}; now driven by the
@@ -143,12 +144,12 @@ export default function LinkGenerator() {
   };
 
   return (
-    <div className="min-h-screen font-sans">
+    <div className="min-h-screen font-sans bg-primary">
       <header className="w-full pt-6 md:pt-6 px-12 sm:px-6 flex justify-center">
         <img
-          src={cjLogo}
-          alt="CJC Wealth Management"
-          className="h-16 sm:h-20 md:h-24 w-auto object-contain"
+          src={DRSNIP_LOGO}
+          alt="DrSnip"
+          className="h-14 sm:h-16 md:h-20 w-auto object-contain"
         />
       </header>
 
@@ -186,7 +187,7 @@ export default function LinkGenerator() {
                   <Button
                     onClick={() => copy(url, ch.id)}
                     size="sm"
-                    className="shrink-0 bg-[#A82020] text-white hover:bg-[#8B1A1A] border-[#8B1A1A]"
+                    className="shrink-0 bg-primary text-white hover:bg-primary/90 border-primary"
                   >
                     {isCopied ? (
                       <Check className="w-4 h-4" />
@@ -296,7 +297,7 @@ export default function LinkGenerator() {
                     </code>
                     <Button
                       onClick={() => copy(customUrl, "custom")}
-                      className="shrink-0 bg-[#A82020] text-white hover:bg-[#8B1A1A] border-[#8B1A1A]"
+                      className="shrink-0 bg-primary text-white hover:bg-primary/90 border-primary"
                     >
                       {copied === "custom" ? (
                         <Check className="w-4 h-4" />

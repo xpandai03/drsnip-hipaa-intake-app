@@ -278,7 +278,7 @@ function AddSourceDialog({ onCreated }: { onCreated: () => void }) {
             disabled={!canSubmit}
             onClick={() => create.mutate()}
             data-testid="sources-add-submit"
-            className="bg-[#A82020] text-white hover:bg-[#8B1A1A]"
+            className="bg-primary text-white hover:bg-primary/90"
           >
             {create.isPending ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -414,7 +414,7 @@ function EditSourceDialog({
           <Button
             disabled={!canSubmit}
             onClick={() => save.mutate()}
-            className="bg-[#A82020] text-white hover:bg-[#8B1A1A]"
+            className="bg-primary text-white hover:bg-primary/90"
           >
             {save.isPending ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
