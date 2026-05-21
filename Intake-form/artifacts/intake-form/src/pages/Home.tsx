@@ -64,6 +64,40 @@ type MedicalKey =
   | "mhPainSensitive"
   | "mhAspirin";
 
+const medicalLabel = (key: MedicalKey): string =>
+  MEDICAL_QUESTIONS.find((q) => q.key === key)!.label;
+
+// The 13 medical-history questions, grouped into screens of at most 3
+// single-select questions each (Phase 2 polish). Question keys, labels,
+// wording, and order are unchanged — only the screen grouping is new.
+const MEDICAL_SCREENS: { id: string; title: string; keys: MedicalKey[] }[] = [
+  {
+    id: "medical-urological",
+    title: "Medical Background — Urological & Reproductive",
+    keys: ["mhTesticleAbnormality", "mhTesticleInjury", "mhSTI"],
+  },
+  {
+    id: "medical-general",
+    title: "Medical Background — General Health",
+    keys: ["mhKidney", "mhChronic", "mhMedications"],
+  },
+  {
+    id: "medical-surgical",
+    title: "Medical Background — Surgical & Procedure History",
+    keys: ["mhSurgeries", "mhSurgeryComplications", "mhFainting"],
+  },
+  {
+    id: "medical-bleeding",
+    title: "Medical Background — Bleeding & Anesthesia",
+    keys: ["mhAllergies", "mhBleeding"],
+  },
+  {
+    id: "medical-aspirin",
+    title: "Medical Background — Aspirin & Pain",
+    keys: ["mhAspirin", "mhPainSensitive"],
+  },
+];
+
 // ---- Form state ----------------------------------------------------------
 
 type RegistrationData = Record<MedicalKey, string> & {
@@ -272,44 +306,50 @@ export default function Home() {
         data.consentVoicemail !== "" &&
         data.consentText !== "",
     },
-    {
-      id: "medical",
-      title: "Medical Background",
-      description:
-        "These help our physicians prepare for your visit. Answer every question.",
-      render: () => (
-        <div className="grid gap-7">
-          <TextField
-            label="Current Primary Care Physician (name and location)"
-            value={data.primaryCarePhysician}
-            onChange={(v) => update({ primaryCarePhysician: v })}
-            placeholder="Optional"
-          />
-          {MEDICAL_QUESTIONS.map((q) => (
-            <div key={q.key}>
-              <YesNoField
-                label={q.label}
-                value={data[q.key]}
-                onChange={(v) =>
-                  update({ [q.key]: v } as Partial<RegistrationData>)
-                }
-                required
+    ...MEDICAL_SCREENS.map(
+      (ms, msIndex): FormScreen => ({
+        id: ms.id,
+        title: ms.title,
+        description:
+          msIndex === 0
+            ? "These help our physicians prepare for your visit. Answer every question."
+            : "Answer every question on this screen.",
+        render: () => (
+          <div className="grid gap-7">
+            {msIndex === 0 && (
+              <TextField
+                label="Current Primary Care Physician (name and location)"
+                value={data.primaryCarePhysician}
+                onChange={(v) => update({ primaryCarePhysician: v })}
+                placeholder="Optional"
               />
-              {/* A "Yes" reveals an explanation box directly under that
-                  question — its answer is "Yes" plus this detail. */}
-              <Reveal show={data[q.key] === "Yes"}>
-                <TextAreaField
-                  label="Please share details, including a general timeframe."
-                  value={data.medicalDetails[q.key] ?? ""}
-                  onChange={(v) => updateMedicalDetail(q.key, v)}
+            )}
+            {ms.keys.map((key) => (
+              <div key={key}>
+                <YesNoField
+                  label={medicalLabel(key)}
+                  value={data[key]}
+                  onChange={(v) =>
+                    update({ [key]: v } as Partial<RegistrationData>)
+                  }
+                  required
                 />
-              </Reveal>
-            </div>
-          ))}
-        </div>
-      ),
-      isValid: () => MEDICAL_QUESTIONS.every((q) => data[q.key] !== ""),
-    },
+                {/* A "Yes" reveals an explanation box directly under that
+                    question — its answer is "Yes" plus this detail. */}
+                <Reveal show={data[key] === "Yes"}>
+                  <TextAreaField
+                    label="Please share details, including a general timeframe."
+                    value={data.medicalDetails[key] ?? ""}
+                    onChange={(v) => updateMedicalDetail(key, v)}
+                  />
+                </Reveal>
+              </div>
+            ))}
+          </div>
+        ),
+        isValid: () => ms.keys.every((key) => data[key] !== ""),
+      }),
+    ),
     {
       id: "insurance",
       title: "Insurance",

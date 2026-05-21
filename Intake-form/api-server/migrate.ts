@@ -19,6 +19,7 @@ import coreTables from "../lib/db/migrations/0000_core_tables.sql";
 import appointmentSyncEvents from "../lib/db/migrations/0001_appointment_sync_events.sql";
 import marketingSources from "../lib/db/migrations/0002_marketing_sources.sql";
 import drsnipSchema from "../lib/db/migrations/0003_drsnip_schema.sql";
+import linkFormType from "../lib/db/migrations/0004_link_form_type.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -26,6 +27,7 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0001_appointment_sync_events", sql: appointmentSyncEvents },
   { name: "0002_marketing_sources", sql: marketingSources },
   { name: "0003_drsnip_schema", sql: drsnipSchema },
+  { name: "0004_link_form_type", sql: linkFormType },
   { name: "seed-admin", sql: seedAdmin },
 ];
 

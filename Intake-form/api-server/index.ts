@@ -23,6 +23,7 @@ import activityHandler from "../api/submissions/activity";
 import settingsHandler from "../api/settings/[key]";
 import marketingSourcesHandler from "../api/admin/marketing-sources";
 import marketingSourceByIdHandler from "../api/admin/marketing-sources/[id]";
+import linksHandler from "../api/admin/links";
 
 const app = new Hono();
 
@@ -44,6 +45,7 @@ app.all("/api/submissions/:id", adapt(submissionDetailHandler));
 app.all("/api/settings/:key", adapt(settingsHandler));
 app.all("/api/admin/marketing-sources", adapt(marketingSourcesHandler));
 app.all("/api/admin/marketing-sources/:id", adapt(marketingSourceByIdHandler));
+app.all("/api/admin/links", adapt(linksHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

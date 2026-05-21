@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -91,6 +91,26 @@ export function MultiStepForm({
       setStepIndex((i) => i - 1);
     }
   };
+
+  // Enter advances the current screen when it's valid (or submits on the last
+  // screen) — `handleNext` already no-ops when invalid or submitting. Enter
+  // inside a <textarea> is left alone (newline), and modifier+Enter is
+  // reserved. The effect re-registers each render so the listener always
+  // closes over the latest `current.isValid()` (which reads live form data).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.tagName === "TEXTAREA") return;
+      if (submitState !== "idle") return;
+      if (!current.isValid()) return;
+      e.preventDefault();
+      void handleNext();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  });
 
   if (submitState === "success") {
     return <SuccessScreen title={successTitle} message={successMessage} />;
