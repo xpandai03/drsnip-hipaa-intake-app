@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Copy, FileText, Loader2 } from "lucide-react";
+import { AlertCircle, Copy, FileDown, FileText, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -172,6 +172,18 @@ function DetailBody({ submission }: { submission: DetailSubmission }) {
           {formTypeLabel(s.formType)}
         </Chip>
       </div>
+
+      {/* Download PDF — generated on-demand by GET /api/submissions/:id/pdf. */}
+      <button
+        type="button"
+        onClick={() =>
+          window.open(`/api/submissions/${s.id}/pdf`, "_blank", "noopener")
+        }
+        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white font-medium hover:bg-primary/90 transition-colors"
+      >
+        <FileDown className="w-4 h-4" />
+        Download PDF
+      </button>
 
       {/* Patient */}
       <Section title="Patient">

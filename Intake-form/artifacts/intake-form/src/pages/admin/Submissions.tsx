@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  FileDown,
   Loader2,
   RotateCcw,
   Search,
@@ -394,6 +395,7 @@ function ResultsTable({
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Submission ID</TableHead>
+                <TableHead>PDF</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -435,6 +437,24 @@ function ResultsTable({
                     >
                       {row.id.slice(0, 8)}…
                       <Copy className="w-3 h-3" />
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(
+                          `/api/submissions/${row.id}/pdf`,
+                          "_blank",
+                          "noopener",
+                        );
+                      }}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-md text-primary hover:bg-primary/10 transition-colors"
+                      title="Download PDF"
+                      aria-label="Download PDF"
+                    >
+                      <FileDown className="w-4 h-4" />
                     </button>
                   </TableCell>
                 </TableRow>
