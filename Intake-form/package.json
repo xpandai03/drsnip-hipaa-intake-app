@@ -12,7 +12,8 @@
     "typecheck:api": "tsc --noEmit -p api/tsconfig.json",
     "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:api && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:api": "pnpm run typecheck:libs && node --import tsx --test api/_test/auth.test.ts api/_test/login.test.ts api/_test/logout.test.ts api/_test/marketing-sources.test.ts",
-    "test": "pnpm run test:api"
+    "test:pdf": "node --import tsx --test lib/pdf/age.test.ts",
+    "test": "pnpm run test:pdf && pnpm run test:api"
   },
   "private": true,
   "dependencies": {
