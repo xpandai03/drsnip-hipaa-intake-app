@@ -24,10 +24,13 @@ const JSON_HEADERS: ReadonlyArray<[string, HeaderValue]> = [
   ["Content-Type", "application/json; charset=utf-8"],
 ];
 
+// Response body may be a string (JSON / text) or raw bytes (e.g. a PDF).
+type ResponseBody = string | Uint8Array | null;
+
 function buildResponse(
   statusCode: number,
   headers: Iterable<[string, HeaderValue]>,
-  body: string | null,
+  body: ResponseBody,
 ): Response {
   const out = new Headers();
   for (const [key, value] of headers) {
@@ -37,7 +40,12 @@ function buildResponse(
       out.set(key, String(value));
     }
   }
-  return new Response(body, { status: statusCode, headers: out });
+  // Cast: a Uint8Array is a valid runtime Response body (undici), but TS 5.9's
+  // generic-ArrayBuffer typing doesn't accept it into BodyInit directly.
+  return new Response(body as BodyInit | null, {
+    status: statusCode,
+    headers: out,
+  });
 }
 
 function errorResponse(): Response {
@@ -81,7 +89,7 @@ export function adapt(handler: VercelHandler) {
     // ---- Fake VercelResponse -------------------------------------------
     let statusCode = 200;
     const headers = new Map<string, HeaderValue>();
-    let responseBody: string | null = null;
+    let responseBody: ResponseBody = null;
     let finished = false;
 
     const res = {
@@ -105,13 +113,20 @@ export function adapt(handler: VercelHandler) {
         return res;
       },
       send(payload: unknown) {
-        responseBody =
-          typeof payload === "string" ? payload : JSON.stringify(payload);
+        // Pass raw bytes (PDF, etc.) straight through; otherwise string-or-JSON.
+        if (payload instanceof Uint8Array) {
+          responseBody = payload;
+        } else {
+          responseBody =
+            typeof payload === "string" ? payload : JSON.stringify(payload);
+        }
         finished = true;
         return res;
       },
       end(payload?: unknown) {
-        if (payload !== undefined && payload !== null) {
+        if (payload instanceof Uint8Array) {
+          responseBody = payload;
+        } else if (payload !== undefined && payload !== null) {
           responseBody = String(payload);
         }
         finished = true;
