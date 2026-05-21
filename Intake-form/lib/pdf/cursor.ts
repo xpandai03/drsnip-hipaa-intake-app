@@ -6,7 +6,7 @@ import { PDFDocument, PDFFont, PDFPage, rgb } from "pdf-lib";
 
 export const PAGE = { width: 612, height: 792 } as const; // US Letter
 export const MARGIN = 54;
-const FOOTER_RESERVE = 46; // keep flowing content this far above the page bottom
+const FOOTER_RESERVE = 36; // keep flowing content this far above the page bottom
 
 export const COLOR = {
   brand: rgb(0x0f / 255, 0x4c / 255, 0x81 / 255), // #0F4C81 clinical blue
@@ -14,9 +14,25 @@ export const COLOR = {
   muted: rgb(0.42, 0.47, 0.53),
   faint: rgb(0.62, 0.66, 0.7),
   line: rgb(0.86, 0.88, 0.91),
+  separator: rgb(0xe5 / 255, 0xe7 / 255, 0xeb / 255), // #E5E7EB table rule
   tile: rgb(0.96, 0.97, 0.98),
   white: rgb(1, 1, 1),
 };
+
+// Two-column table layout for the body sections (see sections.ts). The label
+// column is ~39% of the 504pt content width; the value column takes the rest.
+const CONTENT_WIDTH = PAGE.width - 2 * MARGIN; // 504
+export const TABLE = {
+  labelWidth: 196,
+  colGap: 12,
+  valueWidth: CONTENT_WIDTH - 196 - 12, // 296
+  rowMinHeight: 20,
+  rowPadV: 4, // vertical padding inside each row, top & bottom
+  labelSize: 9,
+  valueSize: 10,
+  labelLineH: 12,
+  valueLineH: 13,
+} as const;
 
 export type PdfFonts = {
   regular: PDFFont;
@@ -78,8 +94,10 @@ export class PdfCursor {
 
   /** Section heading — brand accent bar + bold title + underline. */
   heading(title: string): void {
-    this.gap(12);
-    this.ensureSpace(26);
+    this.gap(10);
+    // Reserve room for the heading itself + ~2 table rows so a heading is
+    // never orphaned at the foot of a page.
+    this.ensureSpace(30 + 2 * TABLE.rowMinHeight);
     this.page.drawRectangle({
       x: this.left,
       y: this.y - 13,
@@ -101,7 +119,8 @@ export class PdfCursor {
       thickness: 0.75,
       color: COLOR.line,
     });
-    this.y -= 9;
+    // Bottom padding so the table doesn't butt up against the heading rule.
+    this.y -= 10;
   }
 
   /** Draw word-wrapped text at `x`; paginates per line; advances y. */
