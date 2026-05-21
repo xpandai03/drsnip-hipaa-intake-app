@@ -216,3 +216,19 @@ data layer every page depends on is confirmed working.
 ### Note
 The `release_command` re-runs the (idempotent) migrations on every future
 deploy — standard Fly practice; no action needed.
+
+---
+
+## Redeploy — Phase 3 (PDF generation) — 2026-05-21 (UTC)
+
+`main` redeployed to `drsnip-intake-demo` after merging `phase-2-polish` and
+`phase-3-pdf`. See `PHASE_3_NOTES.md` for the full Phase 3 record.
+
+- `release_command` completed successfully — no new migration (0000–0004 +
+  seed are idempotent and re-ran cleanly). Image size 62 MB.
+- Both machines reached a good state; app live at
+  https://drsnip-intake-demo.fly.dev
+- Smoke test: submitted a Registration and a Consultation form, then
+  `GET /api/submissions/<id>/pdf` for each → **HTTP 200,
+  `Content-Type: application/pdf`**, valid PDFs (3 pp / 4 pp). `/api/submissions`
+  JSON unaffected by the binary-adapter change (no regression).
