@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   index,
   jsonb,
@@ -49,6 +50,23 @@ export const submissions = pgTable(
     // question (Jeff feedback, 2026-05). Per-question "Yes" explanations
     // continue to live inside raw_payload.medicalDetails.
     mhMentalIllness: text("mh_mental_illness"),
+
+    // ----- n8n bridge outcome (migration 0006) -----------------------------
+    // After the submission row commits, an async bridge call fires the
+    // payload at the v2 n8n webhook. When n8n responds (or the call fails),
+    // these columns are UPDATEd. NULL means the bridge hasn't reported yet.
+    //
+    // Values:
+    //   'success'         200 + success: true
+    //   'manual_review'   200 + manual_review_required
+    //   'failed'          non-200 / network error / timeout
+    n8nStatus: text("n8n_status"),
+    // DrChrono patient id returned by n8n on success. Bigint because DrChrono
+    // ids exceed 2^31.
+    n8nPatientId: bigint("n8n_patient_id", { mode: "number" }),
+    n8nResponseAt: timestamp("n8n_response_at", { withTimezone: true }),
+    // Full JSON response from n8n, kept verbatim for debugging.
+    n8nResponseBody: jsonb("n8n_response_body"),
 
     // Full submission JSON — every form answer lives here.
     rawPayload: jsonb("raw_payload").notNull(),
