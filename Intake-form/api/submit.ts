@@ -148,6 +148,8 @@ async function runN8nBridge(
         n8nPatientId: outcome.patientId ?? null,
         n8nResponseAt: new Date(),
         n8nResponseBody: outcomeForDb(outcome),
+        n8nExecutionId: outcome.executionId ?? null,
+        n8nWorkflowId: outcome.workflowId ?? null,
       })
       .where(eq(submissions.id, submissionId));
   } catch (err) {

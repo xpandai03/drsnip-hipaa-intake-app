@@ -20,6 +20,13 @@ export type N8nStatus = "success" | "manual_review" | "failed";
 export interface N8nOutcome {
   status: N8nStatus;
   patientId?: number;
+  /** n8n executionId from the response `x-n8n-execution-id` header (or
+   *  failing that, from the response body). Used by the admin console to
+   *  deep-link directly to the execution in the n8n UI. */
+  executionId?: string;
+  /** Which v2 workflow the bridge hit (Registration or Consultation).
+   *  Paired with executionId to build the n8n UI URL. */
+  workflowId?: string;
   /** Parsed JSON response from n8n, when one was returned. */
   responseBody?: unknown;
   /** Short, non-PHI error description when status is 'failed'. */
@@ -60,6 +67,34 @@ function readEnv(): BridgeEnv {
 }
 
 const TIMEOUT_MS = 30_000;
+
+// n8n workflow IDs the bridge can hit. Paired with executionId at runtime to
+// produce the admin-console deep-link. Kept here (not in env) because these
+// are static identifiers — the workflows themselves are documented in
+// N8N_CUTOVER_NOTES.md §0 and Phase 3 §1.
+const WORKFLOW_IDS = {
+  registration: "H2HihkGKntbfRNcK",
+  consultation: "4UicLLZRRMeENXhx",
+} as const;
+
+// Extract the n8n executionId from either the response header
+// (`x-n8n-execution-id`, set by n8n's Webhook node) or the response body
+// (some n8n versions surface it under `executionId`). Falls back to
+// undefined if neither is present.
+function extractExecutionId(
+  headers: Headers,
+  body: unknown,
+): string | undefined {
+  const headerId = headers.get("x-n8n-execution-id");
+  if (headerId && headerId.trim()) return headerId.trim();
+  if (body && typeof body === "object") {
+    const b = body as Record<string, unknown>;
+    const candidate = b.executionId ?? b.execution_id;
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "number") return String(candidate);
+  }
+  return undefined;
+}
 
 // Treat any object response with success===true as a successful match.
 function classify(json: unknown): N8nStatus {
@@ -117,6 +152,7 @@ function causeMessage(err: unknown): string | undefined {
 async function postToN8n(
   submissionId: string,
   webhookUrl: string,
+  workflowId: string,
   payload: unknown,
   env: BridgeEnv,
 ): Promise<N8nOutcome> {
@@ -135,6 +171,10 @@ async function postToN8n(
     });
     const elapsedMs = Date.now() - startedAt;
     const contentType = res.headers.get("content-type") ?? undefined;
+    // Capture the n8n execution id immediately — surfaced from the response
+    // header by n8n's Webhook node. Used by the admin console to deep-link
+    // to the n8n execution view regardless of outcome.
+    const executionId = extractExecutionId(res.headers, null);
 
     // Always read the raw text first — JSON parsing is layered on top, so a
     // body that isn't valid JSON still surfaces its actual contents in the
@@ -176,10 +216,16 @@ async function postToN8n(
       elapsedMs,
     };
 
+    // n8n's webhook node sometimes only includes the execution id once the
+    // response body is decoded (older versions). Re-extract with body
+    // available so we pick up either source.
+    const finalExecutionId = executionId ?? extractExecutionId(res.headers, parsedBody);
+
     if (!res.ok) {
       logEvent("non_2xx", {
         submission_id: submissionId,
         webhook_url: webhookUrl,
+        execution_id: finalExecutionId,
         status: res.status,
         content_type: contentType,
         body_length: rawText.length,
@@ -192,6 +238,8 @@ async function postToN8n(
         responseBody: parsedBody,
         errorMessage: `HTTP ${res.status}`,
         diagnostic: baseDiagnostic,
+        executionId: finalExecutionId,
+        workflowId,
       };
     }
 
@@ -213,6 +261,7 @@ async function postToN8n(
       logEvent("response_failed", {
         submission_id: submissionId,
         webhook_url: webhookUrl,
+        execution_id: finalExecutionId,
         http_status: res.status,
         content_type: contentType,
         body_length: rawText.length,
@@ -228,12 +277,15 @@ async function postToN8n(
           textReadError ??
           "n8n response did not match success or manual_review shape",
         diagnostic: baseDiagnostic,
+        executionId: finalExecutionId,
+        workflowId,
       };
     }
 
     logEvent("response", {
       submission_id: submissionId,
       webhook_url: webhookUrl,
+      execution_id: finalExecutionId,
       outcome: outcomeStatus,
       patient_id: patientId,
       elapsed_ms: elapsedMs,
@@ -243,6 +295,8 @@ async function postToN8n(
       status: outcomeStatus,
       patientId,
       responseBody: parsedBody,
+      executionId: finalExecutionId,
+      workflowId,
     };
   } catch (err) {
     const elapsedMs = Date.now() - startedAt;
@@ -275,6 +329,11 @@ async function postToN8n(
         stackHead: stackHead(err),
         elapsedMs,
       },
+      // No executionId on transport-layer failures — the request didn't
+      // reach n8n's webhook node. But workflowId is known from which
+      // webhook URL we targeted, useful for the admin to navigate to the
+      // workflow itself (not a specific execution).
+      workflowId,
     };
   } finally {
     clearTimeout(timer);
@@ -329,7 +388,13 @@ export async function callN8nRegistration(
     );
 
   const payload = buildRegistrationPayload(submissionId, body, submittedAt);
-  return postToN8n(submissionId, env.registrationUrl, payload, env);
+  return postToN8n(
+    submissionId,
+    env.registrationUrl,
+    WORKFLOW_IDS.registration,
+    payload,
+    env,
+  );
 }
 
 /** Deliver a Consultation submission to n8n. Never throws. */
@@ -354,5 +419,11 @@ export async function callN8nConsultation(
     );
 
   const payload = buildConsultationPayload(submissionId, body, submittedAt);
-  return postToN8n(submissionId, env.consultationUrl, payload, env);
+  return postToN8n(
+    submissionId,
+    env.consultationUrl,
+    WORKFLOW_IDS.consultation,
+    payload,
+    env,
+  );
 }
