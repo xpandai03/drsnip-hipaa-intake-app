@@ -51,6 +51,12 @@ type DetailSubmission = {
   n8nPatientId: number | null;
   n8nResponseAt: string | null;
   n8nResponseBody: Record<string, unknown> | null;
+  // Phase 3 n8n bridge-link fields. Backend-composed deep-links to the n8n
+  // UI; NULL when the bridge didn't reach n8n (no executionId captured).
+  n8nExecutionId: string | null;
+  n8nWorkflowId: string | null;
+  n8nExecutionUrl: string | null;
+  n8nWorkflowUrl: string | null;
   rawPayload: Record<string, unknown>;
 };
 
@@ -310,6 +316,39 @@ function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
           {s.n8nResponseAt ? exactTime(s.n8nResponseAt) : "—"}
         </span>
       </div>
+
+      {/* Deep-link to the n8n execution view. Falls back to the workflow
+          view (no execution) when the bridge failed at the transport layer
+          and never got an executionId back. */}
+      {(s.n8nExecutionUrl || s.n8nWorkflowUrl) && (
+        <div className="py-2 flex items-start justify-between gap-6 border-t border-slate-100">
+          <span className="text-sm text-slate-500 shrink-0">n8n execution</span>
+          <span className="text-sm font-medium text-slate-900 text-right">
+            {s.n8nExecutionUrl ? (
+              <a
+                href={s.n8nExecutionUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                View execution in n8n
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <a
+                href={s.n8nWorkflowUrl as string}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+                title="Bridge call never reached n8n; opening the workflow itself"
+              >
+                Open workflow in n8n
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </span>
+        </div>
+      )}
 
       {/* Failure diagnostic — visible without expanding raw JSON. */}
       {s.n8nStatus === "failed" && (errorMessage || diagnostic) && (

@@ -742,3 +742,119 @@ Both originals remain `active: true` and serve JotForm traffic. The
 unchanged — only the `Generate {Registration,Consultation} PDF` Code nodes
 and the Registration `Respond: Success` `responseBody` expression were
 patched.
+
+---
+
+## L.7 2026-05-27 patch — DrChrono Create Patient field mapping (bridge-link PR)
+
+A real-world UI test submission ("Bruce Waynster") flowed cleanly through
+the custom app → admin DB → bridge → n8n, then **failed at the DrChrono:
+Create Patient node** with:
+
+> `400 Bad Request: {"zip_code":["This field may not be blank."]}`
+
+### Audit table (Registration v2 → DrChrono Create Patient)
+
+The complete contract-to-DrChrono trace is in the bridge-link PR
+description (commit message `fix(n8n): zip_code + city defensive
+extraction`). Summary table:
+
+| # | Contract field (§C.1) | Form sends? | Parse&Normalize input | P&N output | Create Patient | DrChrono required | Status before patch |
+|---|---|---|---|---|---|---|---|
+| 1 | `patient.legalFirstName` | yes | `patient.legalFirstName` | `first_name` | `first_name` | yes | ✅ |
+| 2 | `patient.legalLastName` | yes | `patient.legalLastName` | `last_name` | `last_name` | yes | ✅ |
+| 3 | `patient.preferredFirstName` | yes | `patient.preferredFirstName` | `preferred_first_name` | `nick_name` | no | ✅ |
+| 4 | `patient.dateOfBirth` | yes | `patient.dateOfBirth` | `dob` | `date_of_birth` | yes | ✅ |
+| 5 | `patient.streetAddress` | yes (single textarea "Street, city, ZIP") | `patient.streetAddress` | `address_line1` | `address` | yes | ✅ |
+| 6 | `patient.city` | **no** (no separate UI input) | `patient.city` | `address_city` | `city` | **yes (non-blank)** | ❌ EMPTY → 400 |
+| 7 | `patient.state` | yes (separate field) | `patient.state` | `address_state` | `state` | yes | ✅ |
+| 8 | `patient.postalCode` | **no** (no separate UI input) | `patient.postalCode \|\| patient.Code` | `address_zip` | `zip_code` | **yes (non-blank)** | ❌ EMPTY → 400 (Bruce Waynster failure) |
+| 9 | `patient.addressLine2` / `country` | **no** | direct | passthrough | — | no | ⚠️ data lost, no DrChrono impact |
+| 10 | `patient.phone` | yes (`mobileNumber` → `phone` in bridge) | `patient.phone` | `phone` | `cell_phone` | yes | ✅ |
+| 11 | `patient.email` | yes | `patient.email` | `email` | `email` | yes | ✅ |
+| 12 | `patient.middleInitial` | yes | `patient.middleInitial` | `middle_initial` | — (not sent) | no | ⚠️ data lost, no impact |
+| 13 | medicalHistory.* | yes | `medical.*` | `medical_history[]` | — | n/a | ✅ |
+| 14 | insurance.* | yes | `insurance.*` | `insurance_*` | — | n/a | ✅ |
+
+### Bugs categorized
+
+- **(b) Wrong output key:** `patient.Code` typo fallback in P&N — dead code,
+  no functional impact. Removed in this patch.
+- **(d) DrChrono field with no upstream source:** `zip_code` and `city` are
+  required by DrChrono Create Patient (non-blank validation) but the form
+  has only a single freeform "Street Address" textarea + separate `state`.
+  The form was simplified at some point and never reinstated the separate
+  postalCode / city / addressLine2 / country fields the §C.1 contract calls
+  for.
+
+### Fix applied
+
+Updated **Parse & Normalize** in `[Custom App] DrSnip Registration v2`
+(`H2HihkGKntbfRNcK`, versionCounter 12 → 13) to defensively extract ZIP
+and city from the freeform `streetAddress` blob when the structured fields
+are missing:
+
+1. Trim and read `patient.postalCode` / `patient.city` directly first.
+2. If `postalCode` still empty: regex `\b(\d{5}(?:-\d{4})?)\b` against the
+   streetAddress blob. Captures `97201` / `12345-6789` patterns.
+3. If `city` still empty: strip the extracted ZIP and the state code from
+   the streetAddress blob, comma-split, take the last non-empty chunk.
+   Works for `"100 Main St, Seattle, WA 98101"` and similar shapes.
+4. Final sentinels — when neither structured nor extracted: `zip_code →
+   '00000'`, `city → 'Unspecified'`. These pass DrChrono's non-blank
+   validation while clearly identifying rows that need a follow-up chart
+   correction. Three new boolean flags surface this state to admins:
+   `address_extracted`, `address_zip_sentinel`, `address_city_sentinel`.
+5. Removed the dead `patient.Code` fallback.
+
+DrChrono `Update Patient` uses the same P&N output, so it inherits the
+fix automatically.
+
+### Consultation v2 — no changes needed
+
+Consultation v2 (`4UicLLZRRMeENXhx`) has no Create Patient / Update
+Patient — strict-match-only flow. Audit confirmed no other address
+mappings exist on its DrChrono path.
+
+### Why this happened
+
+Cloning the v2 workflows from the original JotForm workflows during the
+2026-05-27 cutover correctly rewrote Parse & Normalize for the §C.1
+contract shape. The contract was the source of truth at that moment.
+What we missed: the custom-app intake form (artifacts/intake-form, on
+`main`) was already collecting the simpler "Street Address" single
+textarea — it didn't fulfill the contract it claimed to follow. Neither
+the cutover session nor the bridge session noticed because end-to-end
+testing happened with synthetic curl payloads that DID send the
+structured fields. The first UI submission ("Bruce Waynster") was the
+first real check of contract conformance.
+
+### Follow-up the custom-app team should plan
+
+The proper long-term fix is to add separate `city` / `postalCode` /
+`addressLine2` / `country` inputs to the Registration form
+(`artifacts/intake-form/src/pages/Home.tsx`) so the form actually
+fulfills the §C.1 contract. Until that lands, the n8n-side defensive
+extraction + sentinels keep the pipeline working with reasonable best-
+effort data quality.
+
+### Originals — untouched
+
+| Workflow | Pre-patch `updatedAt` | Post-patch `updatedAt` | Δ |
+|---|---|---|---|
+| `6warkNFZSSzuasMB` Patient Intake (JotForm) | 2026-05-09T02:29:42.393Z | 2026-05-09T02:29:42.393Z | ✅ unchanged |
+| `xY1NOVVCflSyEme6` Consultation Intake (JotForm) | 2026-04-15T23:56:46.765Z | 2026-04-15T23:56:46.765Z | ✅ unchanged |
+
+The bridge-link PR also ships:
+
+- **Migration 0007** (`n8n_execution_id` + `n8n_workflow_id` columns) so
+  the admin console can deep-link from any submission row directly to its
+  n8n execution view.
+- Bridge captures `x-n8n-execution-id` from the webhook response and
+  persists it alongside the workflowId (Registration =
+  `H2HihkGKntbfRNcK`, Consultation = `4UicLLZRRMeENXhx`).
+- New `N8N_BASE_URL` env var (default `https://n8n-drsnip.fly.dev`) lets
+  the admin detail endpoint compose
+  `{base}/workflow/{workflowId}/executions/{executionId}` server-side and
+  return it as `n8nExecutionUrl` for the SPA to render as a one-click
+  "View execution in n8n →" link.

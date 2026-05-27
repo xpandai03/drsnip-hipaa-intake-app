@@ -49,5 +49,23 @@ export default async function handler(
     return res.status(404).json({ error: "Submission not found" });
   }
 
-  return res.status(200).json({ submission: row });
+  // Compute the n8n UI deep-link server-side so the env var stays out of the
+  // SPA build. NULL when either id is missing OR the bridge call failed at
+  // the transport layer (no execution to link to). The workflow URL (no
+  // execution suffix) is still useful when only workflowId is known.
+  const n8nBase = (
+    process.env.N8N_BASE_URL ?? "https://n8n-drsnip.fly.dev"
+  ).replace(/\/+$/, "");
+  let n8nExecutionUrl: string | null = null;
+  let n8nWorkflowUrl: string | null = null;
+  if (row.n8nWorkflowId) {
+    n8nWorkflowUrl = `${n8nBase}/workflow/${row.n8nWorkflowId}`;
+    if (row.n8nExecutionId) {
+      n8nExecutionUrl = `${n8nWorkflowUrl}/executions/${row.n8nExecutionId}`;
+    }
+  }
+
+  return res.status(200).json({
+    submission: { ...row, n8nExecutionUrl, n8nWorkflowUrl },
+  });
 }

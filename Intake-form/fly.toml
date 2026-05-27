@@ -14,7 +14,14 @@
 #     N8N_WEBHOOK_CONSULTATION_URL=https://n8n-drsnip.fly.dev/webhook/custom-consultation-9f872020 \
 #     N8N_WEBHOOK_SECRET=<the DRSNIP_WEBHOOK_SECRET value from the n8n side> \
 #     N8N_BRIDGE_ENABLED=true \
+#     N8N_BASE_URL=https://n8n-drsnip.fly.dev \
 #     -a drsnip-intake-demo
+#
+# `N8N_BASE_URL` (Phase 3 bridge-link, added 2026-05-27): the admin
+# console's submission detail endpoint composes a deep-link to the n8n
+# execution view using this base URL. Defaults to
+# `https://n8n-drsnip.fly.dev` if not set; only override if the n8n
+# instance lives elsewhere.
 #
 # Kill switch: `N8N_BRIDGE_ENABLED=false` disables every n8n call without a
 # redeploy — submissions continue to land in Postgres exactly as before.
