@@ -112,9 +112,34 @@ const PROMOTED_KEYS = new Set([
   "dateOfBirth",
   "stateResidence",
   "state",
+  // Phase 3 address-split — the Patient section now renders the address
+  // composite (Street / City, State ZIP) from these raw_payload keys, so
+  // skip them in the generic Form Data list to avoid duplication.
+  "streetAddress",
+  "city",
+  "postalCode",
   "insuranceCardFront",
   "insuranceCardBack",
 ]);
+
+/** Compose a multi-line address from raw_payload + dedicated state column.
+ *  Returns null when no part of the address is present. */
+function composeAddress(
+  raw: Record<string, unknown>,
+  stateFromColumn: string | null,
+): string | null {
+  const street = typeof raw.streetAddress === "string" ? raw.streetAddress.trim() : "";
+  const city = typeof raw.city === "string" ? raw.city.trim() : "";
+  const stateValue =
+    (typeof raw.state === "string" && raw.state.trim()) ||
+    (stateFromColumn ?? "");
+  const zip = typeof raw.postalCode === "string" ? raw.postalCode.trim() : "";
+  if (!street && !city && !stateValue && !zip) return null;
+  const cityStateZip = [city, [stateValue, zip].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  return [street, cityStateZip].filter(Boolean).join("\n");
+}
 
 // ---------------------------------------------------------------------------
 // Modal
@@ -207,7 +232,13 @@ function DetailBody({ submission }: { submission: DetailSubmission }) {
         <KeyValue label="Email" value={s.email} />
         <KeyValue label="Phone" value={s.phone} />
         <KeyValue label="Date of Birth" value={s.dateOfBirth ?? "—"} />
-        <KeyValue label="State" value={s.stateResidence ?? "—"} />
+        {/* Phase 3 address-split: render the structured address composite
+            (Street / City, State ZIP). State falls back to the dedicated
+            stateResidence column for legacy rows. */}
+        <KeyValue
+          label="Address"
+          value={composeAddress(raw, s.stateResidence) ?? "—"}
+        />
       </Section>
 
       {/* n8n bridge outcome — Phase 3 wire to DrChrono. */}
@@ -410,10 +441,18 @@ function Section({
 }
 
 function KeyValue({ label, value }: { label: string; value: string }) {
+  // Preserve embedded newlines so the multi-line Address composite renders as
+  // Street / City, State ZIP rather than collapsing to one line.
+  const hasNewline = value.includes("\n");
   return (
     <div className="flex items-start justify-between gap-6 py-2">
       <span className="text-sm text-slate-500 shrink-0">{label}</span>
-      <span className="text-sm font-medium text-slate-900 text-right break-words">
+      <span
+        className={
+          "text-sm font-medium text-slate-900 text-right break-words" +
+          (hasNewline ? " whitespace-pre-line" : "")
+        }
+      >
         {value}
       </span>
     </div>
