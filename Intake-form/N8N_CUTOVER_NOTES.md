@@ -742,3 +742,77 @@ Both originals remain `active: true` and serve JotForm traffic. The
 unchanged — only the `Generate {Registration,Consultation} PDF` Code nodes
 and the Registration `Respond: Success` `responseBody` expression were
 patched.
+
+---
+
+## L.7 2026-05-27 — Address-split (form captures Street / City / ZIP cleanly)
+
+The Bruce Waynster 400 surfaced a structural mismatch: the Registration
+form had a single "Street Address" textarea (placeholder
+"Street, city, ZIP") + a separate State field, but DrChrono Create
+Patient requires `address`, `city`, and `zip_code` as non-blank fields.
+A companion patch (separately tracked) added defensive regex extraction
+in the n8n `Parse & Normalize` node with sentinel fallbacks
+(`address_zip_sentinel`, `address_city_sentinel`) — that's a band-aid.
+
+This patch is the proper fix: the form now captures address as three
+structured inputs.
+
+### What changed
+
+`artifacts/intake-form/src/pages/Home.tsx` (Contact & Consent screen):
+- The single Street Address textarea is replaced with a `TextField`
+  (placeholder "123 Main Street") on its own row.
+- A new 2-column row immediately below pairs **City** ("Seattle") and
+  **ZIP Code** ("98101"). Both required.
+- The existing State + Mobile Number paired row is unchanged in style or
+  layout (State remains optional, matching prior behavior).
+- `RegistrationData` adds `city: string` and `postalCode: string`.
+- `initialData` initializes both to `""`.
+- `isValid()` for the screen now requires Street non-blank, City
+  non-blank, and ZIP matching `^\d{5}(-\d{4})?$` (US 5 or 5+4).
+- The `onSubmit` payload was already spreading `...data` into the body,
+  so the two new fields flow through `/api/submit` → bridge →
+  `buildRegistrationPayload` → n8n with no additional wiring.
+
+`lib/n8n/payload.ts`: **no changes**. The mapper already reads
+`body.city` and `body.postalCode` per the §C.1 contract — those values
+were just always empty until now.
+
+`lib/pdf/templates/registration.ts`: Contact & Consent section now lists
+`city` and `postalCode` (label "ZIP Code") between Street/State and
+Mobile/Email — the PDF renders them as separate rows.
+
+`artifacts/intake-form/src/pages/admin/SubmissionDetailModal.tsx`:
+- `streetAddress`, `city`, `postalCode` added to `PROMOTED_KEYS` so they
+  don't duplicate in the generic Form Data section.
+- New `composeAddress(raw, stateResidence)` helper builds a multi-line
+  `Street\nCity, State ZIP` value. The Patient section now renders
+  "Address" with this composite (replacing the standalone "State" row).
+- `KeyValue` honors embedded `\n` via `whitespace-pre-line` so the
+  composite renders as two visual lines.
+
+### Relationship to n8n defensive extraction
+
+The Parse & Normalize regex/comma-split logic stays in place as
+**defense-in-depth**. New submissions from the form will populate
+`patient.city` and `patient.postalCode` directly, so:
+- `address_extracted` (debug flag) should be `false` on every new row.
+- `address_zip_sentinel` and `address_city_sentinel` should never fire.
+
+If either sentinel flag shows `true` on a post-deploy submission, that's
+a real signal something broke (form regressed, bridge bypassed, or the
+contract drifted) — investigate, don't suppress.
+
+Legacy / malformed submissions still get the defensive treatment, so
+historical replay and any direct API callers are unaffected.
+
+### DB / migrations
+
+No DB schema change. `submissions.raw_payload` is JSONB and accepts the
+new keys with zero migration work.
+
+### Originals — untouched
+
+No n8n workflows were modified in this patch (only custom-app code).
+Originals carry the same versions documented in §L.6 above.
