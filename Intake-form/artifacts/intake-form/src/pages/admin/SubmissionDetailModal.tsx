@@ -1,5 +1,15 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Copy, FileDown, FileText, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileDown,
+  FileText,
+  Loader2,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +22,8 @@ import {
   exactTime,
   formTypeBadgeClass,
   formTypeLabel,
+  n8nStatusBadgeClass,
+  n8nStatusLabel,
 } from "./Submissions";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +46,11 @@ type DetailSubmission = {
   insuranceCardFrontFilename: string | null;
   insuranceCardBackFilename: string | null;
   hasInsuranceCards: boolean;
+  // Phase 3 n8n bridge fields. NULL while pending.
+  n8nStatus: "success" | "manual_review" | "failed" | null;
+  n8nPatientId: number | null;
+  n8nResponseAt: string | null;
+  n8nResponseBody: Record<string, unknown> | null;
   rawPayload: Record<string, unknown>;
 };
 
@@ -193,6 +210,9 @@ function DetailBody({ submission }: { submission: DetailSubmission }) {
         <KeyValue label="State" value={s.stateResidence ?? "—"} />
       </Section>
 
+      {/* n8n bridge outcome — Phase 3 wire to DrChrono. */}
+      <N8nOutcomeSection submission={s} />
+
       {/* Insurance cards (stub) */}
       <Section title="Insurance Cards">
         <KeyValue
@@ -235,6 +255,68 @@ function DetailBody({ submission }: { submission: DetailSubmission }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// Phase 3 n8n bridge — surfaces the bridge outcome (status, DrChrono patient
+// link, response timestamp) plus a collapsible raw-JSON view for debugging.
+function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
+  const s = submission;
+  const [open, setOpen] = useState(false);
+  return (
+    <Section title="n8n / DrChrono">
+      <div className="py-2 flex items-center justify-between gap-3">
+        <span className="text-sm text-slate-500 shrink-0">Status</span>
+        <Chip className={n8nStatusBadgeClass(s.n8nStatus)}>
+          {n8nStatusLabel(s.n8nStatus)}
+        </Chip>
+      </div>
+      <div className="py-2 flex items-start justify-between gap-6 border-t border-slate-100">
+        <span className="text-sm text-slate-500 shrink-0">DrChrono patient</span>
+        <span className="text-sm font-medium text-slate-900 text-right">
+          {s.n8nPatientId != null ? (
+            <a
+              href={`https://app.drchrono.com/patients/${s.n8nPatientId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              {s.n8nPatientId}
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : (
+            "—"
+          )}
+        </span>
+      </div>
+      <div className="py-2 flex items-start justify-between gap-6 border-t border-slate-100">
+        <span className="text-sm text-slate-500 shrink-0">Last response</span>
+        <span className="text-sm font-medium text-slate-900 text-right">
+          {s.n8nResponseAt ? exactTime(s.n8nResponseAt) : "—"}
+        </span>
+      </div>
+      {s.n8nResponseBody !== null && (
+        <div className="py-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900"
+          >
+            {open ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            Raw response
+          </button>
+          {open && (
+            <pre className="mt-2 text-[11px] font-mono text-slate-700 bg-white border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words">
+              {JSON.stringify(s.n8nResponseBody, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+    </Section>
   );
 }
 

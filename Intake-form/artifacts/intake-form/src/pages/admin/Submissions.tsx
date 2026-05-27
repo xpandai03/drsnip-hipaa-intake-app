@@ -44,6 +44,9 @@ type SubmissionRow = {
   firstName: string;
   lastName: string;
   email: string;
+  /** Phase 3 n8n bridge outcome. NULL while the bridge hasn't reported yet. */
+  n8nStatus: "success" | "manual_review" | "failed" | null;
+  n8nPatientId: number | null;
 };
 
 type SubmissionsResponse = {
@@ -90,6 +93,27 @@ function formTypeBadgeClass(formType: string): string {
       return "bg-teal-100 text-teal-800 border-teal-200";
     default:
       return "bg-slate-100 text-slate-700 border-slate-200";
+  }
+}
+
+// Phase 3 n8n bridge — outcome badge styling + human label.
+function n8nStatusLabel(s: SubmissionRow["n8nStatus"]): string {
+  if (s === "success") return "n8n: success";
+  if (s === "manual_review") return "n8n: manual review";
+  if (s === "failed") return "n8n: failed";
+  return "n8n: pending";
+}
+
+function n8nStatusBadgeClass(s: SubmissionRow["n8nStatus"]): string {
+  switch (s) {
+    case "success":
+      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    case "manual_review":
+      return "bg-amber-100 text-amber-800 border-amber-200";
+    case "failed":
+      return "bg-rose-100 text-rose-800 border-rose-200";
+    default:
+      return "bg-slate-100 text-slate-600 border-slate-200";
   }
 }
 
@@ -394,6 +418,7 @@ function ResultsTable({
                 <TableHead>Form</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>n8n</TableHead>
                 <TableHead>Submission ID</TableHead>
                 <TableHead>PDF</TableHead>
               </TableRow>
@@ -424,6 +449,11 @@ function ResultsTable({
                   </TableCell>
                   <TableCell className="text-sm text-slate-700">
                     {row.email}
+                  </TableCell>
+                  <TableCell>
+                    <Chip className={n8nStatusBadgeClass(row.n8nStatus)}>
+                      {n8nStatusLabel(row.n8nStatus)}
+                    </Chip>
                   </TableCell>
                   <TableCell>
                     <button
@@ -596,5 +626,13 @@ export async function copyToClipboard(
 }
 
 // Re-exports consumed by SubmissionDetailModal.
-export { Chip, exactTime, relativeTime, formTypeLabel, formTypeBadgeClass };
+export {
+  Chip,
+  exactTime,
+  relativeTime,
+  formTypeLabel,
+  formTypeBadgeClass,
+  n8nStatusLabel,
+  n8nStatusBadgeClass,
+};
 export type { SubmissionRow };
