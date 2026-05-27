@@ -27,7 +27,9 @@ export const REGISTRATION_SECTIONS: PdfSection[] = [
     title: "Contact & Consent",
     fields: [
       { key: "streetAddress", label: "Street Address", kind: "text" },
+      { key: "city", label: "City", kind: "text" },
       { key: "state", label: "State", kind: "text" },
+      { key: "postalCode", label: "ZIP Code", kind: "text" },
       { key: "mobileNumber", label: "Mobile Number", kind: "text" },
       { key: "email", label: "Email", kind: "text" },
       // Consent Yes/No answers render with the full question text the patient
