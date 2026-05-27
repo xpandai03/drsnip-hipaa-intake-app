@@ -32,69 +32,82 @@ const INSURANCE_OPTIONS = [
   "Other",
 ];
 
-// The 13 medical-history screening questions (all Yes/No).
-const MEDICAL_QUESTIONS: { key: MedicalKey; label: string }[] = [
-  { key: "mhTesticleAbnormality", label: "Have you ever had a testicle abnormality, scrotum abnormality, hernia, infection, or tumor?" },
-  { key: "mhTesticleInjury", label: "Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?" },
-  { key: "mhSTI", label: "Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?" },
-  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?" },
-  { key: "mhMedications", label: "Do you take medication regularly, or have you taken any in the last 2 weeks?" },
-  { key: "mhSurgeries", label: "Have you had any surgeries?" },
-  { key: "mhFainting", label: "Have you ever fainted, or almost fainted, during or after a medical procedure?" },
-  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?" },
-  { key: "mhChronic", label: "Do you have any major or chronic medical problems?" },
-  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?" },
-  { key: "mhSurgeryComplications", label: "Have you had complications, or excessive pain or bleeding, after surgery?" },
-  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?" },
-  { key: "mhAspirin", label: "Are you taking — or will you take — aspirin products in the 5 days before your procedure?" },
-];
-
 type MedicalKey =
+  | "mhMentalIllness"
+  | "mhPainSensitive"
+  | "mhFainting"
+  | "mhBleeding"
+  | "mhKidney"
+  | "mhSTI"
   | "mhTesticleAbnormality"
   | "mhTesticleInjury"
-  | "mhSTI"
-  | "mhKidney"
-  | "mhMedications"
   | "mhSurgeries"
-  | "mhFainting"
-  | "mhAllergies"
-  | "mhChronic"
-  | "mhBleeding"
   | "mhSurgeryComplications"
-  | "mhPainSensitive"
-  | "mhAspirin";
+  | "mhMedications"
+  | "mhAspirin"
+  | "mhAllergies"
+  | "mhChronic";
 
-const medicalLabel = (key: MedicalKey): string =>
-  MEDICAL_QUESTIONS.find((q) => q.key === key)!.label;
+// The 14 medical-history screening questions (all Yes/No), in Jeff's
+// requested order. `explanationPlaceholder` overrides the default placeholder
+// in the per-question "Yes" reveal — used for the STI question, where the
+// physician needs the specific disease(s) and year(s).
+const MEDICAL_QUESTIONS: {
+  key: MedicalKey;
+  label: string;
+  explanationPlaceholder?: string;
+}[] = [
+  { key: "mhMentalIllness", label: "Does mental illness or depression affect your decision making?" },
+  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?" },
+  { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?" },
+  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?" },
+  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?" },
+  {
+    key: "mhSTI",
+    label: "Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?",
+    explanationPlaceholder: "Please list which condition(s) and the year(s) you had each one.",
+  },
+  { key: "mhTesticleAbnormality", label: "Have you ever had Testicle abnormality, scrotum abnormality, hernia, infection, or tumor?" },
+  { key: "mhTesticleInjury", label: "Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?" },
+  { key: "mhSurgeries", label: "Have you had any surgeries?" },
+  { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?" },
+  { key: "mhMedications", label: "Is there medication you take regularly or have you taken any medication in the last 2 weeks?" },
+  { key: "mhAspirin", label: "Are you currently taking any aspirin products, or anticipate taking aspirin in the five days leading up to your procedure?" },
+  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?" },
+  { key: "mhChronic", label: "Have you had any major medical problems or do you have any chronic medical problems?" },
+];
 
-// The 13 medical-history questions, grouped into screens of at most 3
-// single-select questions each (Phase 2 polish). Question keys, labels,
-// wording, and order are unchanged — only the screen grouping is new.
+const medicalQuestion = (key: MedicalKey) =>
+  MEDICAL_QUESTIONS.find((q) => q.key === key)!;
+
+// The 14 medical-history questions, grouped into 5 clinically themed screens
+// of at most 3 single-select questions each. Order and grouping per Jeff's
+// 2026-05 feedback.
 const MEDICAL_SCREENS: { id: string; title: string; keys: MedicalKey[] }[] = [
   {
-    id: "medical-urological",
-    title: "Medical Background — Urological & Reproductive",
-    keys: ["mhTesticleAbnormality", "mhTesticleInjury", "mhSTI"],
+    id: "medical-mental-pain",
+    title: "Mental Health & Pain Tolerance",
+    keys: ["mhMentalIllness", "mhPainSensitive", "mhFainting"],
   },
   {
-    id: "medical-general",
-    title: "Medical Background — General Health",
-    keys: ["mhKidney", "mhChronic", "mhMedications"],
+    id: "medical-bleeding-kidney",
+    title: "Bleeding, Kidney & Infections",
+    keys: ["mhBleeding", "mhKidney", "mhSTI"],
   },
   {
-    id: "medical-surgical",
-    title: "Medical Background — Surgical & Procedure History",
-    keys: ["mhSurgeries", "mhSurgeryComplications", "mhFainting"],
+    id: "medical-surgical-reproductive",
+    title: "Surgical & Reproductive History",
+    keys: ["mhTesticleAbnormality", "mhTesticleInjury", "mhSurgeries"],
   },
   {
-    id: "medical-bleeding",
-    title: "Medical Background — Bleeding & Anesthesia",
-    keys: ["mhAllergies", "mhBleeding"],
+    id: "medical-complications-meds",
+    title: "Surgery Complications & Medications",
+    keys: ["mhSurgeryComplications", "mhMedications", "mhAspirin"],
   },
   {
-    id: "medical-aspirin",
-    title: "Medical Background — Aspirin & Pain",
-    keys: ["mhAspirin", "mhPainSensitive"],
+    id: "medical-allergies-chronic",
+    title: "Allergies & Chronic Conditions",
+    keys: ["mhAllergies", "mhChronic"],
   },
 ];
 
@@ -146,6 +159,7 @@ const initialData: RegistrationData = {
   consentVoicemail: "",
   consentText: "",
   primaryCarePhysician: "",
+  mhMentalIllness: "",
   mhTesticleAbnormality: "",
   mhTesticleInjury: "",
   mhSTI: "",
@@ -324,27 +338,31 @@ export default function Home() {
                 placeholder="Optional"
               />
             )}
-            {ms.keys.map((key) => (
-              <div key={key}>
-                <YesNoField
-                  label={medicalLabel(key)}
-                  value={data[key]}
-                  onChange={(v) =>
-                    update({ [key]: v } as Partial<RegistrationData>)
-                  }
-                  required
-                />
-                {/* A "Yes" reveals an explanation box directly under that
-                    question — its answer is "Yes" plus this detail. */}
-                <Reveal show={data[key] === "Yes"}>
-                  <TextAreaField
-                    label="Please share details, including a general timeframe."
-                    value={data.medicalDetails[key] ?? ""}
-                    onChange={(v) => updateMedicalDetail(key, v)}
+            {ms.keys.map((key) => {
+              const q = medicalQuestion(key);
+              return (
+                <div key={key}>
+                  <YesNoField
+                    label={q.label}
+                    value={data[key]}
+                    onChange={(v) =>
+                      update({ [key]: v } as Partial<RegistrationData>)
+                    }
+                    required
                   />
-                </Reveal>
-              </div>
-            ))}
+                  {/* A "Yes" reveals an explanation box directly under that
+                      question — its answer is "Yes" plus this detail. */}
+                  <Reveal show={data[key] === "Yes"}>
+                    <TextAreaField
+                      label="Please share details, including a general timeframe."
+                      placeholder={q.explanationPlaceholder}
+                      value={data.medicalDetails[key] ?? ""}
+                      onChange={(v) => updateMedicalDetail(key, v)}
+                    />
+                  </Reveal>
+                </div>
+              );
+            })}
           </div>
         ),
         isValid: () => ms.keys.every((key) => data[key] !== ""),
