@@ -25,12 +25,25 @@ import {
 // HIPAA: never log request-body content. Logs carry IDs and error types only.
 // ---------------------------------------------------------------------------
 
-// A stubbed file reference — filename + size only. No bytes (see
-// components/ui/FileUploadStub.tsx).
+// Insurance-card capture (Phase 3 card-upload). Patients now upload real
+// JPEG/PNG bytes; the FileUploadStub component reads the file as a base64
+// data URL and strips the prefix. base64Data is OPTIONAL on the schema so
+// legacy metadata-only refs (Phase 2 stub) still validate cleanly; the
+// bridge mapper only forwards the card to n8n when base64Data is set and
+// non-empty.
+//
+// HIPAA: base64Data is PHI. Never logged from this handler. The bytes are
+// stripped before the row is persisted to `raw_payload` (see
+// sanitizeForPersistence below) so the DB row stays lean and the bytes
+// only live in the n8n call to DrChrono.
+const MAX_CARD_BYTES = 5 * 1024 * 1024;
+const MAX_BASE64_LEN = Math.ceil((MAX_CARD_BYTES / 3) * 4) + 16;
 const fileRefSchema = z
   .object({
     filename: z.string().min(1).max(255),
-    size: z.number().int().nonnegative(),
+    size: z.number().int().nonnegative().max(MAX_CARD_BYTES),
+    contentType: z.string().max(120).optional(),
+    base64Data: z.string().max(MAX_BASE64_LEN).optional(),
   })
   .nullable()
   .optional();
@@ -78,6 +91,26 @@ export default async function handler(
       ? mhMentalIllnessRaw
       : null;
 
+  // Diagnostic: non-PHI breadcrumb for card upload debugging. Logs the
+  // count and total payload size of cards present. NEVER logs base64Data,
+  // filenames, or content-types (filenames may carry identifiers).
+  const cards: Array<{ size: number; hasBytes: boolean }> = [];
+  if (front) cards.push({ size: front.size, hasBytes: Boolean(front.base64Data) });
+  if (back) cards.push({ size: back.size, hasBytes: Boolean(back.base64Data) });
+  if (cards.length > 0) {
+    console.log(
+      "[submit] cards " +
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          card_count: cards.length,
+          cards_with_bytes: cards.filter((c) => c.hasBytes).length,
+          total_size_kb: Math.round(
+            cards.reduce((acc, c) => acc + c.size, 0) / 1024,
+          ),
+        }),
+    );
+  }
+
   let submissionId: string;
   try {
     const [row] = await db
@@ -90,13 +123,17 @@ export default async function handler(
         phone: body.phone,
         dateOfBirth: body.dateOfBirth || null,
         stateResidence: body.stateResidence || null,
-        // Stubbed insurance-card refs — filename only, never bytes.
+        // Filename + flag captured for audit; raw bytes are NEVER persisted
+        // here (only in the n8n bridge call, which forwards them to DrChrono).
         insuranceCardFrontFilename: front?.filename ?? null,
         insuranceCardBackFilename: back?.filename ?? null,
         hasInsuranceCards: Boolean(front || back),
         mhMentalIllness,
-        // Full submission JSON, retained for the admin detail view + audit.
-        rawPayload: body,
+        // Full submission JSON minus card bytes — keeps the row lean and
+        // avoids storing PHI bytes redundantly. The bridge call below uses
+        // the original `body` (with bytes intact) so DrChrono still gets
+        // the card images.
+        rawPayload: sanitizeForPersistence(body),
       })
       .returning({ id: submissions.id });
 
@@ -169,4 +206,28 @@ function outcomeForDb(outcome: N8nOutcome): Record<string, unknown> {
   if (outcome.responseBody !== undefined) out.response = outcome.responseBody;
   if (outcome.diagnostic) out.diagnostic = outcome.diagnostic;
   return out;
+}
+
+// Strip raw card bytes from the submission body before it's persisted to
+// `raw_payload`. Filename / content-type / size are preserved so the admin
+// detail view can show what was attached, but the actual bytes (PHI) only
+// live in the n8n bridge call → DrChrono. Phase 4 will replace this with
+// BAA-covered object storage and a stable key in raw_payload.
+function sanitizeForPersistence(
+  body: z.infer<typeof bodySchema>,
+): z.infer<typeof bodySchema> {
+  const stripCard = (
+    card: z.infer<typeof fileRefSchema>,
+  ): z.infer<typeof fileRefSchema> => {
+    if (!card) return card;
+    // Drop base64Data only; keep metadata.
+    const { base64Data: _b, ...metadata } = card;
+    void _b;
+    return metadata;
+  };
+  return {
+    ...body,
+    insuranceCardFront: stripCard(body.insuranceCardFront),
+    insuranceCardBack: stripCard(body.insuranceCardBack),
+  };
 }

@@ -745,6 +745,122 @@ patched.
 
 ---
 
+## L.8 2026-05-27 — Insurance card upload fix (Phase-3 card-upload PR)
+
+A real-world UI submission ("Johnny CarterTest", DrChrono `134357464`,
+n8n execution `319`) ran end-to-end with success but **the two
+insurance-card images attached via the UI never reached DrChrono**.
+Only the Registration Intake PDF was uploaded.
+
+### Trace
+
+`n8n_executions.get(319)` filtered to the relevant nodes (audit
+artifact, no PHI):
+
+- `Parse & Normalize` output: `has_insurance_cards: false`,
+  `insurance_card_front_b64: ""`, `insurance_card_back_b64: ""`,
+  `insurance_card_front_filename: ""`,
+  `insurance_card_back_filename: ""`.
+- `IF: Has Insurance Cards?` — only the FALSE branch fired; the TRUE
+  branch (`Prepare Card Binaries`) was empty.
+- `Prepare Card Binaries` was not in the executed nodes list at all.
+- `Respond: Success` returned the registration-PDF upload response —
+  no card upload responses present.
+
+So n8n received zero card bytes. The custom-app side was the culprit.
+
+Static analysis confirmed:
+
+- `artifacts/intake-form/src/components/ui/FileUploadStub.tsx` had a
+  `handleFile` that called `onChange({ filename: file.name, size:
+  file.size })` and discarded the File bytes (explicit comment: "no
+  bytes leave the browser"). Phase-2 stub from `PHASE_2_NOTES.md §C9`.
+- `lib/n8n/payload.ts` only included `insurance.cardFront` /
+  `insurance.cardBack` in the n8n payload when `base64Data` was a
+  non-empty string. Since FileUploadStub never set it, both cards
+  were always omitted.
+
+Diagnosis: **Cause A — UI never captured file content.** Bridge mapper
+and n8n workflow were correct.
+
+### Fix (custom-app side only)
+
+`FileUploadStub.tsx` rewritten to actually read the selected file:
+
+- `FileReader.readAsDataURL` → strip the `data:image/...;base64,`
+  prefix → emit `{ filename, contentType, size, base64Data }`.
+- Validation: JPEG / PNG only (PDF cards are out of scope for Phase
+  3); max 5MB per card (matches the spec). Inline error UI on
+  rejection (no logging — filename + size may carry identifiers).
+- Loading state ("Reading file…") on the dropzone while FileReader
+  resolves.
+- Backward-compat: the type name `StubFileRef` is preserved (used by
+  `Home.tsx` and `api/submit.ts` zod schema), with `contentType` and
+  `base64Data` added as optional-on-the-wire fields.
+
+`api/submit.ts`:
+
+- `fileRefSchema` now accepts the four-field shape (base64Data
+  optional). Per-field size cap mirrors the FileUploadStub validator
+  (5MB raw → ≤ 6.7MB base64).
+- New `sanitizeForPersistence(body)` strips `base64Data` from the
+  card refs **before** the `submissions.raw_payload` INSERT — keeps
+  the DB row lean and avoids storing card bytes redundantly. The
+  bridge call receives the full unsanitized `body` so DrChrono still
+  gets the images.
+- Diagnostic log line `[submit] cards {ts, card_count,
+  cards_with_bytes, total_size_kb}` whenever cards are present. ID-
+  only — no filenames, no base64, no contentType (filenames may
+  carry identifiers).
+
+`lib/n8n/bridge.ts`:
+
+- New `summarizeCards(body)` helper + a `[n8n-bridge] cards_outbound`
+  log line carrying `card_count`, `cards_with_bytes`, `total_kb`.
+  Fires before the n8n POST. Same HIPAA posture as `[submit] cards`.
+
+`lib/n8n/payload.ts`: no changes — already correctly populates
+`insurance.cardFront` / `insurance.cardBack` when `base64Data` is
+present.
+
+n8n workflows: no changes — `Prepare Card Binaries` + `DrChrono:
+Upload Card Document` always worked, they just never got input.
+
+### HIPAA posture
+
+- Card bytes are PHI. They now live inline in the `/api/submit` body,
+  the bridge POST to n8n, and the n8n→DrChrono multipart upload. They
+  are NOT persisted to Postgres (raw_payload only keeps filename /
+  size / contentType metadata). They are NEVER logged (logs carry
+  counts + size buckets only).
+- This is a Phase 3 interim solution. **Phase 4** will replace inline
+  base64 with BAA-covered object storage (Cloudflare R2 / S3) and
+  pass a stable key (not bytes) in the bridge payload. The
+  FileUploadStub component will then upload to storage and capture
+  the key; payload.ts will be updated to dereference. The n8n side
+  will need a small change to fetch from storage instead of decoding
+  inline base64.
+
+### Payload size sanity
+
+Two 5MB cards → ~13.3MB base64 + JSON wrapper → ~14MB POST to
+`/api/submit`. Fly's `http_service` default limit is 64MB so the
+inbound is comfortable. The bridge then POSTs ~13.3MB to n8n, which
+defaults to a 16MB payload limit — within budget but tight. If we
+need bigger cards (or three+ files), the cleanest path forward is
+Phase-4 object storage rather than raising n8n's limit.
+
+### Originals — untouched
+
+| Workflow | Pre-patch `updatedAt` | Post-patch `updatedAt` | Δ |
+|---|---|---|---|
+| `6warkNFZSSzuasMB` Patient Intake (JotForm) | 2026-05-09T02:29:42.393Z | 2026-05-09T02:29:42.393Z | ✅ unchanged |
+| `xY1NOVVCflSyEme6` Consultation Intake (JotForm) | 2026-04-15T23:56:46.765Z | 2026-04-15T23:56:46.765Z | ✅ unchanged |
+
+No n8n workflow changes in this PR (only custom-app code + docs).
+
+---
+
 ## L.7 2026-05-27 — Address-split (form captures Street / City / ZIP cleanly)
 
 The Bruce Waynster 400 surfaced a structural mismatch: the Registration

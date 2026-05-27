@@ -307,6 +307,35 @@ function missingConfigOutcome(
   };
 }
 
+/** Diagnostic-only count of cards being shipped to n8n. HIPAA: never logs
+ *  base64Data or filenames — only counts and the size buckets used in the
+ *  admin console. */
+function summarizeCards(
+  body: SubmissionBody,
+): { count: number; with_bytes: number; total_kb: number } {
+  const f = (body as Record<string, unknown>).insuranceCardFront as
+    | { size?: number; base64Data?: string }
+    | null
+    | undefined;
+  const b = (body as Record<string, unknown>).insuranceCardBack as
+    | { size?: number; base64Data?: string }
+    | null
+    | undefined;
+  const refs = [f, b].filter((c): c is { size?: number; base64Data?: string } =>
+    Boolean(c),
+  );
+  return {
+    count: refs.length,
+    with_bytes: refs.filter(
+      (c) => typeof c.base64Data === "string" && c.base64Data.length > 0,
+    ).length,
+    total_kb: Math.round(
+      refs.reduce((acc, c) => acc + (typeof c.size === "number" ? c.size : 0), 0) /
+        1024,
+    ),
+  };
+}
+
 /** Deliver a Registration submission to n8n. Never throws. */
 export async function callN8nRegistration(
   submissionId: string,
@@ -327,6 +356,16 @@ export async function callN8nRegistration(
       "registration",
       "N8N_WEBHOOK_SECRET",
     );
+
+  const cards = summarizeCards(body);
+  if (cards.count > 0) {
+    logEvent("cards_outbound", {
+      submission_id: submissionId,
+      card_count: cards.count,
+      cards_with_bytes: cards.with_bytes,
+      total_kb: cards.total_kb,
+    });
+  }
 
   const payload = buildRegistrationPayload(submissionId, body, submittedAt);
   return postToN8n(submissionId, env.registrationUrl, payload, env);
