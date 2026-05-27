@@ -175,25 +175,75 @@ idempotent.
 
 When you see `failed` (or pending-forever) on the admin detail view:
 
-1. Open the submission detail → expand **Raw response**. The bridge view is
-   stored verbatim in `n8n_response_body`. Look for:
-   - `error_message: "bridge disabled"` → flip the kill switch on.
-   - `error_message: "missing config: ..."` → set the named env var.
-   - `error_message: "timeout after 30000ms"` → n8n took too long. Check
-     `https://n8n-drsnip.fly.dev` health, and check that execution in n8n's
+1. Open the submission detail → look at the **Failure detail** block
+   directly under the n8n / DrChrono section. As of the 2026-05-27
+   bridge-fix patch, this surfaces a structured diagnostic:
+   - `kind` — `http` (n8n responded), `fetch` (thrown before/during
+     transport), or `config` (kill switch / missing env var).
+   - `httpStatus`, `contentType`, `bodyLength`, `bodySnippet` — what n8n
+     actually sent back. The snippet is capped at 2KB so you'll usually see
+     the whole response body inline.
+   - `parseError` — populated when n8n returned a body that wasn't valid
+     JSON (HTML error page, empty body, partial body). The bridge captures
+     the JSON.parse() exception message here.
+   - `errorName`, `causeMessage`, `stackHead`, `elapsedMs` — populated on
+     `fetch` kind (network errors, DNS, abort/timeout, TLS).
+2. Map the diagnostic to a cause:
+   - `kind=config, error_message=bridge disabled` → flip
+     `N8N_BRIDGE_ENABLED=true` (kill switch is off).
+   - `kind=config, error_message=missing config: N8N_WEBHOOK_*` → set the
+     named env var via `fly secrets set ... -a drsnip-intake-demo`.
+   - `kind=fetch, errorName=AbortError`, `error_message=timeout after
+     30000ms` → n8n took longer than 30s. Check
+     `https://n8n-drsnip.fly.dev` health, check that execution in n8n's
      execution log — it may have actually succeeded, just slow.
-   - `error_message: "HTTP 401"` → `N8N_WEBHOOK_SECRET` doesn't match
+   - `kind=fetch, errorName=TypeError`, `causeMessage` mentions
+     `ENOTFOUND`/`ECONNREFUSED` → DNS/network. Custom-app machine can't
+     reach n8n.
+   - `kind=fetch, errorName=TypeError`, `causeMessage` mentions cert →
+     TLS issue.
+   - `kind=http, httpStatus=401` → `N8N_WEBHOOK_SECRET` doesn't match
      `DRSNIP_WEBHOOK_SECRET` on the n8n side. Check both fly secrets.
-   - `error_message: "HTTP 5xx"` → n8n side error. Check n8n logs.
-   - `response: { success: false, reason: ... }` with status `manual_review`
-     → already documented above (§4).
-2. Match the submission ID to n8n's execution log
+   - `kind=http, httpStatus=200, parseError=Unexpected token...` → n8n
+     returned a 2xx with a non-JSON body. Almost certainly an n8n
+     workflow-level error before the Respond node fires. Open the n8n
+     execution log to see what failed; the Respond expression itself is
+     a common offender (e.g. referencing an unexecuted node without
+     `$if(node.isExecuted, ...)`).
+   - `kind=http, httpStatus=200, parseError=empty response body` → n8n
+     reached a Respond node but the body was empty. Usually a misconfigured
+     `responseBody` expression that evaluated to undefined.
+   - `kind=http, httpStatus=200, parseError=null, body matches a shape
+     other than success/manual_review` → unexpected response shape. The
+     `bodySnippet` tells you what n8n sent.
+3. Match the submission ID to n8n's execution log
    (`https://n8n-drsnip.fly.dev` → workflow → Executions). Each n8n
    execution lists the body it received; the submission_id in the body
    matches the custom-app submission UUID.
-3. Match against the Audit Google Sheet — every n8n call also writes a row
+4. Match against the Audit Google Sheet — every n8n call also writes a row
    to the `DrSnip_Intake_Sheet` tab. If a manual_review fired, there's also
    a row on `ManualReview`.
+
+### 5.1 The "response: null, bridge_status: failed" pattern (pre-2026-05-27)
+
+Before the bridge-fix patch, the bridge stored `{response: null,
+bridge_status: 'failed'}` with no further detail whenever n8n returned a
+2xx with a non-JSON body OR the fetch threw. That swallowed the actual
+cause. The patch:
+
+- Always reads the raw body as text first, then attempts `JSON.parse` on
+  the captured text. The text is preserved as a snippet even when the
+  parse fails.
+- Adds a `diagnostic` field next to `bridge_status` / `response` /
+  `error_message` in `n8n_response_body`. The admin detail view renders it
+  inline above the "Raw response" expander.
+- Promotes the previously-swallowed path to a new structured log event
+  `[n8n-bridge] response_failed` carrying status, content-type,
+  body_length, body_snippet, parse_error, and elapsed_ms — so the failure
+  reason shows up in `fly logs` even if you can't see the DB.
+
+Rows written before the patch will keep their original `response: null`
+shape; only new submissions get the diagnostic.
 
 ID-only logging in the bridge means logs are safe to forward to any log
 sink without PHI exposure.
