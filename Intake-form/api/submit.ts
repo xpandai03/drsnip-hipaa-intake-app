@@ -159,11 +159,14 @@ async function runN8nBridge(
   }
 }
 
-// Compose the JSONB column value. Always include the bridge's view; only
-// include responseBody when n8n actually returned one.
+// Compose the JSONB column value. Always include the bridge's view; include
+// responseBody when n8n returned one (even if null); always include the
+// diagnostic on a failed outcome so the admin console + future debugging
+// sees the actual reason instead of a bare `response: null`.
 function outcomeForDb(outcome: N8nOutcome): Record<string, unknown> {
   const out: Record<string, unknown> = { bridge_status: outcome.status };
   if (outcome.errorMessage) out.error_message = outcome.errorMessage;
   if (outcome.responseBody !== undefined) out.response = outcome.responseBody;
+  if (outcome.diagnostic) out.diagnostic = outcome.diagnostic;
   return out;
 }
