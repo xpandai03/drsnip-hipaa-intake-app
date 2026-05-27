@@ -68,6 +68,14 @@ export const submissions = pgTable(
     // Full JSON response from n8n, kept verbatim for debugging.
     n8nResponseBody: jsonb("n8n_response_body"),
 
+    // ----- n8n execution deep-link (migration 0007) ------------------------
+    // Captured from the n8n webhook response's `x-n8n-execution-id` header on
+    // success/manual_review/failed. `n8n_workflow_id` is set by the bridge
+    // based on which webhook was hit. Together they form the n8n UI URL:
+    //   {N8N_BASE_URL}/workflow/{n8n_workflow_id}/executions/{n8n_execution_id}
+    n8nExecutionId: text("n8n_execution_id"),
+    n8nWorkflowId: text("n8n_workflow_id"),
+
     // Full submission JSON — every form answer lives here.
     rawPayload: jsonb("raw_payload").notNull(),
   },
