@@ -18,9 +18,6 @@ export const CONSULTATION_SECTIONS: PdfSection[] = [
       { key: "employer", label: "Employer", kind: "text" },
       { key: "jobTitle", label: "Job Title", kind: "text" },
       { key: "jobDemands", label: "Job Demands", kind: "text" },
-      { key: "education", label: "Education", kind: "text" },
-      { key: "educationOther", label: "Education — please specify", kind: "text" },
-      { key: "ethnicity", label: "Ethnicity", kind: "text" },
     ],
   },
   {

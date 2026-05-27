@@ -154,7 +154,6 @@ function toChildren(v: unknown): ChildRow[] {
       age: scalar(r.age),
       relation: scalar(r.relation),
       gender: scalar(r.gender),
-      dependent: scalar(r.dependent),
     };
   });
 }
