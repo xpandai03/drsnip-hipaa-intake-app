@@ -24,6 +24,23 @@ export interface N8nOutcome {
   responseBody?: unknown;
   /** Short, non-PHI error description when status is 'failed'. */
   errorMessage?: string;
+  /** Diagnostic snapshot captured on failure paths so the admin console + DB
+   *  show the actual reason instead of a bare null. Always non-PHI. */
+  diagnostic?: {
+    /** 'http' = response came back; 'fetch' = thrown before/during fetch;
+     *  'config' = env var / kill switch path. */
+    kind: "http" | "fetch" | "config";
+    httpStatus?: number;
+    contentType?: string;
+    bodySnippet?: string;
+    bodyLength?: number;
+    parseError?: string;
+    errorName?: string;
+    errorMessage?: string;
+    causeMessage?: string;
+    stackHead?: string;
+    elapsedMs?: number;
+  };
 }
 
 interface BridgeEnv {
@@ -73,6 +90,30 @@ function logEvent(
   );
 }
 
+// Cap on the body snippet stored in the DB. Webhook responses are usually
+// <1KB; if n8n returns an HTML error page it can be much larger. We only need
+// enough to identify the failure mode, never the full body.
+const BODY_SNIPPET_MAX = 2048;
+
+function snippet(text: string): string {
+  if (text.length <= BODY_SNIPPET_MAX) return text;
+  return text.slice(0, BODY_SNIPPET_MAX) + "...[truncated]";
+}
+
+function stackHead(err: unknown): string | undefined {
+  if (!(err instanceof Error) || !err.stack) return undefined;
+  const firstLine = err.stack.split("\n").find((l) => l.trim().startsWith("at "));
+  return firstLine ? firstLine.trim() : undefined;
+}
+
+function causeMessage(err: unknown): string | undefined {
+  if (!(err instanceof Error)) return undefined;
+  const cause = (err as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === "string") return cause;
+  return undefined;
+}
+
 async function postToN8n(
   submissionId: string,
   webhookUrl: string,
@@ -93,25 +134,64 @@ async function postToN8n(
       signal: controller.signal,
     });
     const elapsedMs = Date.now() - startedAt;
+    const contentType = res.headers.get("content-type") ?? undefined;
+
+    // Always read the raw text first — JSON parsing is layered on top, so a
+    // body that isn't valid JSON still surfaces its actual contents in the
+    // diagnostic. n8n's own error responses are sometimes HTML or empty.
+    let rawText = "";
+    let textReadError: string | undefined;
+    try {
+      rawText = await res.text();
+    } catch (readErr) {
+      textReadError =
+        readErr instanceof Error
+          ? `${readErr.name}: ${readErr.message}`
+          : "unknown text-read error";
+    }
 
     let parsedBody: unknown = null;
-    try {
-      parsedBody = await res.json();
-    } catch {
-      parsedBody = null;
+    let parseError: string | undefined;
+    if (rawText) {
+      try {
+        parsedBody = JSON.parse(rawText);
+      } catch (parseErr) {
+        parsedBody = null;
+        parseError =
+          parseErr instanceof Error
+            ? `${parseErr.name}: ${parseErr.message}`
+            : "unknown JSON parse error";
+      }
+    } else if (!textReadError) {
+      parseError = "empty response body";
     }
+
+    const baseDiagnostic = {
+      kind: "http" as const,
+      httpStatus: res.status,
+      contentType,
+      bodyLength: rawText.length,
+      bodySnippet: rawText ? snippet(rawText) : "",
+      parseError: parseError ?? textReadError,
+      elapsedMs,
+    };
 
     if (!res.ok) {
       logEvent("non_2xx", {
         submission_id: submissionId,
         webhook_url: webhookUrl,
         status: res.status,
+        content_type: contentType,
+        body_length: rawText.length,
+        body_snippet: snippet(rawText),
+        parse_error: baseDiagnostic.parseError,
         elapsed_ms: elapsedMs,
       });
       return {
         status: "failed",
         responseBody: parsedBody,
         errorMessage: `HTTP ${res.status}`,
+        diagnostic: baseDiagnostic,
       };
     }
 
@@ -124,6 +204,32 @@ async function postToN8n(
         : typeof patientIdRaw === "string" && /^\d+$/.test(patientIdRaw)
           ? Number(patientIdRaw)
           : undefined;
+
+    // On `failed`, log + return the diagnostic so the admin console shows
+    // exactly what n8n sent back (status, content-type, raw body snippet,
+    // JSON parse error). Previously this branch silently stored
+    // responseBody=null with no breadcrumb.
+    if (outcomeStatus === "failed") {
+      logEvent("response_failed", {
+        submission_id: submissionId,
+        webhook_url: webhookUrl,
+        http_status: res.status,
+        content_type: contentType,
+        body_length: rawText.length,
+        body_snippet: snippet(rawText),
+        parse_error: baseDiagnostic.parseError,
+        elapsed_ms: elapsedMs,
+      });
+      return {
+        status: "failed",
+        responseBody: parsedBody,
+        errorMessage:
+          parseError ??
+          textReadError ??
+          "n8n response did not match success or manual_review shape",
+        diagnostic: baseDiagnostic,
+      };
+    }
 
     logEvent("response", {
       submission_id: submissionId,
@@ -140,18 +246,35 @@ async function postToN8n(
     };
   } catch (err) {
     const elapsedMs = Date.now() - startedAt;
-    const aborted =
-      err instanceof Error && err.name === "AbortError";
-    const reason = aborted ? "timeout" : err instanceof Error ? err.name : "unknown";
+    const aborted = err instanceof Error && err.name === "AbortError";
+    const errorName = err instanceof Error ? err.name : "unknown";
+    const errorMessage =
+      err instanceof Error ? err.message : String(err);
+    const cause = causeMessage(err);
+
     logEvent("error", {
       submission_id: submissionId,
       webhook_url: webhookUrl,
-      reason,
+      reason: aborted ? "timeout" : errorName,
+      error_message: errorMessage,
+      cause_message: cause,
+      stack_head: stackHead(err),
       elapsed_ms: elapsedMs,
     });
+
     return {
       status: "failed",
-      errorMessage: aborted ? `timeout after ${TIMEOUT_MS}ms` : reason,
+      errorMessage: aborted
+        ? `timeout after ${TIMEOUT_MS}ms`
+        : `${errorName}: ${errorMessage}`,
+      diagnostic: {
+        kind: "fetch",
+        errorName,
+        errorMessage,
+        causeMessage: cause,
+        stackHead: stackHead(err),
+        elapsedMs,
+      },
     };
   } finally {
     clearTimeout(timer);
@@ -160,7 +283,11 @@ async function postToN8n(
 
 function disabledOutcome(submissionId: string, route: string): N8nOutcome {
   logEvent("disabled", { submission_id: submissionId, route });
-  return { status: "failed", errorMessage: "bridge disabled" };
+  return {
+    status: "failed",
+    errorMessage: "bridge disabled",
+    diagnostic: { kind: "config", errorMessage: "bridge disabled" },
+  };
 }
 
 function missingConfigOutcome(
@@ -176,6 +303,7 @@ function missingConfigOutcome(
   return {
     status: "failed",
     errorMessage: `missing config: ${missing}`,
+    diagnostic: { kind: "config", errorMessage: `missing config: ${missing}` },
   };
 }
 
