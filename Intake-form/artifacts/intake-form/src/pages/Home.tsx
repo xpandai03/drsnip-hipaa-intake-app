@@ -121,8 +121,13 @@ type RegistrationData = Record<MedicalKey, string> & {
   middleInitial: string;
   legalLastName: string;
   dateOfBirth: string;
-  // Screen 2 — Contact & Consent
+  // Screen 2 — Contact & Consent. Address is captured as three structured
+  // fields (Phase-3 address-split): the §C.1 contract has always called for
+  // streetAddress / city / postalCode separately and DrChrono's Create
+  // Patient API requires city and zip_code non-blank.
   streetAddress: string;
+  city: string;
+  postalCode: string;
   state: string;
   mobileNumber: string;
   email: string;
@@ -153,6 +158,8 @@ const initialData: RegistrationData = {
   legalLastName: "",
   dateOfBirth: "",
   streetAddress: "",
+  city: "",
+  postalCode: "",
   state: "",
   mobileNumber: "",
   email: "",
@@ -267,13 +274,29 @@ export default function Home() {
       description: "How can the DrSnip team reach you about your appointment?",
       render: () => (
         <div className="grid gap-6">
-          <TextAreaField
+          <TextField
             label="Street Address"
             value={data.streetAddress}
             onChange={(v) => update({ streetAddress: v })}
-            placeholder="Street, city, ZIP"
+            placeholder="123 Main Street"
             required
           />
+          <div className="grid gap-6 sm:grid-cols-2">
+            <TextField
+              label="City"
+              value={data.city}
+              onChange={(v) => update({ city: v })}
+              placeholder="Seattle"
+              required
+            />
+            <TextField
+              label="ZIP Code"
+              value={data.postalCode}
+              onChange={(v) => update({ postalCode: v })}
+              placeholder="98101"
+              required
+            />
+          </div>
           <div className="grid gap-6 sm:grid-cols-2">
             <TextField
               label="State"
@@ -315,6 +338,10 @@ export default function Home() {
       ),
       isValid: () =>
         data.streetAddress.trim() !== "" &&
+        data.city.trim() !== "" &&
+        // ZIP: US 5-digit, optional +4 extension. Matches the patient-form
+        // promise so the n8n bridge always sees a clean zip_code value.
+        /^\d{5}(-\d{4})?$/.test(data.postalCode.trim()) &&
         data.mobileNumber.trim() !== "" &&
         data.email.trim() !== "" &&
         data.consentVoicemail !== "" &&
