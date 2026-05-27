@@ -232,3 +232,40 @@ deploy — standard Fly practice; no action needed.
   `GET /api/submissions/<id>/pdf` for each → **HTTP 200,
   `Content-Type: application/pdf`**, valid PDFs (3 pp / 4 pp). `/api/submissions`
   JSON unaffected by the binary-adapter change (no regression).
+
+---
+
+## Redeploy — Phase 3 Jeff feedback — 2026-05-27 ~16:24 UTC
+
+`phase-3-jeff-feedback` deployed to `drsnip-intake-demo`. Branch PR:
+[#1](https://github.com/xpandai03/drsnip-hipaa-intake-app/pull/1) — awaiting
+merge into `main`. Six commits, Jeff's content updates only (no infra
+changes). Image size 62 MB (unchanged).
+
+- `release_command` (`node dist/migrate.cjs`) completed successfully —
+  migration **0005_jeff_feedback** applied to live Postgres (adds
+  `submissions.mh_mental_illness text`). Idempotent; re-runs cleanly.
+- Both machines reached a good state; app live at
+  https://drsnip-intake-demo.fly.dev
+
+### Smoke test results
+
+| # | Test | Result |
+|---|------|--------|
+| 1 | `GET /healthz` | ✅ `200 {"status":"ok"}` |
+| 2 | `POST /api/submit` Registration with `mhMentalIllness: "No"` | ✅ `200 {success:true, id:d27ec4c4-…}` |
+| 3 | `POST /api/submit` Consultation with `children` (no `dependent`) + `howHeard: "TV"` | ✅ `200 {success:true, id:a32841ef-…}` |
+| 4 | Admin login | ✅ session issued |
+| 5 | `GET /api/submissions/<reg-id>/pdf` | ✅ `200 application/pdf` (3 pp) |
+| 6 | Registration PDF — Mental Illness is first medical question | ✅ |
+| 7 | Registration PDF — all 14 medical questions in Jeff's order | ✅ |
+| 8 | Registration PDF — 5 themed medical sections | ✅ |
+| 9 | Registration PDF — full consent question text rendered (wraps to 2 lines) | ✅ |
+| 10 | Registration PDF — STI "Yes" explanation rendered under the answer | ✅ ("Chlamydia in 2014") |
+| 11 | Registration PDF — page-1 header age (41) + DOB rendered | ✅ |
+| 12 | `GET /api/submissions/<con-id>/pdf` | ✅ `200 application/pdf` (3 pp) |
+| 13 | Consultation PDF — no Education / Ethnicity in About You | ✅ |
+| 14 | Consultation PDF — children block has no Dependent column | ✅ (rows: Age · Relation · Gender) |
+| 15 | Consultation PDF — Partner Education preserved | ✅ |
+| 16 | Consultation PDF — page-1 header unchanged (name + spouse + age + children + DOB) | ✅ |
+| 17 | Consultation PDF — "TV" appears under "How did you hear about DrSnip?" | ✅ |

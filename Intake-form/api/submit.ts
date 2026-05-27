@@ -60,6 +60,14 @@ export default async function handler(
   const front = body.insuranceCardFront ?? null;
   const back = body.insuranceCardBack ?? null;
 
+  // Pull the dedicated mental-illness screening answer out of the
+  // .passthrough() body — Registration-form only; absent on Consultation.
+  const mhMentalIllnessRaw = (body as Record<string, unknown>).mhMentalIllness;
+  const mhMentalIllness =
+    typeof mhMentalIllnessRaw === "string" && mhMentalIllnessRaw !== ""
+      ? mhMentalIllnessRaw
+      : null;
+
   try {
     const [row] = await db
       .insert(submissions)
@@ -75,6 +83,7 @@ export default async function handler(
         insuranceCardFrontFilename: front?.filename ?? null,
         insuranceCardBackFilename: back?.filename ?? null,
         hasInsuranceCards: Boolean(front || back),
+        mhMentalIllness,
         // Full submission JSON, retained for the admin detail view + audit.
         rawPayload: body,
       })

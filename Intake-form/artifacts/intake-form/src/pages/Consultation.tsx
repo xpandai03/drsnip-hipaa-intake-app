@@ -9,7 +9,6 @@ import {
   MultiChoiceField,
   Reveal,
   FieldShell,
-  QuestionLabel,
 } from "@/components/ui/form-fields";
 import { DatePicker } from "@/components/ui/DatePicker";
 
@@ -24,23 +23,13 @@ import { DatePicker } from "@/components/ui/DatePicker";
 // ---- Reference data -------------------------------------------------------
 
 const JOB_DEMANDS = ["Sedentary", "Light", "Moderate", "Heavy"];
-const EDUCATION = [
+const PARTNER_EDUCATION = [
   "High school",
   "Some college",
   "Associate degree",
   "Bachelor's degree",
   "Graduate degree",
   "Other",
-];
-const ETHNICITY = [
-  "American Indian or Alaska Native",
-  "Asian",
-  "Black or African American",
-  "Hispanic or Latino",
-  "Native Hawaiian or Pacific Islander",
-  "White",
-  "Two or more races",
-  "Prefer not to say",
 ];
 const RELATIONSHIP_STATUS = [
   "Single",
@@ -68,6 +57,7 @@ const BC_METHODS = [
 const HOW_HEARD = [
   "Google / Search",
   "Social media",
+  "TV",
   "Friend or family",
   "Doctor referral",
   "Insurance provider",
@@ -83,14 +73,12 @@ type ChildRow = {
   age: string;
   relation: string;
   gender: string;
-  dependent: string;
 };
 
 const emptyChild: ChildRow = {
   age: "",
   relation: "",
   gender: "",
-  dependent: "",
 };
 
 type ConsultationData = {
@@ -104,9 +92,6 @@ type ConsultationData = {
   employer: string;
   jobTitle: string;
   jobDemands: string;
-  education: string;
-  educationOther: string;
-  ethnicity: string;
   // Screen 2 — Relationship
   relationshipStatus: string;
   relationshipStatusOther: string;
@@ -158,9 +143,6 @@ const initialData: ConsultationData = {
   employer: "",
   jobTitle: "",
   jobDemands: "",
-  education: "",
-  educationOther: "",
-  ethnicity: "",
   relationshipStatus: "",
   relationshipStatusOther: "",
   partnerFirstName: "",
@@ -292,25 +274,6 @@ export default function Consultation() {
               options={JOB_DEMANDS}
             />
           </div>
-          <SelectField
-            label="Education"
-            value={data.education}
-            onChange={(v) => update({ education: v })}
-            options={EDUCATION}
-          />
-          <Reveal show={data.education === "Other"}>
-            <TextField
-              label="Please specify your education"
-              value={data.educationOther}
-              onChange={(v) => update({ educationOther: v })}
-            />
-          </Reveal>
-          <SelectField
-            label="Ethnicity"
-            value={data.ethnicity}
-            onChange={(v) => update({ ethnicity: v })}
-            options={ETHNICITY}
-          />
         </div>
       ),
       isValid: () =>
@@ -378,7 +341,7 @@ export default function Consultation() {
                   label="Partner / Spouse's Education"
                   value={data.partnerEducation}
                   onChange={(v) => update({ partnerEducation: v })}
-                  options={EDUCATION}
+                  options={PARTNER_EDUCATION}
                 />
               </div>
               <TextField
@@ -453,12 +416,6 @@ export default function Consultation() {
                   value={data.children[i].gender}
                   onChange={(v) => updateChild(i, { gender: v })}
                   options={CHILD_GENDER}
-                />
-                <SelectField
-                  label="Dependent?"
-                  value={data.children[i].dependent}
-                  onChange={(v) => updateChild(i, { dependent: v })}
-                  options={["Yes", "No"]}
                 />
               </div>
             </div>

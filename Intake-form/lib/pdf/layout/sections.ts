@@ -30,7 +30,6 @@ export interface ChildRow {
   age?: string;
   relation?: string;
   gender?: string;
-  dependent?: string;
 }
 
 // ---- Shared two-column table row -----------------------------------------
@@ -259,7 +258,6 @@ export function renderChildrenBlock(
       `Age ${val(c.age)}`,
       `Relation: ${val(c.relation)}`,
       `Gender: ${val(c.gender)}`,
-      `Dependent: ${val(c.dependent)}`,
     ];
     cursor.drawText(parts.join("    ·    "), {
       x: cursor.left + 24,

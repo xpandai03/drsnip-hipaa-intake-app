@@ -45,6 +45,11 @@ export const submissions = pgTable(
     insuranceCardBackFilename: text("insurance_card_back_filename"),
     hasInsuranceCards: boolean("has_insurance_cards").notNull().default(false),
 
+    // Dedicated column for the Registration-form Mental Illness screening
+    // question (Jeff feedback, 2026-05). Per-question "Yes" explanations
+    // continue to live inside raw_payload.medicalDetails.
+    mhMentalIllness: text("mh_mental_illness"),
+
     // Full submission JSON — every form answer lives here.
     rawPayload: jsonb("raw_payload").notNull(),
   },
