@@ -21,6 +21,7 @@ import marketingSources from "../lib/db/migrations/0002_marketing_sources.sql";
 import drsnipSchema from "../lib/db/migrations/0003_drsnip_schema.sql";
 import linkFormType from "../lib/db/migrations/0004_link_form_type.sql";
 import jeffFeedback from "../lib/db/migrations/0005_jeff_feedback.sql";
+import n8nBridge from "../lib/db/migrations/0006_n8n_bridge.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -30,6 +31,7 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0003_drsnip_schema", sql: drsnipSchema },
   { name: "0004_link_form_type", sql: linkFormType },
   { name: "0005_jeff_feedback", sql: jeffFeedback },
+  { name: "0006_n8n_bridge", sql: n8nBridge },
   { name: "seed-admin", sql: seedAdmin },
 ];
 

@@ -3,6 +3,21 @@
 # First-time setup:  fly apps create drsnip-intake-demo
 # Set the database:  fly secrets set DATABASE_URL=postgres://...
 # Deploy:            fly deploy
+#
+# Phase 3 — n8n bridge secrets. Set these BEFORE the first deploy that
+# includes the bridge code, otherwise the bridge will short-circuit to
+# 'failed: bridge disabled' (no harm — submissions still persist; the n8n
+# call just doesn't fire).
+#
+#   fly secrets set \
+#     N8N_WEBHOOK_REGISTRATION_URL=https://n8n-drsnip.fly.dev/webhook/custom-registration-6fe129ab \
+#     N8N_WEBHOOK_CONSULTATION_URL=https://n8n-drsnip.fly.dev/webhook/custom-consultation-9f872020 \
+#     N8N_WEBHOOK_SECRET=<the DRSNIP_WEBHOOK_SECRET value from the n8n side> \
+#     N8N_BRIDGE_ENABLED=true \
+#     -a drsnip-intake-demo
+#
+# Kill switch: `N8N_BRIDGE_ENABLED=false` disables every n8n call without a
+# redeploy — submissions continue to land in Postgres exactly as before.
 
 app = "drsnip-intake-demo"
 primary_region = "lax"

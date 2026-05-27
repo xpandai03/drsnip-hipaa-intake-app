@@ -117,6 +117,9 @@ export default async function handler(
         firstName: submissions.firstName,
         lastName: submissions.lastName,
         email: submissions.email,
+        // n8n outcome surfaces as a badge on the list view (Phase 3 bridge).
+        n8nStatus: submissions.n8nStatus,
+        n8nPatientId: submissions.n8nPatientId,
       })
       .from(submissions)
       .where(whereClause)
