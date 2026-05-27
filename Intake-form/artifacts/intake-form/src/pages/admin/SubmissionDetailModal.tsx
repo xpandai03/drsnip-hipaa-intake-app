@@ -259,10 +259,25 @@ function DetailBody({ submission }: { submission: DetailSubmission }) {
 }
 
 // Phase 3 n8n bridge — surfaces the bridge outcome (status, DrChrono patient
-// link, response timestamp) plus a collapsible raw-JSON view for debugging.
+// link, response timestamp) plus a structured diagnostic when the bridge
+// failed (Phase-3 bridge-fix). Raw JSON response stays collapsible at the
+// bottom for low-level debugging.
 function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
   const s = submission;
   const [open, setOpen] = useState(false);
+
+  // The bridge stores its outcome under n8nResponseBody as:
+  //   { bridge_status, error_message?, response?, diagnostic? }
+  const body = (s.n8nResponseBody ?? null) as Record<string, unknown> | null;
+  const errorMessage =
+    body && typeof body.error_message === "string"
+      ? (body.error_message as string)
+      : null;
+  const diagnostic =
+    body && body.diagnostic && typeof body.diagnostic === "object"
+      ? (body.diagnostic as Record<string, unknown>)
+      : null;
+
   return (
     <Section title="n8n / DrChrono">
       <div className="py-2 flex items-center justify-between gap-3">
@@ -295,6 +310,43 @@ function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
           {s.n8nResponseAt ? exactTime(s.n8nResponseAt) : "—"}
         </span>
       </div>
+
+      {/* Failure diagnostic — visible without expanding raw JSON. */}
+      {s.n8nStatus === "failed" && (errorMessage || diagnostic) && (
+        <div className="py-2 border-t border-slate-100">
+          <p className="text-sm text-rose-700 font-medium mb-1">Failure detail</p>
+          {errorMessage && (
+            <p className="text-sm text-slate-700 mb-1">
+              <span className="text-slate-500">Error:</span> {errorMessage}
+            </p>
+          )}
+          {diagnostic && (
+            <dl className="text-xs text-slate-600 space-y-0.5">
+              {diagnosticRow(diagnostic, "kind", "Kind")}
+              {diagnosticRow(diagnostic, "httpStatus", "HTTP status")}
+              {diagnosticRow(diagnostic, "contentType", "Content-Type")}
+              {diagnosticRow(diagnostic, "bodyLength", "Body length")}
+              {diagnosticRow(diagnostic, "parseError", "Parse error")}
+              {diagnosticRow(diagnostic, "errorName", "Error name")}
+              {diagnosticRow(diagnostic, "causeMessage", "Cause")}
+              {diagnosticRow(diagnostic, "elapsedMs", "Elapsed (ms)")}
+              {diagnosticRow(diagnostic, "stackHead", "Stack (head)")}
+            </dl>
+          )}
+          {diagnostic && typeof diagnostic.bodySnippet === "string" &&
+            diagnostic.bodySnippet.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-xs text-slate-600 cursor-pointer">
+                  Body snippet ({String(diagnostic.bodyLength ?? "?")} bytes)
+                </summary>
+                <pre className="mt-1 text-[11px] font-mono text-slate-700 bg-white border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words">
+                  {diagnostic.bodySnippet as string}
+                </pre>
+              </details>
+            )}
+        </div>
+      )}
+
       {s.n8nResponseBody !== null && (
         <div className="py-2 border-t border-slate-100">
           <button
@@ -317,6 +369,21 @@ function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
         </div>
       )}
     </Section>
+  );
+}
+
+function diagnosticRow(
+  diagnostic: Record<string, unknown>,
+  key: string,
+  label: string,
+): React.ReactNode {
+  const v = diagnostic[key];
+  if (v == null || v === "") return null;
+  return (
+    <div className="flex items-start gap-2">
+      <dt className="text-slate-500 shrink-0">{label}:</dt>
+      <dd className="text-slate-800 font-mono break-all">{String(v)}</dd>
+    </div>
   );
 }
 
