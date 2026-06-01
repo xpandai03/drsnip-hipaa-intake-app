@@ -14,5 +14,6 @@ export default async function handler(
   return res.status(200).json({
     email: auth.user.email,
     name: auth.user.name,
+    role: auth.user.role,
   });
 }

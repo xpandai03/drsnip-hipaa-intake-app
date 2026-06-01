@@ -13,6 +13,7 @@ import {
   type Session,
   type User,
 } from "@workspace/db";
+import { isAdmin, normalizeRole, type Role } from "./permissions";
 
 export const SESSION_COOKIE_NAME = "cjc_admin_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -73,7 +74,7 @@ function parseCookies(header: string | undefined): Record<string, string> {
 
 export type AuthedSession = {
   session: Session;
-  user: Pick<User, "id" | "email" | "name" | "isActive">;
+  user: Pick<User, "id" | "email" | "name" | "isActive"> & { role: Role };
 };
 
 /**
@@ -103,6 +104,7 @@ export async function getSessionFromCookie(
       email: users.email,
       name: users.name,
       isActive: users.isActive,
+      role: users.role,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -148,6 +150,7 @@ export async function getSessionFromCookie(
       email: row.email,
       name: row.name,
       isActive: row.isActive,
+      role: normalizeRole(row.role),
     },
   };
 }
@@ -234,6 +237,45 @@ export async function requireAuth(
     return null;
   }
   return auth;
+}
+
+/**
+ * Pure admin gate (Phase 4 Block D). Given a resolved session (or null) and the
+ * response, writes the right status and returns whether the request may
+ * proceed:
+ *   - no session   → 401 Unauthorized
+ *   - viewer       → 403 Forbidden
+ *   - admin        → true (no write)
+ *
+ * Split out from requireAdmin so it can be unit-tested with a mock res and no
+ * live DB (see api/_test/permissions.test.ts). Acts as a type guard.
+ */
+export function enforceAdmin(
+  auth: AuthedSession | null,
+  res: VercelResponse,
+): auth is AuthedSession {
+  if (!auth) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  if (!isAdmin(auth.user.role)) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Admin-only guard for privileged handlers (delete / export / link
+ * generation). On success returns the AuthedSession; on failure writes
+ * 401/403 to res and returns null — the handler must early-return on null.
+ */
+export async function requireAdmin(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<AuthedSession | null> {
+  const auth = await getSessionFromCookie(req);
+  return enforceAdmin(auth, res) ? auth : null;
 }
 
 /** Find an active user by email, or null. Email is lowercased. */
