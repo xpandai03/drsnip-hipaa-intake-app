@@ -20,14 +20,20 @@ export const COLOR = {
 };
 
 // Two-column table layout for the body sections (see sections.ts). The label
-// column is ~39% of the 504pt content width; the value column takes the rest.
+// column carries the long question text; the value column carries mostly short
+// answers ("Yes"/"No", names, IDs). C.3 (Phase 4B) re-balances the split — a
+// wider label column (~50%) means the long medical questions wrap to fewer
+// lines, which (since the label drives row height) is the biggest
+// readability-safe lever toward the Registration 2-page target. Font sizes are
+// unchanged; only padding is tightened.
 const CONTENT_WIDTH = PAGE.width - 2 * MARGIN; // 504
+const LABEL_WIDTH = 250;
 export const TABLE = {
-  labelWidth: 196,
+  labelWidth: LABEL_WIDTH,
   colGap: 12,
-  valueWidth: CONTENT_WIDTH - 196 - 12, // 296
-  rowMinHeight: 20,
-  rowPadV: 4, // vertical padding inside each row, top & bottom
+  valueWidth: CONTENT_WIDTH - LABEL_WIDTH - 12, // 242
+  rowMinHeight: 18,
+  rowPadV: 3, // vertical padding inside each row, top & bottom
   labelSize: 9,
   valueSize: 10,
   labelLineH: 12,

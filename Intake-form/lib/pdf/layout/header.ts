@@ -26,7 +26,9 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
   const { regular, bold, oblique } = cursor.fonts;
 
   // ---- Brand band -------------------------------------------------------
-  const bandH = 80;
+  // C.3 (Phase 4B): the header is vertically compressed to give the body more
+  // room (toward the Registration 2-page target) without losing any element.
+  const bandH = 64;
   const bandY = PAGE.height - bandH;
   page.drawRectangle({
     x: 0,
@@ -70,11 +72,11 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
     color: COLOR.white,
   });
 
-  cursor.y = bandY - 30;
+  cursor.y = bandY - 22;
 
   // ---- Patient name (large, centered) ----------------------------------
-  drawCentered(cursor, d.patientName, bold, 24, COLOR.text);
-  cursor.y -= 6;
+  drawCentered(cursor, d.patientName, bold, 20, COLOR.text);
+  cursor.y -= 4;
 
   // ---- Spouse line (Consultation only) ---------------------------------
   if (d.spouseName) {
@@ -82,9 +84,12 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
     cursor.y -= 4;
   }
 
-  cursor.y -= 16;
+  cursor.y -= 12;
 
   // ---- Stat tiles ------------------------------------------------------
+  // DOB is intentionally NOT shown here (C.1, Phase 4B) — it reads in the body
+  // (Patient Information / About You). `d.dateOfBirth` is still carried on
+  // HeaderData; the underlying submission data is untouched.
   const tiles: { label: string; value: string }[] = [
     { label: "Age", value: d.age != null ? String(d.age) : "—" },
   ];
@@ -94,10 +99,9 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
       value: d.childCount != null ? String(d.childCount) : "—",
     });
   }
-  tiles.push({ label: "Date of Birth", value: d.dateOfBirth || "—" });
 
   const TW = 156;
-  const TH = 56;
+  const TH = 46;
   const TG = 16;
   const totalW = tiles.length * TW + (tiles.length - 1) * TG;
   let tx = (PAGE.width - totalW) / 2;
@@ -116,7 +120,7 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
     const labelW = regular.widthOfTextAtSize(label, 8);
     page.drawText(label, {
       x: tx + (TW - labelW) / 2,
-      y: tileTop - 19,
+      y: tileTop - 16,
       size: 8,
       font: regular,
       color: COLOR.muted,
@@ -124,14 +128,14 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
     const valW = bold.widthOfTextAtSize(t.value, 17);
     page.drawText(t.value, {
       x: tx + (TW - valW) / 2,
-      y: tileTop - 44,
+      y: tileTop - 38,
       size: 17,
       font: bold,
       color: COLOR.brand,
     });
     tx += TW + TG;
   }
-  cursor.y = tileTop - TH - 18;
+  cursor.y = tileTop - TH - 14;
 
   // ---- Submission meta -------------------------------------------------
   page.drawText(`Submitted: ${d.submittedAt}`, {
