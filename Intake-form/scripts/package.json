@@ -7,6 +7,7 @@
     "hello": "tsx ./src/hello.ts",
     "seed-settings": "tsx ./src/seed-settings.ts",
     "seed-admin-users": "tsx ./src/seed-admin-users.ts",
+    "seed-viewer-user": "tsx ./src/seed-viewer-user.ts",
     "test": "node --test --import tsx ./test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
