@@ -213,7 +213,9 @@ function outcomeForDb(outcome: N8nOutcome): Record<string, unknown> {
 // detail view can show what was attached, but the actual bytes (PHI) only
 // live in the n8n bridge call → DrChrono. Phase 4 will replace this with
 // BAA-covered object storage and a stable key in raw_payload.
-function sanitizeForPersistence(
+// Exported so the partner-card stripping is verifiable without a live DB
+// (see api/_test/partner-card-phi.test.ts). Behavior is unchanged.
+export function sanitizeForPersistence(
   body: z.infer<typeof bodySchema>,
 ): z.infer<typeof bodySchema> {
   const stripCard = (
@@ -225,9 +227,22 @@ function sanitizeForPersistence(
     void _b;
     return metadata;
   };
+  // The B.4 "Both" insurance option adds partnerInsuranceCardFront/Back, which
+  // arrive via `.passthrough()` (untyped). Strip their bytes EXACTLY like the
+  // original cards above — keep filename/size/contentType, drop base64Data —
+  // so partner-card PHI never lands in raw_payload.
+  const stripLooseCard = (card: unknown): unknown => {
+    if (!card || typeof card !== "object" || Array.isArray(card)) return card;
+    const { base64Data: _b, ...metadata } = card as Record<string, unknown>;
+    void _b;
+    return metadata;
+  };
+  const raw = body as Record<string, unknown>;
   return {
     ...body,
     insuranceCardFront: stripCard(body.insuranceCardFront),
     insuranceCardBack: stripCard(body.insuranceCardBack),
-  };
+    partnerInsuranceCardFront: stripLooseCard(raw.partnerInsuranceCardFront),
+    partnerInsuranceCardBack: stripLooseCard(raw.partnerInsuranceCardBack),
+  } as z.infer<typeof bodySchema>;
 }

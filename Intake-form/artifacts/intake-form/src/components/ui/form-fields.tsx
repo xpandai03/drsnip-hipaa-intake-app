@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { RadioCard } from "@/components/ui/RadioCard";
 import { cn } from "@/lib/utils";
+import { formatPhone } from "@/lib/phone";
 
 // Shared form-field kit (Phase 2 — DrSnip). Thin, labelled compositions of the
 // existing Input / RadioCard / native controls so the Registration and
@@ -79,7 +80,11 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        onChange={(e) => onChange(e.target.value)}
+        // Phone fields auto-format live to (xxx) xxx-xxxx; the formatter is
+        // idempotent so pasting an already-formatted/partial number is safe.
+        onChange={(e) =>
+          onChange(type === "tel" ? formatPhone(e.target.value) : e.target.value)
+        }
       />
     </FieldShell>
   );
@@ -106,7 +111,9 @@ export function TextAreaField({
     <FieldShell label={label} required={required} hint={hint}>
       <textarea
         className="w-full min-h-[120px] p-5 text-base transition-all duration-200 bg-white border-2 rounded-2xl border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 placeholder:text-slate-400 shadow-sm resize-none text-slate-800"
-        placeholder={placeholder ?? "Optional"}
+        // Optional fields get a neutral empty placeholder (no "(Optional)"
+        // label treatment) — required-ness is signalled by the "*" alone.
+        placeholder={placeholder ?? ""}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />

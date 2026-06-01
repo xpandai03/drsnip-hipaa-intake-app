@@ -24,12 +24,14 @@ import {
 // DrSnip clinic locations (per drsnip.com).
 const OFFICE_LOCATIONS = ["Seattle, WA", "Portland, OR", "Plano, TX"];
 
+// Insurance coverage status — mirrors the DrSnip Registration Jotform (B.4):
+// the patient's own policy, a partner's policy, both, or none. "Both" captures
+// a second (partner) policy via the additive partnerInsurance* fields below.
 const INSURANCE_OPTIONS = [
-  "Private / Commercial insurance",
-  "Medicare",
-  "Medicaid",
-  "Self-pay / No insurance",
-  "Other",
+  "Own Insurance",
+  "Partner's Insurance",
+  "Both",
+  "No Insurance",
 ];
 
 type MedicalKey =
@@ -137,7 +139,10 @@ type RegistrationData = Record<MedicalKey, string> & {
   primaryCarePhysician: string;
   // Per-question explanation for each medical question answered "Yes".
   medicalDetails: Partial<Record<MedicalKey, string>>;
-  // Screen 4 — Insurance
+  // Screen 4 — Insurance.
+  // `insuranceCoverage` is one of Own / Partner's / Both / No Insurance (B.4).
+  // The flat insurance*/insured* fields below are the PRIMARY policy (the
+  // patient's own for "Own"/"Both", the partner's for "Partner's Insurance").
   insuranceCoverage: string;
   insuranceCompany: string;
   insuranceIdNo: string;
@@ -148,6 +153,17 @@ type RegistrationData = Record<MedicalKey, string> & {
   insuredEmployer: string;
   insuranceCardFront: StubFileRef | null;
   insuranceCardBack: StubFileRef | null;
+  // Secondary (partner's) policy — only collected when coverage is "Both".
+  // Additive: existing primary keys are untouched (see PHASE_4_BLOCK_B_PLAN.md).
+  partnerInsuranceCompany: string;
+  partnerInsuranceIdNo: string;
+  partnerInsuranceGroupNo: string;
+  partnerInsuredFirstName: string;
+  partnerInsuredLastName: string;
+  partnerInsuredDob: string;
+  partnerInsuredEmployer: string;
+  partnerInsuranceCardFront: StubFileRef | null;
+  partnerInsuranceCardBack: StubFileRef | null;
 };
 
 const initialData: RegistrationData = {
@@ -191,6 +207,15 @@ const initialData: RegistrationData = {
   insuredEmployer: "",
   insuranceCardFront: null,
   insuranceCardBack: null,
+  partnerInsuranceCompany: "",
+  partnerInsuranceIdNo: "",
+  partnerInsuranceGroupNo: "",
+  partnerInsuredFirstName: "",
+  partnerInsuredLastName: "",
+  partnerInsuredDob: "",
+  partnerInsuredEmployer: "",
+  partnerInsuranceCardFront: null,
+  partnerInsuranceCardBack: null,
 };
 
 // ---- Component -----------------------------------------------------------
@@ -207,9 +232,18 @@ export default function Home() {
       medicalDetails: { ...d.medicalDetails, [key]: value },
     }));
 
-  const needsInsurance =
+  // A primary policy is collected for every coverage except "No Insurance".
+  // The partner's (secondary) policy is collected only for "Both" (B.4).
+  const showPrimaryInsurance =
     data.insuranceCoverage !== "" &&
-    data.insuranceCoverage !== "Self-pay / No insurance";
+    data.insuranceCoverage !== "No Insurance";
+  const showPartnerInsurance = data.insuranceCoverage === "Both";
+  // Whose policy the primary set represents — partner's when "Partner's
+  // Insurance" is the sole selection, otherwise the patient's own.
+  const primaryInsuranceTitle =
+    data.insuranceCoverage === "Partner's Insurance"
+      ? "Partner's insurance"
+      : "Your insurance";
 
   const screens: FormScreen[] = [
     {
@@ -362,7 +396,7 @@ export default function Home() {
                 label="Current Primary Care Physician (name and location)"
                 value={data.primaryCarePhysician}
                 onChange={(v) => update({ primaryCarePhysician: v })}
-                placeholder="Optional"
+                placeholder="Name & Location"
               />
             )}
             {ms.keys.map((key) => {
@@ -385,6 +419,7 @@ export default function Home() {
                       placeholder={q.explanationPlaceholder}
                       value={data.medicalDetails[key] ?? ""}
                       onChange={(v) => updateMedicalDetail(key, v)}
+                      required
                     />
                   </Reveal>
                 </div>
@@ -392,7 +427,15 @@ export default function Home() {
             })}
           </div>
         ),
-        isValid: () => ms.keys.every((key) => data[key] !== ""),
+        // Every question must be answered, and any "Yes" answer must have a
+        // non-blank explanation before the screen can advance (B.3).
+        isValid: () =>
+          ms.keys.every(
+            (key) =>
+              data[key] !== "" &&
+              (data[key] !== "Yes" ||
+                (data.medicalDetails[key] ?? "").trim() !== ""),
+          ),
       }),
     ),
     {
@@ -408,8 +451,11 @@ export default function Home() {
             options={INSURANCE_OPTIONS}
             required
           />
-          <Reveal show={needsInsurance}>
+          <Reveal show={showPrimaryInsurance}>
             <div className="grid gap-6">
+              <p className="text-sm font-semibold text-primary">
+                {primaryInsuranceTitle}
+              </p>
               <TextField
                 label="Insurance Company"
                 value={data.insuranceCompany}
@@ -468,13 +514,79 @@ export default function Home() {
               </div>
             </div>
           </Reveal>
+          <Reveal show={showPartnerInsurance}>
+            <div className="grid gap-6">
+              <p className="text-sm font-semibold text-primary">
+                Partner's insurance
+              </p>
+              <TextField
+                label="Insurance Company"
+                value={data.partnerInsuranceCompany}
+                onChange={(v) => update({ partnerInsuranceCompany: v })}
+                required
+              />
+              <div className="grid gap-6 sm:grid-cols-2">
+                <TextField
+                  label="ID No."
+                  value={data.partnerInsuranceIdNo}
+                  onChange={(v) => update({ partnerInsuranceIdNo: v })}
+                  required
+                />
+                <TextField
+                  label="Group No."
+                  value={data.partnerInsuranceGroupNo}
+                  onChange={(v) => update({ partnerInsuranceGroupNo: v })}
+                />
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <TextField
+                  label="Insured's Legal First Name"
+                  value={data.partnerInsuredFirstName}
+                  onChange={(v) => update({ partnerInsuredFirstName: v })}
+                />
+                <TextField
+                  label="Insured's Legal Last Name"
+                  value={data.partnerInsuredLastName}
+                  onChange={(v) => update({ partnerInsuredLastName: v })}
+                />
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <FieldShell label="Insured's Date of Birth">
+                  <DatePicker
+                    value={data.partnerInsuredDob}
+                    onChange={(v) => update({ partnerInsuredDob: v })}
+                  />
+                </FieldShell>
+                <TextField
+                  label="Insured's Employer"
+                  value={data.partnerInsuredEmployer}
+                  onChange={(v) => update({ partnerInsuredEmployer: v })}
+                />
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <FileUploadStub
+                  label="Insurance card — front"
+                  value={data.partnerInsuranceCardFront}
+                  onChange={(f) => update({ partnerInsuranceCardFront: f })}
+                />
+                <FileUploadStub
+                  label="Insurance card — back"
+                  value={data.partnerInsuranceCardBack}
+                  onChange={(f) => update({ partnerInsuranceCardBack: f })}
+                />
+              </div>
+            </div>
+          </Reveal>
         </div>
       ),
       isValid: () =>
         data.insuranceCoverage !== "" &&
-        (!needsInsurance ||
+        (!showPrimaryInsurance ||
           (data.insuranceCompany.trim() !== "" &&
-            data.insuranceIdNo.trim() !== "")),
+            data.insuranceIdNo.trim() !== "")) &&
+        (!showPartnerInsurance ||
+          (data.partnerInsuranceCompany.trim() !== "" &&
+            data.partnerInsuranceIdNo.trim() !== "")),
     },
     {
       id: "review",
@@ -492,8 +604,12 @@ export default function Home() {
           <ReviewRow
             label="Insurance cards"
             value={
-              [data.insuranceCardFront, data.insuranceCardBack].filter(Boolean)
-                .length + " uploaded"
+              [
+                data.insuranceCardFront,
+                data.insuranceCardBack,
+                data.partnerInsuranceCardFront,
+                data.partnerInsuranceCardBack,
+              ].filter(Boolean).length + " uploaded"
             }
           />
           <p className="text-sm text-slate-500 mt-4 leading-relaxed">
