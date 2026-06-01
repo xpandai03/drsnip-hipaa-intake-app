@@ -60,7 +60,13 @@ async function fetchRecentLinks(): Promise<RecentLink[]> {
   return data.links ?? [];
 }
 
-export default function LinkGenerator() {
+export default function LinkGenerator({
+  readOnly = false,
+}: {
+  /** D.3 — viewers can see link history but cannot generate (server enforces
+   *  via requireAdmin on POST). When true, the generate control is disabled. */
+  readOnly?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [formType, setFormType] = useState<FormType | "">("");
   const [campaign, setCampaign] = useState("");
@@ -107,7 +113,7 @@ export default function LinkGenerator() {
   };
 
   const onGenerate = async () => {
-    if (formType === "") return;
+    if (readOnly || formType === "") return;
     const url = buildUrl(formType, campaign);
     setGeneratedUrl(url);
     try {
@@ -194,8 +200,9 @@ export default function LinkGenerator() {
 
             <Button
               onClick={() => void onGenerate()}
-              disabled={formType === "" || saveMutation.isPending}
+              disabled={readOnly || formType === "" || saveMutation.isPending}
               className="bg-primary text-white hover:bg-primary/90 border-primary"
+              data-testid="generate-link-btn"
             >
               {saveMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -204,6 +211,13 @@ export default function LinkGenerator() {
               )}
               Generate Link
             </Button>
+
+            {readOnly && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Read-only access — link generation is limited to admins. You can
+                still view the recent-link history below.
+              </p>
+            )}
 
             {generatedUrl && (
               <div className="space-y-2 pt-1">

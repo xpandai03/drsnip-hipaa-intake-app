@@ -109,6 +109,15 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         >
           {user.name}
         </span>
+        {user.role === "viewer" && (
+          <span
+            className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 text-xs font-medium"
+            title="Read-only access — you cannot delete, export, or generate links."
+            data-testid="admin-role-chip"
+          >
+            Viewer · read-only
+          </span>
+        )}
         <Button
           size="sm"
           variant="ghost"
