@@ -61,6 +61,12 @@ const FIXED_COLUMNS: Array<{ header: string; get: (r: SubmissionRow) => unknown 
   { header: "state_residence", get: (r) => r.stateResidence },
   { header: "insurance_card_front_filename", get: (r) => r.insuranceCardFrontFilename },
   { header: "insurance_card_back_filename", get: (r) => r.insuranceCardBackFilename },
+  // Partner (B.4 "Both") card filenames. There is no dedicated DB column for
+  // these, so the filename is read from the sanitized raw_payload metadata —
+  // records that a partner card was uploaded, without the bytes. Mirrors the
+  // original card filename columns above.
+  { header: "partner_insurance_card_front_filename", get: (r) => rawCardFilename(r.rawPayload, "partnerInsuranceCardFront") },
+  { header: "partner_insurance_card_back_filename", get: (r) => rawCardFilename(r.rawPayload, "partnerInsuranceCardBack") },
   { header: "has_insurance_cards", get: (r) => r.hasInsuranceCards },
   { header: "mh_mental_illness", get: (r) => r.mhMentalIllness },
   { header: "n8n_status", get: (r) => r.n8nStatus },
@@ -76,9 +82,22 @@ const RAW_SPECIAL_KEYS = new Set([
   "medicalDetails",
   "insuranceCardFront",
   "insuranceCardBack",
+  // B.4 partner ("Both") cards — excluded from the generic rp_ sweep exactly
+  // like the originals; their filenames surface as dedicated columns above so
+  // no base64/object JSON is ever dumped into the CSV.
+  "partnerInsuranceCardFront",
+  "partnerInsuranceCardBack",
 ]);
 
 type SubmissionRow = typeof submissions.$inferSelect;
+
+// Pull a card filename out of a raw_payload card-object metadata value.
+// Returns "" when absent. Used for the partner card columns (which have no
+// dedicated DB column). Never reads base64Data.
+function rawCardFilename(rawPayload: unknown, key: string): string {
+  const card = asRecord(asRecord(rawPayload)[key]);
+  return typeof card.filename === "string" ? card.filename : "";
+}
 
 function toIso(v: Date | string | null): string {
   if (v == null) return "";
@@ -109,6 +128,47 @@ function cell(v: unknown): string {
 
 function csvEscape(value: string): string {
   return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * Assemble the flat CSV (header + one line per row). Pure — exported so the
+ * column behavior is verifiable without a live DB. Builds the dynamic column
+ * set (union of raw_payload keys across rows, minus RAW_SPECIAL_KEYS, plus an
+ * rp_<key>_explanation column per medical key) on top of the fixed columns.
+ */
+export function buildSubmissionsCsv(rows: SubmissionRow[]): string {
+  const rawKeys = new Set<string>();
+  const explanationKeys = new Set<string>();
+  for (const r of rows) {
+    const raw = asRecord(r.rawPayload);
+    for (const k of Object.keys(raw)) {
+      if (!RAW_SPECIAL_KEYS.has(k)) rawKeys.add(k);
+    }
+    for (const k of Object.keys(asRecord(raw.medicalDetails))) {
+      explanationKeys.add(k);
+    }
+  }
+  const rawCols = [...rawKeys].sort();
+  const explCols = [...explanationKeys].sort();
+
+  const header = [
+    ...FIXED_COLUMNS.map((c) => c.header),
+    ...rawCols.map((k) => `rp_${k}`),
+    ...explCols.map((k) => `rp_${k}_explanation`),
+  ];
+
+  const lines = [header.map(csvEscape).join(",")];
+  for (const r of rows) {
+    const raw = asRecord(r.rawPayload);
+    const details = asRecord(raw.medicalDetails);
+    const cells = [
+      ...FIXED_COLUMNS.map((c) => cell(c.get(r))),
+      ...rawCols.map((k) => cell(raw[k])),
+      ...explCols.map((k) => cell(details[k])),
+    ];
+    lines.push(cells.map(csvEscape).join(","));
+  }
+  return lines.join("\r\n") + "\r\n";
 }
 
 export default async function handler(
@@ -152,40 +212,7 @@ export default async function handler(
     .where(whereClause)
     .orderBy(desc(submissions.createdAt))) as SubmissionRow[];
 
-  // Build the dynamic column set: union of raw_payload keys across all rows,
-  // plus an explanation column per medical key seen in medicalDetails.
-  const rawKeys = new Set<string>();
-  const explanationKeys = new Set<string>();
-  for (const r of rows) {
-    const raw = asRecord(r.rawPayload);
-    for (const k of Object.keys(raw)) {
-      if (!RAW_SPECIAL_KEYS.has(k)) rawKeys.add(k);
-    }
-    for (const k of Object.keys(asRecord(raw.medicalDetails))) {
-      explanationKeys.add(k);
-    }
-  }
-  const rawCols = [...rawKeys].sort();
-  const explCols = [...explanationKeys].sort();
-
-  const header = [
-    ...FIXED_COLUMNS.map((c) => c.header),
-    ...rawCols.map((k) => `rp_${k}`),
-    ...explCols.map((k) => `rp_${k}_explanation`),
-  ];
-
-  const lines = [header.map(csvEscape).join(",")];
-  for (const r of rows) {
-    const raw = asRecord(r.rawPayload);
-    const details = asRecord(raw.medicalDetails);
-    const cells = [
-      ...FIXED_COLUMNS.map((c) => cell(c.get(r))),
-      ...rawCols.map((k) => cell(raw[k])),
-      ...explCols.map((k) => cell(details[k])),
-    ];
-    lines.push(cells.map(csvEscape).join(","));
-  }
-  const csv = lines.join("\r\n") + "\r\n";
+  const csv = buildSubmissionsCsv(rows);
 
   // Audit (HIPAA): IDs + counts + filter shape only. The search TEXT is PHI,
   // so record only whether a search was applied — never its value.
