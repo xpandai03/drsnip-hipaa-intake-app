@@ -22,19 +22,12 @@ import { DatePicker } from "@/components/ui/DatePicker";
 
 // ---- Reference data -------------------------------------------------------
 
-const JOB_DEMANDS = ["Sedentary", "Light", "Moderate", "Heavy"];
-const PARTNER_EDUCATION = [
-  "High school",
-  "Some college",
-  "Associate degree",
-  "Bachelor's degree",
-  "Graduate degree",
-  "Other",
-];
+const JOB_DEMANDS = ["Desk Job", "Active", "Combination"];
 const RELATIONSHIP_STATUS = [
   "Single",
   "Married",
   "Partnered",
+  "Separated",
   "Divorced",
   "Widowed",
   "Other",
@@ -54,13 +47,19 @@ const BC_METHODS = [
   "Fertility awareness",
   "Other",
 ];
+// Authoritative option set from the live DrSnip Consultation Jotform (B.12).
+// This is a multi-select on the Jotform (submissions show combinations like
+// "Family Friend Facebook Radio"), so howHeard is captured as string[].
 const HOW_HEARD = [
-  "Google / Search",
-  "Social media",
-  "TV",
-  "Friend or family",
-  "Doctor referral",
-  "Insurance provider",
+  "Family",
+  "Friend",
+  "Medical Professional Referral",
+  "Facebook",
+  "Instagram",
+  "Google",
+  "Brochure",
+  "Event",
+  "Radio",
   "Other",
 ];
 const PARTNER_RELATIONSHIPS = ["Married", "Partnered"];
@@ -101,7 +100,6 @@ type ConsultationData = {
   partnerShareConsent: string;
   partnerAge: string;
   partnerOccupation: string;
-  partnerEducation: string;
   yearsInRelationship: string;
   marriageNumberSelf: string;
   marriageNumberSpouse: string;
@@ -127,7 +125,7 @@ type ConsultationData = {
   emergencyName: string;
   emergencyPhone: string;
   emergencyRelationship: string;
-  howHeard: string;
+  howHeard: string[];
   howHeardOther: string;
   referringProfessional: string;
   additionalNotes: string;
@@ -151,7 +149,6 @@ const initialData: ConsultationData = {
   partnerShareConsent: "",
   partnerAge: "",
   partnerOccupation: "",
-  partnerEducation: "",
   yearsInRelationship: "",
   marriageNumberSelf: "",
   marriageNumberSpouse: "",
@@ -173,7 +170,7 @@ const initialData: ConsultationData = {
   emergencyName: "",
   emergencyPhone: "",
   emergencyRelationship: "",
-  howHeard: "",
+  howHeard: [],
   howHeardOther: "",
   referringProfessional: "",
   additionalNotes: "",
@@ -200,6 +197,20 @@ export default function Consultation() {
         i === index ? { ...c, ...patch } : c,
       ),
     }));
+
+  // "Which marriage" only applies to Married (B.10). Switching away from
+  // Married — e.g. Married -> Partnered — clears the marriage-number values so
+  // stale data is never submitted.
+  const setRelationshipStatus = (v: string) =>
+    update(
+      v === "Married"
+        ? { relationshipStatus: v }
+        : {
+            relationshipStatus: v,
+            marriageNumberSelf: "",
+            marriageNumberSpouse: "",
+          },
+    );
 
   const hasPartner = PARTNER_RELATIONSHIPS.includes(data.relationshipStatus);
   const childCount = Math.min(Number(data.childCount) || 0, MAX_CHILDREN);
@@ -292,7 +303,7 @@ export default function Consultation() {
           <SelectField
             label="Relationship Status"
             value={data.relationshipStatus}
-            onChange={(v) => update({ relationshipStatus: v })}
+            onChange={setRelationshipStatus}
             options={RELATIONSHIP_STATUS}
             required
           />
@@ -331,44 +342,42 @@ export default function Consultation() {
                   onChange={(v) => update({ partnerAge: v })}
                 />
               </div>
-              <div className="grid gap-6 sm:grid-cols-2">
-                <TextField
-                  label="Partner / Spouse's Field of Work"
-                  value={data.partnerOccupation}
-                  onChange={(v) => update({ partnerOccupation: v })}
-                />
-                <SelectField
-                  label="Partner / Spouse's Education"
-                  value={data.partnerEducation}
-                  onChange={(v) => update({ partnerEducation: v })}
-                  options={PARTNER_EDUCATION}
-                />
-              </div>
+              {/* B.8: consent-for-contact lives directly with the partner
+                  phone, since it governs contacting that number. */}
+              <YesNoField
+                label="Do you consent to us sharing information with your partner should they contact us directly?"
+                value={data.partnerShareConsent}
+                onChange={(v) => update({ partnerShareConsent: v })}
+              />
+              <TextField
+                label="Partner / Spouse's Field of Work"
+                value={data.partnerOccupation}
+                onChange={(v) => update({ partnerOccupation: v })}
+              />
               <TextField
                 label="Years in this relationship"
                 type="number"
                 value={data.yearsInRelationship}
                 onChange={(v) => update({ yearsInRelationship: v })}
               />
-              <div className="grid gap-6 sm:grid-cols-2">
-                <SelectField
-                  label="Which marriage is this for you?"
-                  value={data.marriageNumberSelf}
-                  onChange={(v) => update({ marriageNumberSelf: v })}
-                  options={MARRIAGE_NUMBER}
-                />
-                <SelectField
-                  label="Which marriage is this for your spouse?"
-                  value={data.marriageNumberSpouse}
-                  onChange={(v) => update({ marriageNumberSpouse: v })}
-                  options={MARRIAGE_NUMBER}
-                />
-              </div>
-              <YesNoField
-                label="Do you consent to us sharing information with your partner should they contact us directly?"
-                value={data.partnerShareConsent}
-                onChange={(v) => update({ partnerShareConsent: v })}
-              />
+              {/* B.10: "Which marriage" only applies to Married — not Partnered
+                  (or any other status). Values are cleared on status change. */}
+              <Reveal show={data.relationshipStatus === "Married"}>
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <SelectField
+                    label="Which marriage is this for you?"
+                    value={data.marriageNumberSelf}
+                    onChange={(v) => update({ marriageNumberSelf: v })}
+                    options={MARRIAGE_NUMBER}
+                  />
+                  <SelectField
+                    label="Which marriage is this for your spouse?"
+                    value={data.marriageNumberSpouse}
+                    onChange={(v) => update({ marriageNumberSpouse: v })}
+                    options={MARRIAGE_NUMBER}
+                  />
+                </div>
+              </Reveal>
             </div>
           </Reveal>
         </div>
@@ -543,19 +552,18 @@ export default function Consultation() {
       description: "Almost done — an emergency contact and how you found us.",
       render: () => (
         <div className="grid gap-6">
+          {/* B.11: emergency contact is now optional. */}
           <div className="grid gap-6 sm:grid-cols-2">
             <TextField
               label="Emergency Contact Name"
               value={data.emergencyName}
               onChange={(v) => update({ emergencyName: v })}
-              required
             />
             <TextField
               label="Emergency Contact Phone Number"
               type="tel"
               value={data.emergencyPhone}
               onChange={(v) => update({ emergencyPhone: v })}
-              required
             />
           </div>
           <TextField
@@ -563,22 +571,22 @@ export default function Consultation() {
             value={data.emergencyRelationship}
             onChange={(v) => update({ emergencyRelationship: v })}
             placeholder="e.g. Spouse, Parent, Sibling"
-            required
           />
-          <SelectField
-            label="How did you hear about DrSnip?"
-            value={data.howHeard}
+          {/* B.12: multi-select, with the authoritative Jotform option set. */}
+          <MultiChoiceField
+            label="How did you hear about DrSnip? (select all that apply)"
+            values={data.howHeard}
             onChange={(v) => update({ howHeard: v })}
             options={HOW_HEARD}
           />
-          <Reveal show={data.howHeard === "Other"}>
+          <Reveal show={data.howHeard.includes("Other")}>
             <TextField
               label="Please specify"
               value={data.howHeardOther}
               onChange={(v) => update({ howHeardOther: v })}
             />
           </Reveal>
-          <Reveal show={data.howHeard === "Doctor referral"}>
+          <Reveal show={data.howHeard.includes("Medical Professional Referral")}>
             <TextField
               label="Referring medical professional (name and specialty)"
               value={data.referringProfessional}
@@ -592,10 +600,9 @@ export default function Consultation() {
           />
         </div>
       ),
-      isValid: () =>
-        data.emergencyName.trim() !== "" &&
-        data.emergencyPhone.trim() !== "" &&
-        data.emergencyRelationship.trim() !== "",
+      // B.11: emergency contact is optional — nothing on this screen blocks
+      // submission.
+      isValid: () => true,
     },
   ];
 
