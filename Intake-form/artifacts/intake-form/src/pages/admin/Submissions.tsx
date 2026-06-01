@@ -7,12 +7,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Download,
   FileDown,
   Loader2,
   RotateCcw,
   Search,
 } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/Input";
 import {
@@ -179,6 +181,18 @@ async function fetchSubmissions(filters: Filters): Promise<SubmissionsResponse> 
   return (await res.json()) as SubmissionsResponse;
 }
 
+// CSV export (admin-only, D.2) — exports the CURRENT filtered view. The server
+// (requireAdmin) is the gate; the button is hidden for viewers.
+function buildExportUrl(filters: Filters): string {
+  const qs = new URLSearchParams();
+  if (filters.form_type !== "all") qs.set("form_type", filters.form_type);
+  if (filters.start_date) qs.set("start_date", filters.start_date);
+  if (filters.end_date) qs.set("end_date", filters.end_date);
+  if (filters.search) qs.set("search", filters.search);
+  const s = qs.toString();
+  return `/api/submissions/export${s ? `?${s}` : ""}`;
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -192,10 +206,23 @@ export default function AdminSubmissions() {
 }
 
 function SubmissionsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [params, setParams] = useSearchParams();
   const filters = useMemo(() => readFilters(params), [params]);
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Trigger a CSV download of the current view via a same-origin anchor (sends
+  // the session cookie; the server's Content-Disposition names the file).
+  const onExport = useCallback(() => {
+    const a = document.createElement("a");
+    a.href = buildExportUrl(filters);
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [filters]);
 
   useEffect(() => {
     setSearchDraft(filters.search);
@@ -235,11 +262,27 @@ function SubmissionsPage() {
   return (
     <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold text-white">Submissions</h1>
-          <p className="text-sm text-white/75 mt-1">
-            Every patient intake submission. Click any row for the full detail.
-          </p>
+        <header className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-white">Submissions</h1>
+            <p className="text-sm text-white/75 mt-1">
+              Every patient intake submission. Click any row for the full detail.
+            </p>
+          </div>
+          {/* Export CSV — admin only (server enforces via requireAdmin). */}
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onExport}
+              className="shrink-0 bg-white text-primary hover:bg-white/90"
+              data-testid="export-csv-btn"
+              disabled={(query.data?.total ?? 0) === 0}
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+          )}
         </header>
 
         <FilterBar
@@ -274,6 +317,11 @@ function SubmissionsPage() {
         id={openId}
         open={openId !== null}
         onClose={() => setOpenId(null)}
+        canDelete={isAdmin}
+        onDeleted={() => {
+          setOpenId(null);
+          void query.refetch();
+        }}
       />
     </div>
   );

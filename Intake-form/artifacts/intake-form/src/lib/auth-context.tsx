@@ -7,7 +7,15 @@ import {
   type ReactNode,
 } from "react";
 
-export type AuthUser = { email: string; name: string };
+export type Role = "admin" | "viewer";
+export type AuthUser = { email: string; name: string; role: Role };
+
+// Mirror the server's normalizeRole: only an explicit "viewer" is read-only;
+// anything else is treated as admin. The server is the real gate — this only
+// drives which controls the UI shows.
+function normalizeRole(value: unknown): Role {
+  return value === "viewer" ? "viewer" : "admin";
+}
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -29,7 +37,8 @@ async function fetchMe(): Promise<AuthUser | null> {
   if (!res.ok) {
     throw new Error(`auth/me returned ${res.status}`);
   }
-  return (await res.json()) as AuthUser;
+  const body = (await res.json()) as { email: string; name: string; role?: unknown };
+  return { email: body.email, name: body.name, role: normalizeRole(body.role) };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
