@@ -1,8 +1,8 @@
 # Phase 4, Block C (partial) — PDF template cleanup
 
-Branch: `phase-4-pdf-cleanup` (from `main`) · PR target: `main` · **No deploy / DB / n8n / email. C.4 (patientmail) is out of scope.**
+Branch: `phase-4-pdf-cleanup` (from `main`) · PR target: `main` · **No deploy / DB migration / n8n changes.**
 
-Scope: **PDF templates only — `lib/pdf/**`.** Rendered against the **current** submission payload shape (Block B's `howHeard` array / `partnerInsurance*` keys are NOT on this branch and are out of scope).
+Scope: **C.1–C.3 = PDF templates only (`lib/pdf/**`); C.4 = app-side patientmail notification (`lib/email/**` + `api/submit.ts`)** — appended at the bottom. Rendered against the **current** submission payload shape (Block B's `howHeard` array / `partnerInsurance*` keys are NOT on this branch and are out of scope).
 
 ## Files touched
 
@@ -34,3 +34,37 @@ Standalone tsx script builds synthetic submissions (no real PHI) and reports pag
 - Consultation sample (confirms C.1 + that the shared C.3 tuning didn't harm it).
 
 `pnpm install && pnpm build` must be green before the PR. Logical commits per item (C.1, C.2, C.3).
+
+---
+
+## C.4 — Patientmail submission notification (app-side, appended)
+
+**Architecture (fixed):** the email fires from the app's submission handler **after a successful n8n bridge call**, not from n8n. The DrChrono Patient ID is created downstream in n8n and is **not available at submit time** — it is intentionally omitted (a Patient-ID version is deferred to a future n8n block).
+
+**Module:** `lib/email/patientmail.ts` — self-contained, best-effort, never throws.
+- `patientmailEnabled()` → `process.env.PATIENTMAIL_ENABLED === "true"`.
+- `shouldNotify(status)` → `status === "success"` only (so `failed` / `manual_review` send nothing). Pure predicate so the "failed bridge → 0 emails" path is unit-testable.
+- `notifyPatientSubmission(notification, transport?)` → gated send. `transport` is an injectable seam (default = SMTP via `nodemailer`, lazily imported) so dev/tests stub it with no real send.
+
+**Transport:** `nodemailer` over SMTP — provider-agnostic, all connection config from env (nothing hardcoded). Externalized in `build:server` so the node bundle stays clean.
+
+**Hook point:** inside `runN8nBridge` in `api/submit.ts`, after the bridge `outcome` is persisted: `if (shouldNotify(outcome.status)) await notifyPatientSubmission({...})`. Already on the fire-and-forget path, so it never delays the user response; the call is best-effort and a failure is caught + logged without PHI, leaving the submission successful regardless.
+
+**Email contents — EXACTLY four labelled fields, nothing else:**
+```
+Office: <officeLocation>
+Name:   <firstName lastName>
+DOB:    <dateOfBirth>
+Phone:  <phone>
+```
+No medical/insurance data, no card images, no full submission dump, no Patient ID.
+
+**Where "Office" comes from (confirmed):** `body.officeLocation`, a field on the **Registration** form only (`Home.tsx` → `.passthrough()` → `raw_payload.officeLocation`). The **Consultation** form has no office field, so a consultation notification renders `Office: —`. Surfaced here rather than guessed; not invented for consultation.
+
+**Env vars (all documented in the PR):**
+- `PATIENTMAIL_ENABLED` (bool killswitch — anything but `"true"` = no send, cleanly)
+- `PATIENTMAIL_TO` (staff recipient; missing = skip cleanly)
+- `PATIENTMAIL_FROM` (sender address)
+- `PATIENTMAIL_SMTP_HOST`, `PATIENTMAIL_SMTP_PORT`, `PATIENTMAIL_SMTP_SECURE`, `PATIENTMAIL_SMTP_USER`, `PATIENTMAIL_SMTP_PASS` (SMTP transport)
+
+**HIPAA / audit:** the four fields are PHI leaving the system, so: env-config only, killswitchable, send is best-effort and never blocks submission, and the audit log records only `{ ts, submission_id, recipient }` on send — **never** the Name/DOB/Phone values. Point `PATIENTMAIL_SMTP_*` at a BAA-covered relay (ops concern, outside code).

@@ -5,7 +5,7 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build && pnpm run build:server && pnpm run build:migrate",
-    "build:server": "esbuild api-server/index.ts --bundle --platform=node --target=node20 --format=cjs --external:pg-native --external:pg-cloudflare --outfile=dist/server.cjs",
+    "build:server": "esbuild api-server/index.ts --bundle --platform=node --target=node20 --format=cjs --external:pg-native --external:pg-cloudflare --external:nodemailer --outfile=dist/server.cjs",
     "build:migrate": "esbuild api-server/migrate.ts --bundle --platform=node --target=node20 --format=cjs --loader:.sql=text --external:pg-native --external:pg-cloudflare --outfile=dist/migrate.cjs",
     "start": "node dist/server.cjs",
     "typecheck:libs": "tsc --build",
@@ -13,7 +13,8 @@
     "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:api && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:api": "pnpm run typecheck:libs && node --import tsx --test api/_test/auth.test.ts api/_test/login.test.ts api/_test/logout.test.ts api/_test/marketing-sources.test.ts",
     "test:pdf": "node --import tsx --test lib/pdf/age.test.ts",
-    "test": "pnpm run test:pdf && pnpm run test:api"
+    "test:email": "node --import tsx --test lib/email/patientmail.test.ts",
+    "test": "pnpm run test:pdf && pnpm run test:email && pnpm run test:api"
   },
   "private": true,
   "dependencies": {
@@ -21,6 +22,7 @@
     "@workspace/db": "workspace:*",
     "bcryptjs": "catalog:",
     "hono": "^4.6.14",
+    "nodemailer": "^6.9.16",
     "pdf-lib": "^1.17.1",
     "zod": "catalog:"
   },
@@ -29,6 +31,7 @@
     "prettier": "^3.8.1",
     "@types/bcryptjs": "catalog:",
     "@types/node": "catalog:",
+    "@types/nodemailer": "^6.4.17",
     "@vercel/node": "^5.3.27",
     "esbuild": "0.27.3",
     "tsx": "catalog:"

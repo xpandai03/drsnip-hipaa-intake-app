@@ -6,6 +6,10 @@ import {
   callN8nRegistration,
   type N8nOutcome,
 } from "../lib/n8n/bridge";
+import {
+  notifyPatientSubmission,
+  shouldNotify,
+} from "../lib/email/patientmail";
 
 // ---------------------------------------------------------------------------
 // POST /api/submit — accepts a submission from either DrSnip form.
@@ -193,6 +197,23 @@ async function runN8nBridge(
       "submit: bridge outcome write failed",
       err instanceof Error ? err.name : "UnknownError",
     );
+  }
+
+  // ---- C.4 patientmail: best-effort staff notification -----------------
+  // Fires ONLY after a successful bridge call (shouldNotify === status
+  // 'success'); a failed / manual_review / errored bridge sends nothing.
+  // notifyPatientSubmission never throws and is killswitched + audit-logged
+  // without PHI, so this can never block or fail the (already-responded)
+  // submission. The DrChrono Patient ID does not exist yet and is omitted.
+  if (shouldNotify(outcome.status)) {
+    const officeRaw = (body as Record<string, unknown>).officeLocation;
+    await notifyPatientSubmission({
+      submissionId,
+      office: typeof officeRaw === "string" ? officeRaw : "",
+      name: `${body.firstName} ${body.lastName}`.trim(),
+      dob: body.dateOfBirth ?? "",
+      phone: body.phone,
+    });
   }
 }
 
