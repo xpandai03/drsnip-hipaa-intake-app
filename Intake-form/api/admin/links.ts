@@ -11,7 +11,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { db, desc, linkGenerations } from "@workspace/db";
 import { z } from "zod";
-import { requireAuth } from "../_lib/auth";
+import { requireAuth, requireAdmin } from "../_lib/auth";
 
 const createBodySchema = z.object({
   formType: z.enum(["registration", "consultation"]),
@@ -33,10 +33,10 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ) {
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
-
   if (req.method === "GET") {
+    // History is read-only — admins AND viewers may see it.
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const rows = await db
       .select(RECENT_COLUMNS)
       .from(linkGenerations)
@@ -46,6 +46,10 @@ export default async function handler(
   }
 
   if (req.method === "POST") {
+    // Generating a link is a privileged action — ADMIN ONLY (D.3). Viewers
+    // get 403 here even though the UI hides/disables the generate control.
+    const auth = await requireAdmin(req, res);
+    if (!auth) return;
     const parsed = createBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid body" });

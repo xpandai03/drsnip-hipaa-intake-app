@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   AlertCircle,
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -9,6 +11,7 @@ import {
   FileDown,
   FileText,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -16,6 +19,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Chip,
   copyToClipboard,
@@ -149,10 +162,16 @@ export function SubmissionDetailModal({
   id,
   open,
   onClose,
+  canDelete = false,
+  onDeleted,
 }: {
   id: string | null;
   open: boolean;
   onClose: () => void;
+  /** Admin-only — shows the Delete control (server still enforces). */
+  canDelete?: boolean;
+  /** Called after a successful delete so the list can refetch. */
+  onDeleted?: () => void;
 }) {
   const query = useQuery({
     queryKey: ["submission-detail", id],
@@ -184,19 +203,53 @@ export function SubmissionDetailModal({
             </p>
           </div>
         ) : query.data ? (
-          <DetailBody submission={query.data.submission} />
+          <DetailBody
+            submission={query.data.submission}
+            canDelete={canDelete}
+            onDeleted={onDeleted}
+          />
         ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function DetailBody({ submission }: { submission: DetailSubmission }) {
+function DetailBody({
+  submission,
+  canDelete,
+  onDeleted,
+}: {
+  submission: DetailSubmission;
+  canDelete: boolean;
+  onDeleted?: () => void;
+}) {
   const s = submission;
   const raw = s.rawPayload ?? {};
   const formEntries = Object.entries(raw).filter(
     ([k]) => !PROMOTED_KEYS.has(k),
   );
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const onConfirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/submissions/${s.id}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error(`delete returned ${res.status}`);
+      toast.success("Submission permanently deleted.");
+      setConfirmOpen(false);
+      onDeleted?.();
+    } catch {
+      // No PHI in the toast.
+      toast.error("Couldn't delete this submission. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -285,6 +338,62 @@ function DetailBody({ submission }: { submission: DetailSubmission }) {
           <Copy className="w-3 h-3" />
         </button>
       </div>
+
+      {/* Delete — admin only (D.1). The server (requireAdmin) is the gate; this
+          control is simply hidden for viewers. */}
+      {canDelete && (
+        <div className="pt-2 border-t border-rose-100">
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 text-rose-700 font-medium hover:bg-rose-50 transition-colors"
+            data-testid="delete-submission-btn"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete submission
+          </button>
+
+          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-rose-700">
+                  <AlertTriangle className="w-5 h-5" />
+                  Permanently delete this submission?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This <strong>permanently deletes this patient's intake
+                  submission and all of their PHI</strong> (name, date of birth,
+                  contact details, medical history, and insurance information).
+                  This action <strong>cannot be undone</strong> and the record
+                  cannot be recovered.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    // Keep the dialog open until the request resolves.
+                    e.preventDefault();
+                    void onConfirmDelete();
+                  }}
+                  disabled={deleting}
+                  className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600"
+                  data-testid="confirm-delete-btn"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deleting…
+                    </>
+                  ) : (
+                    "Permanently delete"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
     </div>
   );
 }
@@ -444,17 +553,31 @@ function KeyValue({ label, value }: { label: string; value: string }) {
   // Preserve embedded newlines so the multi-line Address composite renders as
   // Street / City, State ZIP rather than collapsing to one line.
   const hasNewline = value.includes("\n");
+  // D.4 — flag unanswered/blank fields so a doctor spots gaps at a glance.
+  // formatValue() renders every empty/blank value as "—".
+  const isEmpty = value.trim() === "" || value.trim() === "—";
   return (
-    <div className="flex items-start justify-between gap-6 py-2">
+    <div
+      className={
+        "flex items-start justify-between gap-6 py-2 -mx-2 px-2 rounded-md" +
+        (isEmpty ? " bg-amber-50" : "")
+      }
+    >
       <span className="text-sm text-slate-500 shrink-0">{label}</span>
-      <span
-        className={
-          "text-sm font-medium text-slate-900 text-right break-words" +
-          (hasNewline ? " whitespace-pre-line" : "")
-        }
-      >
-        {value}
-      </span>
+      {isEmpty ? (
+        <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 text-xs font-medium shrink-0">
+          Unanswered
+        </span>
+      ) : (
+        <span
+          className={
+            "text-sm font-medium text-slate-900 text-right break-words" +
+            (hasNewline ? " whitespace-pre-line" : "")
+          }
+        >
+          {value}
+        </span>
+      )}
     </div>
   );
 }
