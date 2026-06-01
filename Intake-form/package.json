@@ -4,9 +4,10 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build && pnpm run build:server && pnpm run build:migrate",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build && pnpm run build:server && pnpm run build:migrate && pnpm run build:seed-viewer",
     "build:server": "esbuild api-server/index.ts --bundle --platform=node --target=node20 --format=cjs --external:pg-native --external:pg-cloudflare --external:nodemailer --outfile=dist/server.cjs",
     "build:migrate": "esbuild api-server/migrate.ts --bundle --platform=node --target=node20 --format=cjs --loader:.sql=text --external:pg-native --external:pg-cloudflare --outfile=dist/migrate.cjs",
+    "build:seed-viewer": "esbuild api-server/seed-viewer.ts --bundle --platform=node --target=node20 --format=cjs --external:pg-native --external:pg-cloudflare --outfile=dist/seed-viewer.cjs",
     "start": "node dist/server.cjs",
     "typecheck:libs": "tsc --build",
     "typecheck:api": "tsc --noEmit -p api/tsconfig.json",
