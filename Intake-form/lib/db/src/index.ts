@@ -45,6 +45,10 @@ export const users = pgTable("users", {
   // bcryptjs hash, cost factor 10. Plaintext never touches the DB or logs.
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
+  // Access role (Phase 4 Block D, migration 0007): 'admin' (full) | 'viewer'
+  // (read-only). DEFAULT 'admin' so existing accounts keep full access on
+  // rollout. Server-side permission checks live in api/_lib/permissions.ts.
+  role: text("role").notNull().default("admin"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

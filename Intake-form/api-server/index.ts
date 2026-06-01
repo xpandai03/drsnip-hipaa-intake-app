@@ -18,6 +18,7 @@ import loginHandler from "../api/auth/login";
 import logoutHandler from "../api/auth/logout";
 import meHandler from "../api/auth/me";
 import submissionsHandler from "../api/submissions/index";
+import submissionsExportHandler from "../api/submissions/export";
 import submissionDetailHandler from "../api/submissions/[id]";
 import submissionPdfHandler from "../api/submissions/[id]/pdf";
 import activityHandler from "../api/submissions/activity";
@@ -42,6 +43,8 @@ app.all("/api/auth/logout", adapt(logoutHandler));
 app.all("/api/auth/me", adapt(meHandler));
 app.all("/api/submissions", adapt(submissionsHandler));
 app.all("/api/submissions/activity", adapt(activityHandler));
+// Static segment before the `/:id` route so "export" isn't read as an id (D.2).
+app.all("/api/submissions/export", adapt(submissionsExportHandler));
 app.all("/api/submissions/:id/pdf", adapt(submissionPdfHandler));
 app.all("/api/submissions/:id", adapt(submissionDetailHandler));
 app.all("/api/settings/:key", adapt(settingsHandler));

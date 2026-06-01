@@ -50,8 +50,12 @@ function Router() {
       <Route path="/" component={Home} />
       {/* Pre-appointment Consultation — gated (see ConsultationGate). */}
       <Route path="/consultation" component={ConsultationGate} />
-      {/* Internal link-generator tool (not linked from the public forms). */}
-      <Route path="/internal-tools-x9k2" component={LinkGenerator} />
+      {/* Internal link-generator tool (not linked from the public forms).
+          Rendered via children so LinkGenerator's optional props (D.3
+          `readOnly`) don't collide with wouter's RouteComponentProps. */}
+      <Route path="/internal-tools-x9k2">
+        <LinkGenerator />
+      </Route>
       {/* Phase 2 admin tree. */}
       <Route path="/admin">
         <Redirect to="/admin/links" />
