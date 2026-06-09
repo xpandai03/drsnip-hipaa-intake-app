@@ -11,6 +11,7 @@ import {
   canDeleteSubmission,
   canExportSubmissions,
   canGenerateLinks,
+  canResetPasswords,
   isAdmin,
   normalizeRole,
 } from "../_lib/permissions";
@@ -31,6 +32,7 @@ function authWithRole(role: "admin" | "viewer"): AuthedSession {
       name: role,
       isActive: true,
       role,
+      mustResetPassword: false,
     },
   };
 }
@@ -52,7 +54,12 @@ test("normalizeRole resolves only 'viewer' to viewer; everything else admin", ()
 test("privileged-action predicates are admin-only", () => {
   assert.equal(isAdmin("admin"), true);
   assert.equal(isAdmin("viewer"), false);
-  for (const can of [canDeleteSubmission, canExportSubmissions, canGenerateLinks]) {
+  for (const can of [
+    canDeleteSubmission,
+    canExportSubmissions,
+    canGenerateLinks,
+    canResetPasswords,
+  ]) {
     assert.equal(can("admin"), true);
     assert.equal(can("viewer"), false);
   }

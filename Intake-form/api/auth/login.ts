@@ -79,5 +79,12 @@ export default async function handler(
   setSessionCookie(res, sessionId);
   await recordSuccessfulLogin(user.id);
 
-  return res.status(200).json({ email: user.email, name: user.name });
+  // mustResetPassword tells the client to route the user into the forced
+  // change-password flow (Phase 5 Block 1). Not a secret; safe to return on a
+  // successful auth.
+  return res.status(200).json({
+    email: user.email,
+    name: user.name,
+    mustResetPassword: user.mustResetPassword,
+  });
 }

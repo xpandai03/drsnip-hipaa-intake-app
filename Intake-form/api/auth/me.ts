@@ -15,5 +15,6 @@ export default async function handler(
     email: auth.user.email,
     name: auth.user.name,
     role: auth.user.role,
+    mustResetPassword: auth.user.mustResetPassword,
   });
 }
