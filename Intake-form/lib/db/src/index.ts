@@ -50,6 +50,11 @@ export const users = pgTable("users", {
   // rollout. Server-side permission checks live in api/_lib/permissions.ts.
   role: text("role").notNull().default("admin"),
   isActive: boolean("is_active").notNull().default(true),
+  // Phase 5 Block 1 (migration 0008): set true when an admin issues a one-time
+  // temporary password; the login path surfaces it and the user must change
+  // their password (api/auth/change-password) to clear it. DEFAULT false so
+  // existing accounts are never forced to reset on rollout.
+  mustResetPassword: boolean("must_reset_password").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

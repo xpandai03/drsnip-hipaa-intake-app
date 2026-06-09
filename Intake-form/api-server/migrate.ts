@@ -23,6 +23,7 @@ import linkFormType from "../lib/db/migrations/0004_link_form_type.sql";
 import jeffFeedback from "../lib/db/migrations/0005_jeff_feedback.sql";
 import n8nBridge from "../lib/db/migrations/0006_n8n_bridge.sql";
 import adminRole from "../lib/db/migrations/0007_admin_role.sql";
+import mustResetPassword from "../lib/db/migrations/0008_must_reset_password.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -34,6 +35,7 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0005_jeff_feedback", sql: jeffFeedback },
   { name: "0006_n8n_bridge", sql: n8nBridge },
   { name: "0007_admin_role", sql: adminRole },
+  { name: "0008_must_reset_password", sql: mustResetPassword },
   { name: "seed-admin", sql: seedAdmin },
 ];
 

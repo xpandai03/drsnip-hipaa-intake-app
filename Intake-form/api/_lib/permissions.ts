@@ -46,3 +46,8 @@ export function canGenerateLinks(role: Role): boolean {
 export function canViewCardImageBytes(role: Role): boolean {
   return isAdmin(role);
 }
+/** Phase 5 Block 1 — only admins may reset another user's password
+ *  (api/admin/reset-password). Gated server-side via requireAdmin. */
+export function canResetPasswords(role: Role): boolean {
+  return isAdmin(role);
+}
