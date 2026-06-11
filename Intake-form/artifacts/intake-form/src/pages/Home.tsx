@@ -35,9 +35,6 @@ const INSURANCE_OPTIONS = [
 ];
 
 type MedicalKey =
-  | "mhMentalIllness"
-  | "mhPainSensitive"
-  | "mhFainting"
   | "mhBleeding"
   | "mhKidney"
   | "mhSTI"
@@ -50,47 +47,51 @@ type MedicalKey =
   | "mhAllergies"
   | "mhChronic";
 
-// The 14 medical-history screening questions (all Yes/No), in Jeff's
+// Default label for the per-question "Yes" explanation box. Individual
+// questions override it via `detailsPrompt` below (Phase 6 — Jeff's launch
+// feedback asked for question-specific prompts on several items).
+const DEFAULT_DETAILS_PROMPT = "Please share details, including a general timeframe.";
+
+// The 11 medical-history screening questions (all Yes/No), in Jeff's
 // requested order. `explanationPlaceholder` overrides the default placeholder
 // in the per-question "Yes" reveal — used for the STI question, where the
-// physician needs the specific disease(s) and year(s).
+// physician needs the specific disease(s) and year(s). `detailsPrompt`
+// overrides the label of that explanation box (defaults to
+// DEFAULT_DETAILS_PROMPT).
 const MEDICAL_QUESTIONS: {
   key: MedicalKey;
   label: string;
   explanationPlaceholder?: string;
+  detailsPrompt?: string;
 }[] = [
-  { key: "mhMentalIllness", label: "Does mental illness or depression affect your decision making?" },
-  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?" },
-  { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?" },
-  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?" },
-  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?" },
+  // NOTE (Phase 6 — Prompt 1): mhMentalIllness, mhPainSensitive and mhFainting
+  // were removed from Registration here; they move to Consultation in Prompt 2.
+  // Their exact post-reword text/structure is recorded in the PR handoff record.
+  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?", detailsPrompt: "Please share details." },
+  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?", detailsPrompt: "Please share details." },
   {
     key: "mhSTI",
     label: "Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?",
     explanationPlaceholder: "Please list which condition(s) and the year(s) you had each one.",
   },
-  { key: "mhTesticleAbnormality", label: "Have you ever had Testicle abnormality, scrotum abnormality, hernia, infection, or tumor?" },
+  { key: "mhTesticleAbnormality", label: "Have you ever had a hernia or any abnormality, infection, or tumor of the testicle or scrotum?" },
   { key: "mhTesticleInjury", label: "Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?" },
   { key: "mhSurgeries", label: "Have you had any surgeries?" },
-  { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?" },
-  { key: "mhMedications", label: "Is there medication you take regularly or have you taken any medication in the last 2 weeks?" },
-  { key: "mhAspirin", label: "Are you currently taking any aspirin products, or anticipate taking aspirin in the five days leading up to your procedure?" },
-  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?" },
-  { key: "mhChronic", label: "Have you had any major medical problems or do you have any chronic medical problems?" },
+  { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?", detailsPrompt: "Please share details." },
+  { key: "mhMedications", label: "Is there medication you take regularly or have you taken any medication in the last 2 weeks?", detailsPrompt: "Please share the medication, how often you take it and when you last took it." },
+  { key: "mhAspirin", label: "Are you currently taking, or do you plan to take in the 5 days before your procedure, any aspirin or aspirin-containing products? Examples include low-dose/baby aspirin, Excedrin, Ecotrin, Anacin, or Alka-Seltzer Original.", detailsPrompt: "Please share what you are taking, how often and why you are taking it" },
+  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?", detailsPrompt: "Please share details of the drug and the allergic reaction" },
+  { key: "mhChronic", label: "Have you had any major medical problems or do you have any chronic medical problems?", detailsPrompt: "Please share details." },
 ];
 
 const medicalQuestion = (key: MedicalKey) =>
   MEDICAL_QUESTIONS.find((q) => q.key === key)!;
 
-// The 14 medical-history questions, grouped into 5 clinically themed screens
+// The 11 medical-history questions, grouped into 4 clinically themed screens
 // of at most 3 single-select questions each. Order and grouping per Jeff's
-// 2026-05 feedback.
+// 2026-05 feedback (Phase 6 removed the Mental Health & Pain Tolerance screen;
+// its 3 questions moved to Consultation).
 const MEDICAL_SCREENS: { id: string; title: string; keys: MedicalKey[] }[] = [
-  {
-    id: "medical-mental-pain",
-    title: "Mental Health & Pain Tolerance",
-    keys: ["mhMentalIllness", "mhPainSensitive", "mhFainting"],
-  },
   {
     id: "medical-bleeding-kidney",
     title: "Bleeding, Kidney & Infections",
@@ -182,19 +183,16 @@ const initialData: RegistrationData = {
   consentVoicemail: "",
   consentText: "",
   primaryCarePhysician: "",
-  mhMentalIllness: "",
   mhTesticleAbnormality: "",
   mhTesticleInjury: "",
   mhSTI: "",
   mhKidney: "",
   mhMedications: "",
   mhSurgeries: "",
-  mhFainting: "",
   mhAllergies: "",
   mhChronic: "",
   mhBleeding: "",
   mhSurgeryComplications: "",
-  mhPainSensitive: "",
   mhAspirin: "",
   medicalDetails: {},
   insuranceCoverage: "",
@@ -337,6 +335,7 @@ export default function Home() {
               value={data.state}
               onChange={(v) => update({ state: v })}
               placeholder="e.g. WA"
+              required
             />
             <TextField
               label="Mobile Number"
@@ -373,6 +372,10 @@ export default function Home() {
       isValid: () =>
         data.streetAddress.trim() !== "" &&
         data.city.trim() !== "" &&
+        // State is required: DrChrono's Create Patient API rejects a blank
+        // state ("This field may not be blank."), which silently drops the
+        // patient record. Block advancing until it's filled.
+        data.state.trim() !== "" &&
         // ZIP: US 5-digit, optional +4 extension. Matches the patient-form
         // promise so the n8n bridge always sees a clean zip_code value.
         /^\d{5}(-\d{4})?$/.test(data.postalCode.trim()) &&
@@ -415,7 +418,7 @@ export default function Home() {
                       question — its answer is "Yes" plus this detail. */}
                   <Reveal show={data[key] === "Yes"}>
                     <TextAreaField
-                      label="Please share details, including a general timeframe."
+                      label={q.detailsPrompt ?? DEFAULT_DETAILS_PROMPT}
                       placeholder={q.explanationPlaceholder}
                       value={data.medicalDetails[key] ?? ""}
                       onChange={(v) => updateMedicalDetail(key, v)}
