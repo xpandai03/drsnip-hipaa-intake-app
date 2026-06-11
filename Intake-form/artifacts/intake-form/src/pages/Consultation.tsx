@@ -33,7 +33,10 @@ const RELATIONSHIP_STATUS = [
   "Other",
 ];
 const MARRIAGE_NUMBER = ["1st", "2nd", "3rd or more"];
-const CHILD_RELATION = ["Biological", "Step", "Adopted", "Other"];
+// Phase 6 (C3): per Jeff's launch feedback. Replaces the prior
+// Biological/Step/Adopted/Other set — downstream PDF/n8n/export mappings of the
+// child `relation` value must learn the new labels.
+const CHILD_RELATION = ["Ours", "Mine", "Hers", "Adopted"];
 const CHILD_GENDER = ["Male", "Female", "Other"];
 const BC_METHODS = [
   "None",
