@@ -50,12 +50,13 @@ const BC_METHODS = [
   "Fertility awareness",
   "Other",
 ];
-// Authoritative option set from the live DrSnip Consultation Jotform (B.12).
-// This is a multi-select on the Jotform (submissions show combinations like
-// "Family Friend Facebook Radio"), so howHeard is captured as string[].
+// Multi-select option set (captured as string[]). Phase 6 (C5): "Family" and
+// "Friend" are merged into a single "Family / Friend" option, and TV Commercial
+// / Insurance Directory / Magazine Ad are added. "Other" stays last so its
+// reveal keeps keying on that value. The merged value and new labels change what
+// lands downstream — n8n/Sheets mapping must learn them (flagged, not changed).
 const HOW_HEARD = [
-  "Family",
-  "Friend",
+  "Family / Friend",
   "Medical Professional Referral",
   "Facebook",
   "Instagram",
@@ -63,6 +64,9 @@ const HOW_HEARD = [
   "Brochure",
   "Event",
   "Radio",
+  "TV Commercial",
+  "Insurance Directory",
+  "Magazine Ad",
   "Other",
 ];
 const PARTNER_RELATIONSHIPS = ["Married", "Partnered"];
