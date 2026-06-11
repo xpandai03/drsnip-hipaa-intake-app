@@ -120,6 +120,7 @@ type ConsultationData = {
   priorBC: string[];
   // Screen 5 — Medical & Personal Considerations
   religionConflict: string;
+  religionConflictDetails: string;
   sexualConcerns: string;
   sexualConcernsDetails: string;
   geneticCondition: string;
@@ -166,6 +167,7 @@ const initialData: ConsultationData = {
   currentBCOther: "",
   priorBC: [],
   religionConflict: "",
+  religionConflictDetails: "",
   sexualConcerns: "",
   sexualConcernsDetails: "",
   geneticCondition: "",
@@ -454,7 +456,6 @@ export default function Consultation() {
             onChange={(v) => update({ wantMoreChildren: v })}
             options={["Yes", "No", "Unsure"]}
             columns={3}
-            required
           />
           <YesNoField
             label="Would you consider adoption if you chose to have more children?"
@@ -469,7 +470,9 @@ export default function Consultation() {
           />
         </div>
       ),
-      isValid: () => data.wantMoreChildren !== "",
+      // C4: "wish to have more children" is now optional; nothing on this screen
+      // blocks advancing.
+      isValid: () => true,
     },
     {
       id: "birth-control",
@@ -516,44 +519,58 @@ export default function Consultation() {
       description: "A few personal considerations our physicians like to know.",
       render: () => (
         <div className="grid gap-7">
+          {/* C4: these three are now optional, but a "Yes" makes the revealed
+              details mandatory before advancing. */}
           <YesNoField
             label="Does a vasectomy conflict with your religion?"
             value={data.religionConflict}
             onChange={(v) => update({ religionConflict: v })}
-            required
           />
+          <Reveal show={data.religionConflict === "Yes"}>
+            <TextAreaField
+              label="Details"
+              value={data.religionConflictDetails}
+              onChange={(v) => update({ religionConflictDetails: v })}
+              required
+            />
+          </Reveal>
           <YesNoField
             label="Do you, or does your partner, have any sexual problems or concerns?"
             value={data.sexualConcerns}
             onChange={(v) => update({ sexualConcerns: v })}
-            required
           />
           <Reveal show={data.sexualConcerns === "Yes"}>
             <TextAreaField
               label="Details"
               value={data.sexualConcernsDetails}
               onChange={(v) => update({ sexualConcernsDetails: v })}
+              required
             />
           </Reveal>
           <YesNoField
             label="Are you choosing sterilization because of a genetic condition concerning you or your partner?"
             value={data.geneticCondition}
             onChange={(v) => update({ geneticCondition: v })}
-            required
           />
           <Reveal show={data.geneticCondition === "Yes"}>
             <TextAreaField
               label="Details"
               value={data.geneticConditionDetails}
               onChange={(v) => update({ geneticConditionDetails: v })}
+              required
             />
           </Reveal>
         </div>
       ),
+      // C4: each question is optional; a "Yes" requires its details. "No"/blank
+      // never blocks.
       isValid: () =>
-        data.religionConflict !== "" &&
-        data.sexualConcerns !== "" &&
-        data.geneticCondition !== "",
+        (data.religionConflict !== "Yes" ||
+          data.religionConflictDetails.trim() !== "") &&
+        (data.sexualConcerns !== "Yes" ||
+          data.sexualConcernsDetails.trim() !== "") &&
+        (data.geneticCondition !== "Yes" ||
+          data.geneticConditionDetails.trim() !== ""),
     },
     {
       id: "emergency-referral",
