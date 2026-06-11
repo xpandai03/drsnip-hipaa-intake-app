@@ -35,9 +35,6 @@ const INSURANCE_OPTIONS = [
 ];
 
 type MedicalKey =
-  | "mhMentalIllness"
-  | "mhPainSensitive"
-  | "mhFainting"
   | "mhBleeding"
   | "mhKidney"
   | "mhSTI"
@@ -55,7 +52,7 @@ type MedicalKey =
 // feedback asked for question-specific prompts on several items).
 const DEFAULT_DETAILS_PROMPT = "Please share details, including a general timeframe.";
 
-// The 14 medical-history screening questions (all Yes/No), in Jeff's
+// The 11 medical-history screening questions (all Yes/No), in Jeff's
 // requested order. `explanationPlaceholder` overrides the default placeholder
 // in the per-question "Yes" reveal — used for the STI question, where the
 // physician needs the specific disease(s) and year(s). `detailsPrompt`
@@ -67,9 +64,9 @@ const MEDICAL_QUESTIONS: {
   explanationPlaceholder?: string;
   detailsPrompt?: string;
 }[] = [
-  { key: "mhMentalIllness", label: "Does mental illness or depression affect your decision making?" },
-  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?", detailsPrompt: "Please share details." },
-  { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?", detailsPrompt: "Please share details." },
+  // NOTE (Phase 6 — Prompt 1): mhMentalIllness, mhPainSensitive and mhFainting
+  // were removed from Registration here; they move to Consultation in Prompt 2.
+  // Their exact post-reword text/structure is recorded in the PR handoff record.
   { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?", detailsPrompt: "Please share details." },
   { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?", detailsPrompt: "Please share details." },
   {
@@ -90,15 +87,11 @@ const MEDICAL_QUESTIONS: {
 const medicalQuestion = (key: MedicalKey) =>
   MEDICAL_QUESTIONS.find((q) => q.key === key)!;
 
-// The 14 medical-history questions, grouped into 5 clinically themed screens
+// The 11 medical-history questions, grouped into 4 clinically themed screens
 // of at most 3 single-select questions each. Order and grouping per Jeff's
-// 2026-05 feedback.
+// 2026-05 feedback (Phase 6 removed the Mental Health & Pain Tolerance screen;
+// its 3 questions moved to Consultation).
 const MEDICAL_SCREENS: { id: string; title: string; keys: MedicalKey[] }[] = [
-  {
-    id: "medical-mental-pain",
-    title: "Mental Health & Pain Tolerance",
-    keys: ["mhMentalIllness", "mhPainSensitive", "mhFainting"],
-  },
   {
     id: "medical-bleeding-kidney",
     title: "Bleeding, Kidney & Infections",
@@ -190,19 +183,16 @@ const initialData: RegistrationData = {
   consentVoicemail: "",
   consentText: "",
   primaryCarePhysician: "",
-  mhMentalIllness: "",
   mhTesticleAbnormality: "",
   mhTesticleInjury: "",
   mhSTI: "",
   mhKidney: "",
   mhMedications: "",
   mhSurgeries: "",
-  mhFainting: "",
   mhAllergies: "",
   mhChronic: "",
   mhBleeding: "",
   mhSurgeryComplications: "",
-  mhPainSensitive: "",
   mhAspirin: "",
   medicalDetails: {},
   insuranceCoverage: "",
