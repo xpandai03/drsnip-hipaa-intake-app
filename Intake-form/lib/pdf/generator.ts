@@ -96,7 +96,8 @@ export async function generateSubmissionPdf(
   }
 
   // ---- Footer on every page (now that the total is known) --------------
-  stampFooters(doc, fonts.regular, submission.id);
+  // PDF-D1: patient name leads every page's footer so separated pages re-match.
+  stampFooters(doc, fonts.regular, submission.id, header.patientName);
 
   return doc.save();
 }
