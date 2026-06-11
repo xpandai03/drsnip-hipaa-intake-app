@@ -343,11 +343,13 @@ export default function Consultation() {
                 />
               </div>
               {/* B.8: consent-for-contact lives directly with the partner
-                  phone, since it governs contacting that number. */}
+                  phone, since it governs contacting that number. Phase 6 (C2):
+                  required whenever shown (Married/Partnered). */}
               <YesNoField
                 label="Do you consent to us sharing information with your partner should they contact us directly?"
                 value={data.partnerShareConsent}
                 onChange={(v) => update({ partnerShareConsent: v })}
+                required
               />
               <TextField
                 label="Partner / Spouse's Field of Work"
@@ -382,7 +384,11 @@ export default function Consultation() {
           </Reveal>
         </div>
       ),
-      isValid: () => data.relationshipStatus !== "",
+      // C2: the partner-share consent is required only when it's shown — i.e.
+      // when there's a partner (Married/Partnered).
+      isValid: () =>
+        data.relationshipStatus !== "" &&
+        (!hasPartner || data.partnerShareConsent !== ""),
     },
     {
       id: "children",
