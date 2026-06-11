@@ -337,6 +337,7 @@ export default function Home() {
               value={data.state}
               onChange={(v) => update({ state: v })}
               placeholder="e.g. WA"
+              required
             />
             <TextField
               label="Mobile Number"
@@ -373,6 +374,10 @@ export default function Home() {
       isValid: () =>
         data.streetAddress.trim() !== "" &&
         data.city.trim() !== "" &&
+        // State is required: DrChrono's Create Patient API rejects a blank
+        // state ("This field may not be blank."), which silently drops the
+        // patient record. Block advancing until it's filled.
+        data.state.trim() !== "" &&
         // ZIP: US 5-digit, optional +4 extension. Matches the patient-form
         // promise so the n8n bridge always sees a clean zip_code value.
         /^\d{5}(-\d{4})?$/.test(data.postalCode.trim()) &&
