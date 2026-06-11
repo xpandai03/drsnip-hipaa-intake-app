@@ -66,10 +66,19 @@ export const CONSULTATION_SECTIONS: PdfSection[] = [
     title: "Medical & Personal Considerations",
     fields: [
       { key: "religionConflict", label: "Does a vasectomy conflict with your religion?", kind: "text" },
+      // #14: conditional details when the religion answer is "Yes".
+      { key: "religionConflictDetails", label: "Religion conflict — details", kind: "text" },
       { key: "sexualConcerns", label: "Do you, or does your partner, have any sexual problems or concerns?", kind: "text" },
       { key: "sexualConcernsDetails", label: "Sexual problems or concerns — details", kind: "text" },
       { key: "geneticCondition", label: "Are you choosing sterilization because of a genetic condition concerning you or your partner?", kind: "text" },
       { key: "geneticConditionDetails", label: "Genetic condition — details", kind: "text" },
+      // Phase 6 (MOVE): 3 medical-history questions relocated from Registration
+      // (PRs #13/#14), appended to this section to mirror the form. Rendered as
+      // grouped Yes/No + italic explanation (kind:"medical"). Mental-illness
+      // wording is intentionally NOT reworded.
+      { key: "mhMentalIllness", label: "Does mental illness or depression affect your decision making?", kind: "medical" },
+      { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?", kind: "medical" },
+      { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?", kind: "medical" },
     ],
   },
   {
@@ -78,7 +87,10 @@ export const CONSULTATION_SECTIONS: PdfSection[] = [
       { key: "emergencyName", label: "Emergency Contact Name", kind: "text" },
       { key: "emergencyPhone", label: "Emergency Contact Phone Number", kind: "text" },
       { key: "emergencyRelationship", label: "Emergency Contact Relationship", kind: "text" },
-      { key: "howHeard", label: "How did you hear about DrSnip?", kind: "text" },
+      // howHeard is a multi-select (string[]) — render as an array so the
+      // selected channels actually appear (it was mis-typed "text", which
+      // scalar()'d an array to blank).
+      { key: "howHeard", label: "How did you hear about DrSnip?", kind: "array" },
       { key: "howHeardOther", label: "How did you hear about DrSnip — please specify", kind: "text" },
       { key: "referringProfessional", label: "Referring medical professional (name and specialty)", kind: "text" },
       { key: "additionalNotes", label: "Is there anything else you'd like to share with DrSnip before your appointment?", kind: "text" },

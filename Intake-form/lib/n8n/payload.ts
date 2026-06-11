@@ -129,11 +129,16 @@ export interface ConsultationN8nPayload {
   };
   medicalPersonal: {
     religionConflict: string;
+    religionConflictDetails: string;
     sexualConcerns: string;
     sexualConcernsDetails: string;
     geneticCondition: string;
     geneticConditionDetails: string;
   };
+  // Phase 6 (MOVE): the 3 medical-history questions relocated from Registration
+  // to Consultation (PRs #13/#14). Same {answer, details} shape and the same
+  // medicalDetail() contract as the Registration payload.
+  medicalHistory: Record<string, { answer: string; details: string }>;
   emergencyReferral: {
     name: string;
     phone: string;
@@ -173,6 +178,15 @@ const MEDICAL_KEYS: Array<[localKey: string, n8nKey: string]> = [
   ["mhAspirin", "mhAspirin"],
   ["mhAllergies", "mhAllergies"],
   ["mhChronic", "mhChronic"],
+];
+
+// Phase 6 (MOVE): the 3 medical-history questions now collected on the
+// Consultation form (relocated from Registration in PRs #13/#14). Local key ===
+// n8n key, same as the others above.
+const CONSULTATION_MEDICAL_KEYS: Array<[localKey: string, n8nKey: string]> = [
+  ["mhMentalIllness", "mhMentalIllness"],
+  ["mhPainSensitive", "mhPainSensitive"],
+  ["mhFainting", "mhFainting"],
 ];
 
 function str(v: unknown): string {
@@ -319,6 +333,17 @@ export function buildConsultationPayload(
   });
   const childCount = trimmed.length;
 
+  // MOVE: per-question "Yes" explanations live under raw_payload.medicalDetails,
+  // same contract as the Registration payload. Blank/absent → {answer:"",details:""}.
+  const medicalDetails = rec((body as Record<string, unknown>).medicalDetails);
+  const medicalHistory: Record<string, { answer: string; details: string }> = {};
+  for (const [local, n8nKey] of CONSULTATION_MEDICAL_KEYS) {
+    medicalHistory[n8nKey] = {
+      answer: str((body as Record<string, unknown>)[local]),
+      details: medicalDetail(medicalDetails, local),
+    };
+  }
+
   const payload: ConsultationN8nPayload = {
     submissionId,
     formType: "consultation",
@@ -384,6 +409,10 @@ export function buildConsultationPayload(
     },
     medicalPersonal: {
       religionConflict: str((body as Record<string, unknown>).religionConflict),
+      // #14 added a conditional details field for the religion question.
+      religionConflictDetails: str(
+        (body as Record<string, unknown>).religionConflictDetails,
+      ),
       sexualConcerns: str((body as Record<string, unknown>).sexualConcerns),
       sexualConcernsDetails: str(
         (body as Record<string, unknown>).sexualConcernsDetails,
@@ -393,6 +422,7 @@ export function buildConsultationPayload(
         (body as Record<string, unknown>).geneticConditionDetails,
       ),
     },
+    medicalHistory,
     emergencyReferral: {
       name: str((body as Record<string, unknown>).emergencyName),
       phone: str((body as Record<string, unknown>).emergencyPhone),

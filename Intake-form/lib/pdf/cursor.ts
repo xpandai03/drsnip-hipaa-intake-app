@@ -207,19 +207,26 @@ function fitToken(
  * (PHASE_3_PLAN.md §4.5). Done as one pass rather than split between
  * addPage() + a number-stamp pass: simpler, identical result.
  *
- *   DrSnip Patient Intake — CONFIDENTIAL / PHI   ·   Page X of Y   ·   Submission <id>
+ *   <Patient Name> · CONFIDENTIAL / PHI   ·   Page X of Y   ·   Submission <id>
+ *
+ * The patient name leads the footer on every page (PDF-D1, Jeff) so separated
+ * pages can be re-matched. Falls back to the intake label when no name is given.
  */
 export function stampFooters(
   doc: PDFDocument,
   font: PDFFont,
   submissionId: string,
+  patientName = "",
 ): void {
   const pages = doc.getPages();
   const total = pages.length;
   const size = 7;
   const y = 30;
+  const name = patientName.trim();
   pages.forEach((page, i) => {
-    const left = "DrSnip Patient Intake — CONFIDENTIAL / PHI";
+    const left = name
+      ? `${name} · CONFIDENTIAL / PHI`
+      : "DrSnip Patient Intake — CONFIDENTIAL / PHI";
     const center = `Page ${i + 1} of ${total}`;
     const right = `Submission ${submissionId}`;
     page.drawLine({
