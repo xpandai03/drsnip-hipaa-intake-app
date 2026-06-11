@@ -33,7 +33,10 @@ const RELATIONSHIP_STATUS = [
   "Other",
 ];
 const MARRIAGE_NUMBER = ["1st", "2nd", "3rd or more"];
-const CHILD_RELATION = ["Biological", "Step", "Adopted", "Other"];
+// Phase 6 (C3): per Jeff's launch feedback. Replaces the prior
+// Biological/Step/Adopted/Other set — downstream PDF/n8n/export mappings of the
+// child `relation` value must learn the new labels.
+const CHILD_RELATION = ["Ours", "Mine", "Hers", "Adopted"];
 const CHILD_GENDER = ["Male", "Female", "Other"];
 const BC_METHODS = [
   "None",
@@ -47,12 +50,13 @@ const BC_METHODS = [
   "Fertility awareness",
   "Other",
 ];
-// Authoritative option set from the live DrSnip Consultation Jotform (B.12).
-// This is a multi-select on the Jotform (submissions show combinations like
-// "Family Friend Facebook Radio"), so howHeard is captured as string[].
+// Multi-select option set (captured as string[]). Phase 6 (C5): "Family" and
+// "Friend" are merged into a single "Family / Friend" option, and TV Commercial
+// / Insurance Directory / Magazine Ad are added. "Other" stays last so its
+// reveal keeps keying on that value. The merged value and new labels change what
+// lands downstream — n8n/Sheets mapping must learn them (flagged, not changed).
 const HOW_HEARD = [
-  "Family",
-  "Friend",
+  "Family / Friend",
   "Medical Professional Referral",
   "Facebook",
   "Instagram",
@@ -60,6 +64,9 @@ const HOW_HEARD = [
   "Brochure",
   "Event",
   "Radio",
+  "TV Commercial",
+  "Insurance Directory",
+  "Magazine Ad",
   "Other",
 ];
 const PARTNER_RELATIONSHIPS = ["Married", "Partnered"];
@@ -117,10 +124,22 @@ type ConsultationData = {
   priorBC: string[];
   // Screen 5 — Medical & Personal Considerations
   religionConflict: string;
+  religionConflictDetails: string;
   sexualConcerns: string;
   sexualConcernsDetails: string;
   geneticCondition: string;
   geneticConditionDetails: string;
+  // Phase 6 (MOVE): three medical-history questions relocated from Registration
+  // (PR #13 handoff record), all optional here. Explanations live under
+  // `medicalDetails.<key>` to match the n8n contract (see lib/n8n/payload.ts).
+  mhMentalIllness: string;
+  mhPainSensitive: string;
+  mhFainting: string;
+  medicalDetails: {
+    mhMentalIllness?: string;
+    mhPainSensitive?: string;
+    mhFainting?: string;
+  };
   // Screen 6 — Emergency Contact, Referral & Notes
   emergencyName: string;
   emergencyPhone: string;
@@ -163,10 +182,15 @@ const initialData: ConsultationData = {
   currentBCOther: "",
   priorBC: [],
   religionConflict: "",
+  religionConflictDetails: "",
   sexualConcerns: "",
   sexualConcernsDetails: "",
   geneticCondition: "",
   geneticConditionDetails: "",
+  mhMentalIllness: "",
+  mhPainSensitive: "",
+  mhFainting: "",
+  medicalDetails: {},
   emergencyName: "",
   emergencyPhone: "",
   emergencyRelationship: "",
@@ -196,6 +220,17 @@ export default function Consultation() {
       children: d.children.map((c, i) =>
         i === index ? { ...c, ...patch } : c,
       ),
+    }));
+
+  // Records the per-question explanation for a "Yes" on the relocated
+  // medical-history questions (MOVE).
+  const updateMedicalDetail = (
+    key: keyof ConsultationData["medicalDetails"],
+    value: string,
+  ) =>
+    setData((d) => ({
+      ...d,
+      medicalDetails: { ...d.medicalDetails, [key]: value },
     }));
 
   // "Which marriage" only applies to Married (B.10). Switching away from
@@ -343,11 +378,13 @@ export default function Consultation() {
                 />
               </div>
               {/* B.8: consent-for-contact lives directly with the partner
-                  phone, since it governs contacting that number. */}
+                  phone, since it governs contacting that number. Phase 6 (C2):
+                  required whenever shown (Married/Partnered). */}
               <YesNoField
                 label="Do you consent to us sharing information with your partner should they contact us directly?"
                 value={data.partnerShareConsent}
                 onChange={(v) => update({ partnerShareConsent: v })}
+                required
               />
               <TextField
                 label="Partner / Spouse's Field of Work"
@@ -382,7 +419,11 @@ export default function Consultation() {
           </Reveal>
         </div>
       ),
-      isValid: () => data.relationshipStatus !== "",
+      // C2: the partner-share consent is required only when it's shown — i.e.
+      // when there's a partner (Married/Partnered).
+      isValid: () =>
+        data.relationshipStatus !== "" &&
+        (!hasPartner || data.partnerShareConsent !== ""),
     },
     {
       id: "children",
@@ -445,7 +486,6 @@ export default function Consultation() {
             onChange={(v) => update({ wantMoreChildren: v })}
             options={["Yes", "No", "Unsure"]}
             columns={3}
-            required
           />
           <YesNoField
             label="Would you consider adoption if you chose to have more children?"
@@ -460,7 +500,9 @@ export default function Consultation() {
           />
         </div>
       ),
-      isValid: () => data.wantMoreChildren !== "",
+      // C4: "wish to have more children" is now optional; nothing on this screen
+      // blocks advancing.
+      isValid: () => true,
     },
     {
       id: "birth-control",
@@ -507,44 +549,109 @@ export default function Consultation() {
       description: "A few personal considerations our physicians like to know.",
       render: () => (
         <div className="grid gap-7">
+          {/* C4: these three are now optional, but a "Yes" makes the revealed
+              details mandatory before advancing. */}
           <YesNoField
             label="Does a vasectomy conflict with your religion?"
             value={data.religionConflict}
             onChange={(v) => update({ religionConflict: v })}
-            required
           />
+          <Reveal show={data.religionConflict === "Yes"}>
+            <TextAreaField
+              label="Details"
+              value={data.religionConflictDetails}
+              onChange={(v) => update({ religionConflictDetails: v })}
+              required
+            />
+          </Reveal>
           <YesNoField
             label="Do you, or does your partner, have any sexual problems or concerns?"
             value={data.sexualConcerns}
             onChange={(v) => update({ sexualConcerns: v })}
-            required
           />
           <Reveal show={data.sexualConcerns === "Yes"}>
             <TextAreaField
               label="Details"
               value={data.sexualConcernsDetails}
               onChange={(v) => update({ sexualConcernsDetails: v })}
+              required
             />
           </Reveal>
           <YesNoField
             label="Are you choosing sterilization because of a genetic condition concerning you or your partner?"
             value={data.geneticCondition}
             onChange={(v) => update({ geneticCondition: v })}
-            required
           />
           <Reveal show={data.geneticCondition === "Yes"}>
             <TextAreaField
               label="Details"
               value={data.geneticConditionDetails}
               onChange={(v) => update({ geneticConditionDetails: v })}
+              required
+            />
+          </Reveal>
+
+          {/* MOVE: three questions relocated from Registration (PR #13), placed
+              after the Medical & Personal Considerations content. All optional —
+              the Yes/No never blocks advancing — but a "Yes" requires details
+              (required-when-shown), matching their original behavior. The
+              mental-illness prompt is intentionally NOT reworded. */}
+          <YesNoField
+            label="Does mental illness or depression affect your decision making?"
+            value={data.mhMentalIllness}
+            onChange={(v) => update({ mhMentalIllness: v })}
+          />
+          <Reveal show={data.mhMentalIllness === "Yes"}>
+            <TextAreaField
+              label="Please share details, including a general timeframe."
+              value={data.medicalDetails.mhMentalIllness ?? ""}
+              onChange={(v) => updateMedicalDetail("mhMentalIllness", v)}
+              required
+            />
+          </Reveal>
+          <YesNoField
+            label="Do you think you are more sensitive to pain than the average person?"
+            value={data.mhPainSensitive}
+            onChange={(v) => update({ mhPainSensitive: v })}
+          />
+          <Reveal show={data.mhPainSensitive === "Yes"}>
+            <TextAreaField
+              label="Please share details."
+              value={data.medicalDetails.mhPainSensitive ?? ""}
+              onChange={(v) => updateMedicalDetail("mhPainSensitive", v)}
+              required
+            />
+          </Reveal>
+          <YesNoField
+            label="Have you ever fainted during, or after, a medical procedure?"
+            value={data.mhFainting}
+            onChange={(v) => update({ mhFainting: v })}
+          />
+          <Reveal show={data.mhFainting === "Yes"}>
+            <TextAreaField
+              label="Please share details."
+              value={data.medicalDetails.mhFainting ?? ""}
+              onChange={(v) => updateMedicalDetail("mhFainting", v)}
+              required
             />
           </Reveal>
         </div>
       ),
+      // C4 + MOVE: every question on this screen is optional; a "Yes" requires
+      // its details. "No"/blank never blocks.
       isValid: () =>
-        data.religionConflict !== "" &&
-        data.sexualConcerns !== "" &&
-        data.geneticCondition !== "",
+        (data.religionConflict !== "Yes" ||
+          data.religionConflictDetails.trim() !== "") &&
+        (data.sexualConcerns !== "Yes" ||
+          data.sexualConcernsDetails.trim() !== "") &&
+        (data.geneticCondition !== "Yes" ||
+          data.geneticConditionDetails.trim() !== "") &&
+        (data.mhMentalIllness !== "Yes" ||
+          (data.medicalDetails.mhMentalIllness ?? "").trim() !== "") &&
+        (data.mhPainSensitive !== "Yes" ||
+          (data.medicalDetails.mhPainSensitive ?? "").trim() !== "") &&
+        (data.mhFainting !== "Yes" ||
+          (data.medicalDetails.mhFainting ?? "").trim() !== ""),
     },
     {
       id: "emergency-referral",
