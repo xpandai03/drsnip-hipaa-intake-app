@@ -50,33 +50,41 @@ type MedicalKey =
   | "mhAllergies"
   | "mhChronic";
 
+// Default label for the per-question "Yes" explanation box. Individual
+// questions override it via `detailsPrompt` below (Phase 6 — Jeff's launch
+// feedback asked for question-specific prompts on several items).
+const DEFAULT_DETAILS_PROMPT = "Please share details, including a general timeframe.";
+
 // The 14 medical-history screening questions (all Yes/No), in Jeff's
 // requested order. `explanationPlaceholder` overrides the default placeholder
 // in the per-question "Yes" reveal — used for the STI question, where the
-// physician needs the specific disease(s) and year(s).
+// physician needs the specific disease(s) and year(s). `detailsPrompt`
+// overrides the label of that explanation box (defaults to
+// DEFAULT_DETAILS_PROMPT).
 const MEDICAL_QUESTIONS: {
   key: MedicalKey;
   label: string;
   explanationPlaceholder?: string;
+  detailsPrompt?: string;
 }[] = [
   { key: "mhMentalIllness", label: "Does mental illness or depression affect your decision making?" },
-  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?" },
-  { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?" },
-  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?" },
-  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?" },
+  { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?", detailsPrompt: "Please share details." },
+  { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?", detailsPrompt: "Please share details." },
+  { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?", detailsPrompt: "Please share details." },
+  { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?", detailsPrompt: "Please share details." },
   {
     key: "mhSTI",
     label: "Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?",
     explanationPlaceholder: "Please list which condition(s) and the year(s) you had each one.",
   },
-  { key: "mhTesticleAbnormality", label: "Have you ever had Testicle abnormality, scrotum abnormality, hernia, infection, or tumor?" },
+  { key: "mhTesticleAbnormality", label: "Have you ever had a hernia or any abnormality, infection, or tumor of the testicle or scrotum?" },
   { key: "mhTesticleInjury", label: "Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?" },
   { key: "mhSurgeries", label: "Have you had any surgeries?" },
-  { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?" },
-  { key: "mhMedications", label: "Is there medication you take regularly or have you taken any medication in the last 2 weeks?" },
-  { key: "mhAspirin", label: "Are you currently taking any aspirin products, or anticipate taking aspirin in the five days leading up to your procedure?" },
-  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?" },
-  { key: "mhChronic", label: "Have you had any major medical problems or do you have any chronic medical problems?" },
+  { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?", detailsPrompt: "Please share details." },
+  { key: "mhMedications", label: "Is there medication you take regularly or have you taken any medication in the last 2 weeks?", detailsPrompt: "Please share the medication, how often you take it and when you last took it." },
+  { key: "mhAspirin", label: "Are you currently taking, or do you plan to take in the 5 days before your procedure, any aspirin or aspirin-containing products? Examples include low-dose/baby aspirin, Excedrin, Ecotrin, Anacin, or Alka-Seltzer Original.", detailsPrompt: "Please share what you are taking, how often and why you are taking it" },
+  { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?", detailsPrompt: "Please share details of the drug and the allergic reaction" },
+  { key: "mhChronic", label: "Have you had any major medical problems or do you have any chronic medical problems?", detailsPrompt: "Please share details." },
 ];
 
 const medicalQuestion = (key: MedicalKey) =>
@@ -420,7 +428,7 @@ export default function Home() {
                       question — its answer is "Yes" plus this detail. */}
                   <Reveal show={data[key] === "Yes"}>
                     <TextAreaField
-                      label="Please share details, including a general timeframe."
+                      label={q.detailsPrompt ?? DEFAULT_DETAILS_PROMPT}
                       placeholder={q.explanationPlaceholder}
                       value={data.medicalDetails[key] ?? ""}
                       onChange={(v) => updateMedicalDetail(key, v)}
