@@ -129,6 +129,17 @@ type ConsultationData = {
   sexualConcernsDetails: string;
   geneticCondition: string;
   geneticConditionDetails: string;
+  // Phase 6 (MOVE): three medical-history questions relocated from Registration
+  // (PR #13 handoff record), all optional here. Explanations live under
+  // `medicalDetails.<key>` to match the n8n contract (see lib/n8n/payload.ts).
+  mhMentalIllness: string;
+  mhPainSensitive: string;
+  mhFainting: string;
+  medicalDetails: {
+    mhMentalIllness?: string;
+    mhPainSensitive?: string;
+    mhFainting?: string;
+  };
   // Screen 6 — Emergency Contact, Referral & Notes
   emergencyName: string;
   emergencyPhone: string;
@@ -176,6 +187,10 @@ const initialData: ConsultationData = {
   sexualConcernsDetails: "",
   geneticCondition: "",
   geneticConditionDetails: "",
+  mhMentalIllness: "",
+  mhPainSensitive: "",
+  mhFainting: "",
+  medicalDetails: {},
   emergencyName: "",
   emergencyPhone: "",
   emergencyRelationship: "",
@@ -205,6 +220,17 @@ export default function Consultation() {
       children: d.children.map((c, i) =>
         i === index ? { ...c, ...patch } : c,
       ),
+    }));
+
+  // Records the per-question explanation for a "Yes" on the relocated
+  // medical-history questions (MOVE).
+  const updateMedicalDetail = (
+    key: keyof ConsultationData["medicalDetails"],
+    value: string,
+  ) =>
+    setData((d) => ({
+      ...d,
+      medicalDetails: { ...d.medicalDetails, [key]: value },
     }));
 
   // "Which marriage" only applies to Married (B.10). Switching away from
@@ -564,17 +590,68 @@ export default function Consultation() {
               required
             />
           </Reveal>
+
+          {/* MOVE: three questions relocated from Registration (PR #13), placed
+              after the Medical & Personal Considerations content. All optional —
+              the Yes/No never blocks advancing — but a "Yes" requires details
+              (required-when-shown), matching their original behavior. The
+              mental-illness prompt is intentionally NOT reworded. */}
+          <YesNoField
+            label="Does mental illness or depression affect your decision making?"
+            value={data.mhMentalIllness}
+            onChange={(v) => update({ mhMentalIllness: v })}
+          />
+          <Reveal show={data.mhMentalIllness === "Yes"}>
+            <TextAreaField
+              label="Please share details, including a general timeframe."
+              value={data.medicalDetails.mhMentalIllness ?? ""}
+              onChange={(v) => updateMedicalDetail("mhMentalIllness", v)}
+              required
+            />
+          </Reveal>
+          <YesNoField
+            label="Do you think you are more sensitive to pain than the average person?"
+            value={data.mhPainSensitive}
+            onChange={(v) => update({ mhPainSensitive: v })}
+          />
+          <Reveal show={data.mhPainSensitive === "Yes"}>
+            <TextAreaField
+              label="Please share details."
+              value={data.medicalDetails.mhPainSensitive ?? ""}
+              onChange={(v) => updateMedicalDetail("mhPainSensitive", v)}
+              required
+            />
+          </Reveal>
+          <YesNoField
+            label="Have you ever fainted during, or after, a medical procedure?"
+            value={data.mhFainting}
+            onChange={(v) => update({ mhFainting: v })}
+          />
+          <Reveal show={data.mhFainting === "Yes"}>
+            <TextAreaField
+              label="Please share details."
+              value={data.medicalDetails.mhFainting ?? ""}
+              onChange={(v) => updateMedicalDetail("mhFainting", v)}
+              required
+            />
+          </Reveal>
         </div>
       ),
-      // C4: each question is optional; a "Yes" requires its details. "No"/blank
-      // never blocks.
+      // C4 + MOVE: every question on this screen is optional; a "Yes" requires
+      // its details. "No"/blank never blocks.
       isValid: () =>
         (data.religionConflict !== "Yes" ||
           data.religionConflictDetails.trim() !== "") &&
         (data.sexualConcerns !== "Yes" ||
           data.sexualConcernsDetails.trim() !== "") &&
         (data.geneticCondition !== "Yes" ||
-          data.geneticConditionDetails.trim() !== ""),
+          data.geneticConditionDetails.trim() !== "") &&
+        (data.mhMentalIllness !== "Yes" ||
+          (data.medicalDetails.mhMentalIllness ?? "").trim() !== "") &&
+        (data.mhPainSensitive !== "Yes" ||
+          (data.medicalDetails.mhPainSensitive ?? "").trim() !== "") &&
+        (data.mhFainting !== "Yes" ||
+          (data.medicalDetails.mhFainting ?? "").trim() !== ""),
     },
     {
       id: "emergency-referral",
