@@ -70,7 +70,11 @@ function Router() {
           <AdminLinks />
         </WithAuth>
       </Route>
-      <Route path="/admin/submissions">
+      {/* Optional :id deep-links to a single submission's detail (e.g. the
+          n8n manual-review notification link). The same page renders the list
+          when no id is present. A path segment (not a query) is used so it
+          survives the AdminLayout `?next=` login redirect untouched. */}
+      <Route path="/admin/submissions/:id?">
         <WithAuth>
           <AdminSubmissions />
         </WithAuth>
