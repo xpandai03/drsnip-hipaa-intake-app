@@ -50,11 +50,13 @@ async function main(): Promise<void> {
     );
   }
 
-  // Any existing user that is NOT admin (excluding the viewer we manage) means
-  // migration 0007's default-to-admin did not hold — do NOT seed; surface it.
+  // Any existing user whose role is neither admin nor viewer means migration
+  // 0007's default-to-admin did not hold — do NOT seed; surface it. ("viewer"
+  // is an expected role now that more than one viewer account exists, e.g.
+  // patientmail@drsnip.com seeded by api-server/admin-ops.ts.)
   const nonAdmin = before.rows.filter(
     (r: { email: string; role: string }) =>
-      r.role !== "admin" && r.email !== VIEWER_EMAIL,
+      r.role !== "admin" && r.role !== "viewer",
   );
   if (nonAdmin.length > 0) {
     console.error(
@@ -84,7 +86,7 @@ async function main(): Promise<void> {
     `INSERT INTO users (email, password_hash, name, role, is_active)
      SELECT $1, $2, $3, 'viewer', true
      WHERE NOT EXISTS (
-       SELECT 1 FROM users WHERE role <> 'admin' AND email <> $1
+       SELECT 1 FROM users WHERE role NOT IN ('admin', 'viewer')
      )
      ON CONFLICT (email) DO NOTHING`,
     [VIEWER_EMAIL, passwordHash, VIEWER_NAME],
