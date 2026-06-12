@@ -47,13 +47,13 @@ export const REGISTRATION_SECTIONS: PdfSection[] = [
     title: "Medical History",
     fields: [
       { key: "primaryCarePhysician", label: "Current Primary Care Physician (name and location)", kind: "text" },
-      { key: "mhMentalIllness", label: "Does mental illness or depression affect your decision making?", kind: "medical" },
-      { key: "mhPainSensitive", label: "Do you think you are more sensitive to pain than the average person?", kind: "medical" },
-      { key: "mhFainting", label: "Have you ever fainted during, or after, a medical procedure?", kind: "medical" },
+      // Phase 6 (#13): mhMentalIllness / mhPainSensitive / mhFainting were removed
+      // from Registration (they moved to Consultation), so they are no longer
+      // rendered here.
       { key: "mhBleeding", label: "Do you, or does anyone in your family, have a tendency to bleed easily?", kind: "medical" },
       { key: "mhKidney", label: "Do you have a kidney abnormality or abnormal kidney function?", kind: "medical" },
       { key: "mhSTI", label: "Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?", kind: "medical" },
-      { key: "mhTesticleAbnormality", label: "Have you ever had Testicle abnormality, scrotum abnormality, hernia, infection, or tumor?", kind: "medical" },
+      { key: "mhTesticleAbnormality", label: "Have you ever had a hernia or any abnormality, infection, or tumor of the testicle or scrotum?", kind: "medical" },
       { key: "mhTesticleInjury", label: "Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?", kind: "medical" },
       { key: "mhSurgeries", label: "Have you had any surgeries?", kind: "medical" },
       { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?", kind: "medical" },
