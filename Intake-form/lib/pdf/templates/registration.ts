@@ -58,7 +58,7 @@ export const REGISTRATION_SECTIONS: PdfSection[] = [
       { key: "mhSurgeries", label: "Have you had any surgeries?", kind: "medical" },
       { key: "mhSurgeryComplications", label: "Have you had any complications or excessive pain or bleeding after surgery?", kind: "medical" },
       { key: "mhMedications", label: "Is there medication you take regularly or have you taken any medication in the last 2 weeks?", kind: "medical" },
-      { key: "mhAspirin", label: "Are you currently taking any aspirin products, or anticipate taking aspirin in the five days leading up to your procedure?", kind: "medical" },
+      { key: "mhAspirin", label: "Are you currently taking, or do you plan to take in the 5 days before your procedure, any aspirin or aspirin-containing products? Examples include low-dose/baby aspirin, Excedrin, Ecotrin, Anacin, or Alka-Seltzer Original.", kind: "medical" },
       { key: "mhAllergies", label: "Do you have any allergies to a drug, medication, or anesthetic?", kind: "medical" },
       { key: "mhChronic", label: "Have you had any major medical problems or do you have any chronic medical problems?", kind: "medical" },
     ],
