@@ -32,6 +32,10 @@ primary_region = "lax"
   # migrate first (creates users.role via 0007), THEN the idempotent viewer seed
   # which prints a breach-check before its guarded insert. `&&` => seed only runs
   # if migrate succeeds; either failing fails the release (safe).
+  # admin-ops.cjs (api-server/admin-ops.ts) is bundled into the image but is
+  # intentionally NOT in this auto-chain — it resets/creates console users and
+  # is run deliberately (stage ADMIN_RESET_*/PATIENTMAIL_VIEWER_* secrets, add
+  # `&& node dist/admin-ops.cjs` here for one deploy, then revert + unset).
   release_command = "sh -c 'node dist/migrate.cjs && node dist/seed-viewer.cjs'"
 
 [env]

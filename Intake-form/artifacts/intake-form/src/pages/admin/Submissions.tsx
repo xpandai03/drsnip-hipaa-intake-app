@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "wouter";
+import { useLocation, useParams, useSearchParams } from "wouter";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -211,7 +211,22 @@ function SubmissionsPage() {
   const [params, setParams] = useSearchParams();
   const filters = useMemo(() => readFilters(params), [params]);
   const [searchDraft, setSearchDraft] = useState(filters.search);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The detail modal is URL-addressable via the optional `/admin/submissions/:id`
+  // route param (deep links from the n8n manual-review email). In-app row clicks
+  // still set state directly (preserving the list's filter query string); a
+  // deep-link arrival opens the same modal via the effect below.
+  const routeId = useParams<{ id?: string }>().id ?? null;
+  const [, navigate] = useLocation();
+  const [openId, setOpenId] = useState<string | null>(routeId);
+  useEffect(() => {
+    if (routeId) setOpenId(routeId);
+  }, [routeId]);
+  // Closing clears the modal and, when we arrived via a deep link, normalizes
+  // the URL back to the list so a refresh doesn't reopen it.
+  const closeDetail = useCallback(() => {
+    setOpenId(null);
+    if (routeId) navigate("/admin/submissions");
+  }, [routeId, navigate]);
 
   // Trigger a CSV download of the current view via a same-origin anchor (sends
   // the session cookie; the server's Content-Disposition names the file).
@@ -316,10 +331,10 @@ function SubmissionsPage() {
       <SubmissionDetailModal
         id={openId}
         open={openId !== null}
-        onClose={() => setOpenId(null)}
+        onClose={closeDetail}
         canDelete={isAdmin}
         onDeleted={() => {
-          setOpenId(null);
+          closeDetail();
           void query.refetch();
         }}
       />
