@@ -22,6 +22,7 @@ import submissionsExportHandler from "../api/submissions/export";
 import submissionDetailHandler from "../api/submissions/[id]";
 import submissionPdfHandler from "../api/submissions/[id]/pdf";
 import activityHandler from "../api/submissions/activity";
+import submissionsBulkDeleteHandler from "../api/submissions/bulk-delete";
 import settingsHandler from "../api/settings/[key]";
 import marketingSourcesHandler from "../api/admin/marketing-sources";
 import marketingSourceByIdHandler from "../api/admin/marketing-sources/[id]";
@@ -45,6 +46,8 @@ app.all("/api/submissions", adapt(submissionsHandler));
 app.all("/api/submissions/activity", adapt(activityHandler));
 // Static segment before the `/:id` route so "export" isn't read as an id (D.2).
 app.all("/api/submissions/export", adapt(submissionsExportHandler));
+// Static segment before `/:id` so "bulk-delete" isn't read as an id.
+app.all("/api/submissions/bulk-delete", adapt(submissionsBulkDeleteHandler));
 app.all("/api/submissions/:id/pdf", adapt(submissionPdfHandler));
 app.all("/api/submissions/:id", adapt(submissionDetailHandler));
 app.all("/api/settings/:key", adapt(settingsHandler));

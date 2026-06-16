@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useParams, useSearchParams } from "wouter";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -12,10 +17,22 @@ import {
   Loader2,
   RotateCcw,
   Search,
+  Trash2,
 } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/Input";
 import {
   Select,
@@ -267,6 +284,68 @@ function SubmissionsPage() {
     refetchOnWindowFocus: true,
   });
 
+  // ---- Multi-select bulk delete (admin only) --------------------------------
+  // Selection is an explicit, per-row Map keyed by submission id, storing the
+  // name + form so the confirm modal can list every record by name even after
+  // paging/filtering. There is intentionally NO "select every submission" path.
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Map<string, { name: string; formType: string }>>(
+    new Map(),
+  );
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const labelFor = (row: SubmissionRow) =>
+    `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim() || "(no name)";
+
+  const toggleRow = useCallback((row: SubmissionRow) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(row.id)) next.delete(row.id);
+      else next.set(row.id, { name: labelFor(row), formType: row.formType });
+      return next;
+    });
+  }, []);
+
+  // "Select all on this page" — toggles ONLY the currently visible rows, never
+  // the whole table.
+  const togglePage = useCallback((rows: SubmissionRow[], checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const row of rows) {
+        if (checked) next.set(row.id, { name: labelFor(row), formType: row.formType });
+        else next.delete(row.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelected(new Map()), []);
+
+  const bulkDelete = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch("/api/submissions/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error || `Delete failed (${res.status})`);
+      }
+      return (await res.json()) as { deleted: number };
+    },
+    onSuccess: (data) => {
+      toast.success(`Deleted ${data.deleted} record${data.deleted === 1 ? "" : "s"}`);
+      setSelected(new Map());
+      setConfirmOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["submissions"] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Bulk delete failed");
+    },
+  });
+
   const onSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     updateFilters({ search: searchDraft.trim() });
@@ -326,6 +405,34 @@ function SubmissionsPage() {
           hasFilters={hasFilters}
         />
 
+        {/* Bulk-delete toolbar — appears only once ≥1 row is selected, admin
+            only (server also enforces requireAdmin). Deletes only the explicitly
+            selected ids. */}
+        {isAdmin && selected.size > 0 && (
+          <div
+            className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 shadow-lg"
+            data-testid="bulk-select-bar"
+          >
+            <span className="text-sm font-medium text-slate-700" data-testid="bulk-selected-count">
+              {selected.size} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" onClick={clearSelection}>
+                Clear
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setConfirmOpen(true)}
+                data-testid="bulk-delete-btn"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete selected
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 overflow-hidden">
           {query.isLoading && !query.data ? (
             <TableSkeleton />
@@ -339,6 +446,10 @@ function SubmissionsPage() {
               isFetching={query.isFetching}
               onOpen={setOpenId}
               onPageChange={(p) => updateFilters({ page: p })}
+              selectable={isAdmin}
+              selectedIds={selected}
+              onToggleRow={toggleRow}
+              onTogglePage={togglePage}
             />
           ) : null}
         </div>
@@ -354,6 +465,50 @@ function SubmissionsPage() {
           void query.refetch();
         }}
       />
+
+      {/* Bulk-delete confirmation — lists EVERY selected record (name · form ·
+          short id) before the destructive action. */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selected.size} record{selected.size === 1 ? "" : "s"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the following patient submissions. This
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div
+            className="max-h-64 overflow-y-auto rounded-md border border-slate-200 divide-y divide-slate-100 text-sm"
+            data-testid="bulk-delete-list"
+          >
+            {Array.from(selected.entries()).map(([id, info]) => (
+              <div key={id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <span className="font-medium text-slate-900 truncate">{info.name}</span>
+                <span className="shrink-0 text-slate-500">{formTypeLabel(info.formType)}</span>
+                <span className="shrink-0 font-mono text-xs text-slate-400">{id.slice(0, 8)}…</span>
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDelete.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                bulkDelete.mutate(Array.from(selected.keys()));
+              }}
+              disabled={bulkDelete.isPending}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              data-testid="bulk-delete-confirm"
+            >
+              {bulkDelete.isPending
+                ? "Deleting…"
+                : `Delete ${selected.size} record${selected.size === 1 ? "" : "s"}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -474,13 +629,25 @@ function ResultsTable({
   isFetching,
   onOpen,
   onPageChange,
+  selectable,
+  selectedIds,
+  onToggleRow,
+  onTogglePage,
 }: {
   data: SubmissionsResponse;
   isFetching: boolean;
   onOpen: (id: string) => void;
   onPageChange: (page: number) => void;
+  selectable: boolean;
+  selectedIds: Map<string, { name: string; formType: string }>;
+  onToggleRow: (row: SubmissionRow) => void;
+  onTogglePage: (rows: SubmissionRow[], checked: boolean) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(data.total / 50));
+  const pageRows = data.submissions;
+  const pageSelectedCount = pageRows.filter((r) => selectedIds.has(r.id)).length;
+  const allPageSelected = pageRows.length > 0 && pageSelectedCount === pageRows.length;
+  const somePageSelected = pageSelectedCount > 0 && !allPageSelected;
   return (
     <>
       <div className="relative">
@@ -493,6 +660,18 @@ function ResultsTable({
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
+                {selectable && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={
+                        allPageSelected ? true : somePageSelected ? "indeterminate" : false
+                      }
+                      onCheckedChange={(v) => onTogglePage(pageRows, v === true)}
+                      aria-label="Select all on this page"
+                      data-testid="bulk-select-all-page"
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Date</TableHead>
                 <TableHead>Form</TableHead>
                 <TableHead>Name</TableHead>
@@ -510,6 +689,19 @@ function ResultsTable({
                   className="cursor-pointer hover:bg-slate-50/80"
                   data-testid={`submission-row-${row.id}`}
                 >
+                  {selectable && (
+                    <TableCell
+                      className="w-10"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selectedIds.has(row.id)}
+                        onCheckedChange={() => onToggleRow(row)}
+                        aria-label={`Select ${row.firstName} ${row.lastName}`.trim()}
+                        data-testid={`bulk-select-${row.id}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <span
                       title={exactTime(row.createdAt)}
