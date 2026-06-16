@@ -181,16 +181,17 @@ async function fetchSubmissions(filters: Filters): Promise<SubmissionsResponse> 
   return (await res.json()) as SubmissionsResponse;
 }
 
-// CSV export (admin-only, D.2) — exports the CURRENT filtered view. The server
-// (requireAdmin) is the gate; the button is hidden for viewers.
-function buildExportUrl(filters: Filters): string {
+// CSV export (admin-only). Phase 7: each form exports as its OWN file via a
+// dedicated button, so the export `form_type` is fixed by the button (not the
+// view's form-type filter). Date/search filters from the current view still
+// apply. The server (requireAdmin) is the gate; buttons are hidden for viewers.
+function buildExportUrl(formType: "registration" | "consultation", filters: Filters): string {
   const qs = new URLSearchParams();
-  if (filters.form_type !== "all") qs.set("form_type", filters.form_type);
+  qs.set("form_type", formType);
   if (filters.start_date) qs.set("start_date", filters.start_date);
   if (filters.end_date) qs.set("end_date", filters.end_date);
   if (filters.search) qs.set("search", filters.search);
-  const s = qs.toString();
-  return `/api/submissions/export${s ? `?${s}` : ""}`;
+  return `/api/submissions/export?${qs.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,16 +229,19 @@ function SubmissionsPage() {
     if (routeId) navigate("/admin/submissions");
   }, [routeId, navigate]);
 
-  // Trigger a CSV download of the current view via a same-origin anchor (sends
-  // the session cookie; the server's Content-Disposition names the file).
-  const onExport = useCallback(() => {
-    const a = document.createElement("a");
-    a.href = buildExportUrl(filters);
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }, [filters]);
+  // Trigger a single-form CSV download via a same-origin anchor (sends the
+  // session cookie; the server's Content-Disposition names the file).
+  const onExport = useCallback(
+    (formType: "registration" | "consultation") => {
+      const a = document.createElement("a");
+      a.href = buildExportUrl(formType, filters);
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    },
+    [filters],
+  );
 
   useEffect(() => {
     setSearchDraft(filters.search);
@@ -284,19 +288,31 @@ function SubmissionsPage() {
               Every patient intake submission. Click any row for the full detail.
             </p>
           </div>
-          {/* Export CSV — admin only (server enforces via requireAdmin). */}
+          {/* Export CSV — one file per form (admin only; server enforces via
+              requireAdmin). Each button exports only that form's rows. */}
           {isAdmin && (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onExport}
-              className="shrink-0 bg-white text-primary hover:bg-white/90"
-              data-testid="export-csv-btn"
-              disabled={(query.data?.total ?? 0) === 0}
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onExport("registration")}
+                className="shrink-0 bg-white text-primary hover:bg-white/90"
+                data-testid="export-registration-btn"
+              >
+                <Download className="w-4 h-4" />
+                Export Registration
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onExport("consultation")}
+                className="shrink-0 bg-white text-primary hover:bg-white/90"
+                data-testid="export-consultation-btn"
+              >
+                <Download className="w-4 h-4" />
+                Export Consultation
+              </Button>
+            </div>
           )}
         </header>
 
