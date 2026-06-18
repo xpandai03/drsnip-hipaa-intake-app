@@ -80,7 +80,11 @@ describe("POST /api/auth/login", () => {
     const res = makeRes();
     await loginHandler(req, res);
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.jsonBody, { email: user.email, name: "Test Person" });
+    assert.deepEqual(res.jsonBody, {
+      email: user.email,
+      name: "Test Person",
+      mustResetPassword: false,
+    });
     const cookie = readSessionCookieFromRes(res, SESSION_COOKIE_NAME);
     assert.ok(cookie, "expected Set-Cookie header with session id");
     assert.ok(cookie.length >= 40, `cookie value too short: ${cookie}`);

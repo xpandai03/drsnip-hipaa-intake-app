@@ -8,6 +8,7 @@ import {
   db,
   eq,
   lt,
+  not,
   sessions,
   users,
   type Session,
@@ -74,7 +75,9 @@ function parseCookies(header: string | undefined): Record<string, string> {
 
 export type AuthedSession = {
   session: Session;
-  user: Pick<User, "id" | "email" | "name" | "isActive"> & { role: Role };
+  user: Pick<User, "id" | "email" | "name" | "isActive" | "mustResetPassword"> & {
+    role: Role;
+  };
 };
 
 /**
@@ -105,6 +108,7 @@ export async function getSessionFromCookie(
       name: users.name,
       isActive: users.isActive,
       role: users.role,
+      mustResetPassword: users.mustResetPassword,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -151,6 +155,7 @@ export async function getSessionFromCookie(
       name: row.name,
       isActive: row.isActive,
       role: normalizeRole(row.role),
+      mustResetPassword: row.mustResetPassword,
     },
   };
 }
@@ -293,6 +298,62 @@ export async function recordSuccessfulLogin(userId: string): Promise<void> {
   await db
     .update(users)
     .set({ lastLoginAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Block 1 — password reset helpers.
+// ---------------------------------------------------------------------------
+
+/** Hash a plaintext password with the same cost the login path verifies
+ *  against (BCRYPT_COST). The plaintext is never logged or persisted. */
+export async function hashPassword(plaintext: string): Promise<string> {
+  return bcrypt.hash(plaintext, BCRYPT_COST);
+}
+
+/**
+ * Delete EVERY session for a user — logout-everywhere. Called after an
+ * admin-initiated reset so no pre-existing session survives the credential
+ * change. Returns the number of sessions removed.
+ */
+export async function invalidateAllUserSessions(
+  userId: string,
+): Promise<number> {
+  const result = await db.delete(sessions).where(eq(sessions.userId, userId));
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Delete all of a user's sessions EXCEPT the one supplied — used when a user
+ * changes their own password (api/auth/change-password): every other device is
+ * logged out, but the session driving the change stays alive so the user isn't
+ * bounced to the sign-in screen mid-flow.
+ */
+export async function invalidateOtherUserSessions(
+  userId: string,
+  keepSessionId: string,
+): Promise<number> {
+  const result = await db
+    .delete(sessions)
+    .where(and(eq(sessions.userId, userId), not(eq(sessions.id, keepSessionId))));
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Set a user's password hash and the must-reset flag in one update.
+ *   - admin reset      → mustReset = true  (force change on next login)
+ *   - self-change      → mustReset = false (clears any outstanding force)
+ * The caller is responsible for session invalidation. Plaintext never reaches
+ * this function — only the already-computed hash.
+ */
+export async function setUserPasswordHash(
+  userId: string,
+  passwordHash: string,
+  mustReset: boolean,
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ passwordHash, mustResetPassword: mustReset })
     .where(eq(users.id, userId));
 }
 

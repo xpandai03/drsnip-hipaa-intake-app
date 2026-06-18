@@ -17,6 +17,7 @@ import submitHandler from "../api/submit";
 import loginHandler from "../api/auth/login";
 import logoutHandler from "../api/auth/logout";
 import meHandler from "../api/auth/me";
+import changePasswordHandler from "../api/auth/change-password";
 import submissionsHandler from "../api/submissions/index";
 import submissionsExportHandler from "../api/submissions/export";
 import submissionDetailHandler from "../api/submissions/[id]";
@@ -27,6 +28,7 @@ import settingsHandler from "../api/settings/[key]";
 import marketingSourcesHandler from "../api/admin/marketing-sources";
 import marketingSourceByIdHandler from "../api/admin/marketing-sources/[id]";
 import linksHandler from "../api/admin/links";
+import adminResetPasswordHandler from "../api/admin/reset-password";
 
 const app = new Hono();
 
@@ -42,6 +44,7 @@ app.all("/api/submit", adapt(submitHandler));
 app.all("/api/auth/login", adapt(loginHandler));
 app.all("/api/auth/logout", adapt(logoutHandler));
 app.all("/api/auth/me", adapt(meHandler));
+app.all("/api/auth/change-password", adapt(changePasswordHandler));
 app.all("/api/submissions", adapt(submissionsHandler));
 app.all("/api/submissions/activity", adapt(activityHandler));
 // Static segment before the `/:id` route so "export" isn't read as an id (D.2).
@@ -54,6 +57,7 @@ app.all("/api/settings/:key", adapt(settingsHandler));
 app.all("/api/admin/marketing-sources", adapt(marketingSourcesHandler));
 app.all("/api/admin/marketing-sources/:id", adapt(marketingSourceByIdHandler));
 app.all("/api/admin/links", adapt(linksHandler));
+app.all("/api/admin/reset-password", adapt(adminResetPasswordHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
