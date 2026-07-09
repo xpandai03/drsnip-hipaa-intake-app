@@ -1,0 +1,33 @@
+# DrSnip Reporting MCP — Fly app. Deployed in the same org (it-snip) / private
+# network as drsnip-intake-db so it can reach DRSNIP_INTAKE_DATABASE_URL over
+# Flycast. Publicly reachable (for the claude.ai connector) but every /mcp
+# request is bearer/OAuth-protected.
+app = "drsnip-reporting-mcp"
+primary_region = "lax"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  HOST = "0.0.0.0"
+  MCP_PATH = "/mcp"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

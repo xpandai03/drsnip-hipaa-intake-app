@@ -1,0 +1,17 @@
+{
+  "name": "drsnip-reporting-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "READ-ONLY, AGGREGATE-ONLY MCP exposing PHI-free DrSnip intake reporting (Fly Postgres view) for natural-language reporting in Claude. No record-level tools, no free-form SQL, no write tools — the DB role cannot read PHI.",
+  "main": "src/http-server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:http": "node src/http-server.js",
+    "smoke": "node test/smoke.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "pg": "^8.11.0"
+  }
+}
