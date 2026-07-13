@@ -360,7 +360,7 @@ function SubmissionsPage() {
   return (
     <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
-        <header className="mb-6 flex items-start justify-between gap-4">
+        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-white">Submissions</h1>
             <p className="text-sm text-white/75 mt-1">
@@ -370,12 +370,12 @@ function SubmissionsPage() {
           {/* Export CSV — one file per form (admin only; server enforces via
               requireAdmin). Each button exports only that form's rows. */}
           {isAdmin && (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
                 type="button"
                 variant="secondary"
                 onClick={() => onExport("registration")}
-                className="shrink-0 bg-white text-primary hover:bg-white/90"
+                className="w-full justify-center bg-white text-primary hover:bg-white/90 sm:w-auto sm:shrink-0"
                 data-testid="export-registration-btn"
               >
                 <Download className="w-4 h-4" />
@@ -385,7 +385,7 @@ function SubmissionsPage() {
                 type="button"
                 variant="secondary"
                 onClick={() => onExport("consultation")}
-                className="shrink-0 bg-white text-primary hover:bg-white/90"
+                className="w-full justify-center bg-white text-primary hover:bg-white/90 sm:w-auto sm:shrink-0"
                 data-testid="export-consultation-btn"
               >
                 <Download className="w-4 h-4" />
@@ -410,13 +410,13 @@ function SubmissionsPage() {
             selected ids. */}
         {isAdmin && selected.size > 0 && (
           <div
-            className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 shadow-lg"
+            className="mt-4 flex flex-col gap-3 rounded-2xl bg-white px-4 py-3 shadow-lg sm:flex-row sm:items-center sm:justify-between"
             data-testid="bulk-select-bar"
           >
             <span className="text-sm font-medium text-slate-700" data-testid="bulk-selected-count">
               {selected.size} selected
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Button type="button" variant="ghost" onClick={clearSelection}>
                 Clear
               </Button>
@@ -535,13 +535,13 @@ function FilterBar({
   hasFilters: boolean;
 }) {
   return (
-    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4 flex flex-wrap items-end gap-3">
+    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
       <FilterField label="Form">
         <Select
           value={filters.form_type}
           onValueChange={(v) => onChange({ form_type: v })}
         >
-          <SelectTrigger className="w-[160px]" data-testid="filter-form-type">
+          <SelectTrigger className="w-full h-11 md:h-9 md:w-[160px]" data-testid="filter-form-type">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -557,7 +557,7 @@ function FilterBar({
           type="date"
           value={filters.start_date}
           onChange={(e) => onChange({ start_date: e.target.value })}
-          className="h-10 rounded-md border border-slate-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+          className="h-11 md:h-10 w-full md:w-auto rounded-md border border-slate-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
           data-testid="filter-start-date"
         />
       </FilterField>
@@ -567,14 +567,14 @@ function FilterBar({
           type="date"
           value={filters.end_date}
           onChange={(e) => onChange({ end_date: e.target.value })}
-          className="h-10 rounded-md border border-slate-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+          className="h-11 md:h-10 w-full md:w-auto rounded-md border border-slate-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
           data-testid="filter-end-date"
         />
       </FilterField>
 
       <form
         onSubmit={onSearchSubmit}
-        className="flex flex-col gap-1.5 flex-1 min-w-[220px]"
+        className="flex flex-col gap-1.5 w-full md:flex-1 md:min-w-[220px]"
       >
         <label className="text-xs font-medium text-slate-600">Search</label>
         <div className="relative">
@@ -595,7 +595,7 @@ function FilterBar({
         variant="outline"
         onClick={onReset}
         disabled={!hasFilters}
-        className="h-10"
+        className="h-11 md:h-10 w-full justify-center md:w-auto"
         data-testid="filter-reset"
       >
         <RotateCcw className="w-4 h-4" />
@@ -613,7 +613,7 @@ function FilterField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5 w-full md:w-auto">
       <label className="text-xs font-medium text-slate-600">{label}</label>
       {children}
     </div>
@@ -656,7 +656,9 @@ function ResultsTable({
             <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
           </div>
         )}
-        <div className="overflow-x-auto">
+        {/* Desktop / tablet (md+): the existing table, unchanged. Hidden on
+            phones where it would overflow — the card list below renders there. */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
@@ -762,6 +764,115 @@ function ResultsTable({
               ))}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Mobile (below md): each submission as a tappable CARD instead of a
+            table row. Same data.submissions, same onOpen / selection handlers —
+            no new data or logic, purely a second render path. */}
+        <div className="md:hidden">
+          {selectable && (
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-200 bg-slate-50">
+              <Checkbox
+                checked={
+                  allPageSelected ? true : somePageSelected ? "indeterminate" : false
+                }
+                onCheckedChange={(v) => onTogglePage(pageRows, v === true)}
+                aria-label="Select all on this page"
+                data-testid="bulk-select-all-page-mobile"
+                className="h-5 w-5"
+              />
+              <span className="text-sm text-slate-600">Select all on page</span>
+            </div>
+          )}
+          <ul className="divide-y divide-slate-100">
+            {data.submissions.map((row) => (
+              <li key={row.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpen(row.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpen(row.id);
+                    }
+                  }}
+                  className="flex gap-3 px-4 py-4 cursor-pointer transition-colors hover:bg-slate-50/80 active:bg-slate-100"
+                  data-testid={`submission-card-${row.id}`}
+                >
+                  {selectable && (
+                    <div
+                      className="shrink-0 pt-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selectedIds.has(row.id)}
+                        onCheckedChange={() => onToggleRow(row)}
+                        aria-label={`Select ${row.firstName} ${row.lastName}`.trim()}
+                        data-testid={`bulk-select-mobile-${row.id}`}
+                        className="h-5 w-5"
+                      />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+                        {row.firstName} {row.lastName}
+                      </span>
+                      <span
+                        title={exactTime(row.createdAt)}
+                        className="shrink-0 text-xs text-slate-500"
+                      >
+                        {relativeTime(row.createdAt)}
+                      </span>
+                      <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <Chip className={formTypeBadgeClass(row.formType)}>
+                        {formTypeLabel(row.formType)}
+                      </Chip>
+                      <Chip className={n8nStatusBadgeClass(row.n8nStatus)}>
+                        {n8nStatusLabel(row.n8nStatus)}
+                      </Chip>
+                    </div>
+                    <div className="mt-1.5 truncate text-sm text-slate-600">
+                      {row.email}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copyToClipboard(row.id, "Submission ID copied");
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-2 text-xs font-mono text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Copy full submission ID"
+                      >
+                        {row.id.slice(0, 8)}…
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(
+                            `/api/submissions/${row.id}/pdf`,
+                            "_blank",
+                            "noopener",
+                          );
+                        }}
+                        className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors"
+                        title="Download PDF"
+                        aria-label="Download PDF"
+                      >
+                        <FileDown className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
 

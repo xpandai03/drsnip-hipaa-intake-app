@@ -89,7 +89,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                 aria-current={isActive ? "page" : undefined}
                 data-testid={`admin-tab-${tab.to.split("/").pop()}`}
                 className={
-                  "shrink-0 inline-flex items-center gap-1.5 text-center text-xs sm:text-sm font-medium px-2 sm:px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap " +
+                  "shrink-0 inline-flex items-center gap-1.5 text-center text-xs sm:text-sm font-medium px-2.5 sm:px-3.5 py-2.5 md:py-1.5 rounded-full transition-colors whitespace-nowrap " +
                   (isActive
                     ? "bg-primary text-white shadow-sm"
                     : "text-slate-700 hover:bg-slate-100")

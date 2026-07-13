@@ -227,6 +227,16 @@
   .no-default-hover-elevate {}
   .no-default-active-elevate {}
 
+  /* Hide the horizontal scrollbar on the admin nav pill / any overflow-x row
+     while keeping it scrollable (was referenced but never defined). */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .toggle-elevate::before,
   .toggle-elevate-2::before {
     content: "";

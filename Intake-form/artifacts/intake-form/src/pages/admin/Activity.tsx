@@ -160,7 +160,13 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
                 margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#64748b" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11 }}
+                  stroke="#64748b"
+                  interval="preserveStartEnd"
+                  minTickGap={16}
+                />
                 <YAxis
                   tick={{ fontSize: 11 }}
                   stroke="#64748b"
