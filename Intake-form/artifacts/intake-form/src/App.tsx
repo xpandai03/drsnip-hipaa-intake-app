@@ -13,6 +13,7 @@ import AdminLinks from "@/pages/admin/Links";
 import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
 import AdminSources from "@/pages/admin/Sources";
+import AdminAskAI from "@/pages/admin/AskAI";
 import { AuthProvider } from "@/lib/auth-context";
 
 const queryClient = new QueryClient();
@@ -82,6 +83,11 @@ function Router() {
       <Route path="/admin/activity">
         <WithAuth>
           <AdminActivity />
+        </WithAuth>
+      </Route>
+      <Route path="/admin/ask-ai">
+        <WithAuth>
+          <AdminAskAI />
         </WithAuth>
       </Route>
       <Route path="/admin/sources">
