@@ -194,7 +194,13 @@ const CLAUDE_STEPS: Step[] = [
   { text: <>In <strong>claude.ai</strong>, open <strong>Settings → Connectors</strong>.</> },
   { text: <>Click <strong>Add custom connector</strong>.</> },
   { text: <>Paste the <strong>Connector URL</strong> below into the URL field and continue.</> },
-  { text: <>When prompted to sign in, enter the <strong>DrSnip connector access password</strong> (admins: see <strong>Connection credentials</strong> below).</> },
+  {
+    text: <>When prompted to sign in, enter the <strong>DrSnip connector access password</strong> (admins: see <strong>Connection credentials</strong> below).</>,
+    shot: {
+      src: "/images/askai/oauth-password-prompt.png",
+      alt: "The “Connect to DrSnip Reporting” page asking for the access password",
+    },
+  },
   { text: <>Approve the connection. You can now ask Claude questions about the intake data in plain English.</> },
 ];
 
@@ -211,6 +217,10 @@ const CHATGPT_SETUP_STEPS: Step[] = [
         <strong>ON Developer mode</strong>.
       </>
     ),
+    shot: {
+      src: "/images/askai/chatgpt-setup-1.png",
+      alt: "ChatGPT Settings → Security and login, with the Developer mode toggle switched on",
+    },
   },
   {
     text: (
@@ -220,20 +230,26 @@ const CHATGPT_SETUP_STEPS: Step[] = [
         <strong>+</strong> to create a new app.
       </>
     ),
-    // src: "/images/askai/chatgpt-setup-2.png",
-    shot: { alt: "Settings → Plugins, with the + button to create a new app" },
+    shot: {
+      src: "/images/askai/chatgpt-setup-2.png",
+      alt: "The ChatGPT Plugins page, with the + button in the top right to create a new app",
+    },
   },
   {
     text: (
       <>
         Fill in the app details:
         <ul className="mt-1.5 ml-4 list-disc space-y-1 text-slate-600">
-          <li><strong>Name:</strong> DrSnip Reports</li>
+          <li><strong>Name:</strong> drsnip-mcp</li>
           <li><strong>Connection:</strong> Server URL → paste the URL below</li>
           <li><strong>Authentication:</strong> OAuth</li>
         </ul>
       </>
     ),
+    shot: {
+      src: "/images/askai/chatgpt-setup-3.png",
+      alt: "The New App dialog filled in — Name drsnip-mcp, the Server URL, and Authentication set to OAuth",
+    },
   },
   {
     text: (
@@ -243,19 +259,24 @@ const CHATGPT_SETUP_STEPS: Step[] = [
         <strong>read-only</strong>.
       </>
     ),
-    // src: "/images/askai/chatgpt-setup-4.png",
-    shot: { alt: "The “I understand and want to continue” confirmation checkbox" },
+    shot: {
+      src: "/images/askai/chatgpt-setup-4.png",
+      alt: "The “I understand and want to continue” confirmation checkbox, ticked",
+    },
   },
   {
     text: (
       <>
-        Click <strong>Create</strong>, then <strong>Sign in with drsnip-mcp</strong> and enter the{" "}
+        Click <strong>Create</strong>, then click <strong>“Sign in with drsnip-mcp”</strong> — the
+        button label shows whatever <strong>Name</strong> you entered in step 3 — and enter the{" "}
         <strong>DrSnip connector access password</strong> (from your administrator — admins: see{" "}
         <strong>Connection credentials</strong> below).
       </>
     ),
-    // src: "/images/askai/chatgpt-setup-5.png",
-    shot: { alt: "The “Sign in with drsnip-mcp” password prompt" },
+    shot: {
+      src: "/images/askai/chatgpt-setup-5.png",
+      alt: "The “Add to ChatGPT” dialog with the “Sign in with drsnip-mcp” button",
+    },
   },
 ];
 
@@ -267,8 +288,10 @@ const CHATGPT_CHAT_STEPS: Step[] = [
         toggle on <strong>DrSnip Reports</strong>.
       </>
     ),
-    // src: "/images/askai/chatgpt-chat-1.png",
-    shot: { alt: "The + menu with Developer mode and the DrSnip Reports toggle" },
+    // Awaiting capture — set `src: "/images/askai/chatgpt-chat-1.png"` once the
+    // screenshot of the in-chat + menu lands. Renders as an empty-safe placeholder
+    // until then.
+    shot: { alt: "The + menu with Developer mode and the drsnip-mcp toggle" },
   },
   {
     text: (
