@@ -285,13 +285,11 @@ const CHATGPT_CHAT_STEPS: Step[] = [
     text: (
       <>
         In a new chat, click the <strong>+</strong> button → <strong>Developer mode</strong> →
-        toggle on <strong>DrSnip Reports</strong>.
+        toggle on <strong>drsnip-mcp</strong>.
       </>
     ),
-    // Awaiting capture — set `src: "/images/askai/chatgpt-chat-1.png"` once the
-    // screenshot of the in-chat + menu lands. Renders as an empty-safe placeholder
-    // until then.
-    shot: { alt: "The + menu with Developer mode and the drsnip-mcp toggle" },
+    // No screenshot slot here — the step is a single toggle and we have no
+    // capture of the + menu. Text-only keeps the page free of placeholders.
   },
   {
     text: (
@@ -305,6 +303,10 @@ const CHATGPT_CHAT_STEPS: Step[] = [
         </span>
       </>
     ),
+    shot: {
+      src: "/images/askai/chatgpt-chat-2.png",
+      alt: "A ChatGPT chat using the DrSnip connector: the question about registration vs consultation submissions, answered with a table of counts for the past 7 days",
+    },
   },
 ];
 
