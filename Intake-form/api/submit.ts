@@ -54,7 +54,9 @@ const fileRefSchema = z
 
 const bodySchema = z
   .object({
-    formType: z.enum(["registration", "consultation"]).default("registration"),
+    formType: z
+      .enum(["registration", "consultation", "insurance"])
+      .default("registration"),
     firstName: z.string().min(1).max(120),
     lastName: z.string().min(1).max(120),
     email: z.string().email().max(160),
@@ -161,13 +163,49 @@ export default async function handler(
   // handler returns; the bridge work continues on the Node event loop
   // because the long-running Fly process stays alive. The bridge never
   // throws — every code path returns an N8nOutcome.
-  void runN8nBridge(submissionId, body).catch((err) => {
-    // Defensive: should never hit. Bridge code catches internally.
+  // Phase 1 insurance forms have NO n8n workflow yet (Phase 2 wires the bridge +
+  // DrChrono + notifications). This skip is load-bearing, not cosmetic: there is
+  // no insurance workflow to receive the payload, so the bridge must be
+  // unreachable for form_type 'insurance' by construction — the only calls into
+  // n8n live inside runN8nBridge, and this branch never enters it.
+  if (body.formType === "insurance") {
+    void markBridgeSkipped(submissionId);
+  } else {
+    void runN8nBridge(submissionId, body).catch((err) => {
+      // Defensive: should never hit. Bridge code catches internally.
+      console.error(
+        "submit: unexpected bridge error",
+        err instanceof Error ? err.name : "UnknownError",
+      );
+    });
+  }
+}
+
+// Records a terminal, deliberately non-alarming n8n status for submissions that
+// intentionally bypass the bridge (Phase 1 insurance). 'not_applicable' is
+// chosen so the row is neither NULL nor 'failed': the failed/pending digest
+// (WHERE n8n_status IS NULL OR n8n_status = 'failed') never surfaces it, and the
+// admin badge helper falls through to its neutral default. `n8n_status` is a
+// free-text column, so this needs no migration.
+async function markBridgeSkipped(submissionId: string): Promise<void> {
+  try {
+    await db
+      .update(submissions)
+      .set({
+        n8nStatus: "not_applicable",
+        n8nResponseAt: new Date(),
+        n8nResponseBody: {
+          bridge_status: "not_applicable",
+          reason: "phase1_insurance_no_workflow",
+        },
+      })
+      .where(eq(submissions.id, submissionId));
+  } catch (err) {
     console.error(
-      "submit: unexpected bridge error",
+      "submit: bridge-skip status write failed",
       err instanceof Error ? err.name : "UnknownError",
     );
-  });
+  }
 }
 
 async function runN8nBridge(

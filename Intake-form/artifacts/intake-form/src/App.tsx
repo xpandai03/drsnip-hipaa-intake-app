@@ -6,6 +6,7 @@ import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/Home";
 import Consultation from "@/pages/Consultation";
+import Insurance from "@/pages/Insurance";
 import NotFound from "@/pages/not-found";
 import LinkGenerator from "@/pages/LinkGenerator";
 import SignIn from "@/pages/admin/SignIn";
@@ -51,6 +52,9 @@ function Router() {
       <Route path="/" component={Home} />
       {/* Pre-appointment Consultation — gated (see ConsultationGate). */}
       <Route path="/consultation" component={ConsultationGate} />
+      {/* Public native Insurance form — Phase 1 embeddable widget (iframe on
+          drsnip.com/cost-insurance/). No auth; standalone marketing-brand shell. */}
+      <Route path="/insurance" component={Insurance} />
       {/* Internal link-generator tool (not linked from the public forms).
           Rendered via children so LinkGenerator's optional props (D.3
           `readOnly`) don't collide with wouter's RouteComponentProps. */}

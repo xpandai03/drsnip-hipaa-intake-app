@@ -1,0 +1,35 @@
+<!--
+  DrSnip Insurance Form — WordPress embed snippet
+  ================================================
+  Paste the block below into an Elementor "HTML" widget (or a WordPress Custom
+  HTML block) on the Cost & Insurance page, in place of the current Jotform embed.
+  The form loads from intake.drsnip.com inside an iframe and automatically grows
+  and shrinks to fit its content as the patient moves through the two steps — no
+  fixed height, no inner scrollbar. Nothing else on the page needs to change.
+  To attribute traffic from a specific campaign, change the `source=` value in
+  the iframe URL (e.g. source=facebook-jan, source=google-insurance).
+-->
+
+<iframe
+  id="drsnip-insurance"
+  src="https://intake.drsnip.com/insurance?source=cost-insurance-page"
+  title="DrSnip Insurance Form"
+  scrolling="no"
+  allow="camera"
+  allowtransparency="true"
+  style="width: 1px; min-width: 100%; border: none; overflow: hidden; display: block;"
+></iframe>
+<script>
+  (function () {
+    var IFRAME_ID = "drsnip-insurance";
+    var ALLOWED_ORIGIN = "https://intake.drsnip.com"; // origin-locked
+    window.addEventListener("message", function (e) {
+      if (e.origin !== ALLOWED_ORIGIN) return; // only trust our own iframe
+      var data = e.data || {};
+      if (data.type === "drsnip:height" && typeof data.height === "number") {
+        var el = document.getElementById(IFRAME_ID);
+        if (el) el.style.height = data.height + "px";
+      }
+    });
+  })();
+</script>
