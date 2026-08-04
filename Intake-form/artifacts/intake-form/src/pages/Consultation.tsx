@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
+import { readAttribution } from "@/lib/attribution";
 import {
   TextField,
   TextAreaField,
@@ -213,6 +214,10 @@ function readPatientId(): string {
 
 export default function Consultation() {
   const [data, setData] = useState<ConsultationData>(initialData);
+  // Attribution captured once on mount; persists across steps until submit.
+  // patient_id is read separately (readPatientId) for chart matching — it is
+  // NOT attribution and must never be stored/forwarded as such.
+  const attribution = useMemo(readAttribution, []);
   const update = (patch: Partial<ConsultationData>) =>
     setData((d) => ({ ...d, ...patch }));
 
@@ -727,6 +732,7 @@ export default function Consultation() {
       phone: data.phone,
       dateOfBirth: data.dateOfBirth,
       patientId: readPatientId(),
+      attribution,
     };
     try {
       const res = await fetch("/api/submit", {

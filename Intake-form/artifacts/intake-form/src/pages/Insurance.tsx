@@ -12,6 +12,7 @@ import { TextField, SelectField, FieldShell } from "@/components/ui/form-fields"
 import { DatePicker } from "@/components/ui/DatePicker";
 import { FileUploadStub, type StubFileRef } from "@/components/ui/FileUploadStub";
 import { cn } from "@/lib/utils";
+import { postConversion } from "@/lib/conversion";
 
 // ===========================================================================
 // DrSnip — native Insurance form (Phase 1: form + route + embed + DB storage).
@@ -334,9 +335,11 @@ export default function Insurance() {
       setSubmitState("submitting");
       const ok = await onSubmit();
       if (ok) {
-        // TODO(phase2/tracking): fire the conversion event here (Intrepy expects
-        // an in-place success — no redirect). e.g. window.parent.postMessage a
-        // 'drsnip:conversion' event and/or push to the marketing dataLayer.
+        // Dormant conversion signal (Phase 2): inert unless
+        // VITE_CONVERSION_TRACKING_ENABLED is on AND we're embedded. Emits only
+        // a PII-free { event, form_type } postMessage to the parent site — no
+        // third-party script ever runs here.
+        postConversion("insurance");
         setSubmitState("success");
       } else {
         setSubmitState("idle");
