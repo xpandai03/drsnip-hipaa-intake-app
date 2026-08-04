@@ -13,6 +13,7 @@ import SignIn from "@/pages/admin/SignIn";
 import AdminLinks from "@/pages/admin/Links";
 import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
+import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
 import { AuthProvider } from "@/lib/auth-context";
@@ -87,6 +88,11 @@ function Router() {
       <Route path="/admin/activity">
         <WithAuth>
           <AdminActivity />
+        </WithAuth>
+      </Route>
+      <Route path="/admin/dashboard">
+        <WithAuth>
+          <AdminDashboard />
         </WithAuth>
       </Route>
       <Route path="/admin/ask-ai">
