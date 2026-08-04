@@ -26,6 +26,7 @@ const TABS: Array<{
 }> = [
   { to: "/admin/links", label: "Links", match: (p) => p === "/admin/links" || p === "/admin" },
   { to: "/admin/submissions", label: "Submissions", match: (p) => p.startsWith("/admin/submissions") },
+  { to: "/admin/dashboard", label: "Dashboard", match: (p) => p.startsWith("/admin/dashboard") },
   { to: "/admin/activity", label: "Activity", match: (p) => p.startsWith("/admin/activity") },
   { to: "/admin/ask-ai", label: "Ask AI", match: (p) => p.startsWith("/admin/ask-ai") },
   // Phase 2 polish: the "Sources" tab (CJC marketing-source catalog) is hidden
