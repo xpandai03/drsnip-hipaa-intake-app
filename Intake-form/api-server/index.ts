@@ -64,6 +64,14 @@ app.all("/api/reports/counts", adapt(reportsCountsHandler));
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
+// Hidden client roadmap (/plan/*) — keep it out of search indexes at the HTTP
+// layer (belt-and-suspenders with the page's own robots meta). Runs before the
+// static handlers so the header rides the index.html document response.
+app.use("/plan/*", async (c, next) => {
+  c.header("X-Robots-Tag", "noindex, nofollow");
+  await next();
+});
+
 // ---- Static SPA + client-side-routing fallback ------------------------
 // STATIC_ROOT is resolved relative to the process working directory. Both
 // local (`pnpm start` from Intake-form/) and the Docker image keep the SPA
