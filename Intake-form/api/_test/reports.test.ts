@@ -62,6 +62,7 @@ describe("dimension allow-list", () => {
     for (const d of [
       "form_type",
       "n8n_status",
+      "source",
       "office_location",
       "insurance_coverage",
       "action_label",
@@ -72,7 +73,7 @@ describe("dimension allow-list", () => {
     ]) {
       assert.equal(isAllowedDimension(d), true, `${d} should be allowed`);
     }
-    assert.equal(ALLOWED_DIMENSIONS.length, 9);
+    assert.equal(ALLOWED_DIMENSIONS.length, 10);
   });
 
   it("rejects anything not on the list — including PHI columns and SQL", () => {

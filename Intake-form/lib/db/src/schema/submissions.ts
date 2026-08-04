@@ -70,11 +70,29 @@ export const submissions = pgTable(
 
     // Full submission JSON — every form answer lives here.
     rawPayload: jsonb("raw_payload").notNull(),
+
+    // ----- Marketing attribution (migration 0008) --------------------------
+    // Captured from the landing URL for NEW tagged submissions only; NULL for
+    // historical rows and direct/untagged traffic. Passive metadata — never
+    // gates or alters intake. Also mirrored into raw_payload.attribution.
+    // patient_id is NOT attribution and is never stored here.
+    source: text("source"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmTerm: text("utm_term"),
+    utmContent: text("utm_content"),
+    clickId: text("click_id"),
+    clickIdType: text("click_id_type"), // 'gclid' | 'fbclid'
+    // NULL = no source supplied; true = matched an active marketing_sources
+    // key; false = source present but unrecognized (stored anyway).
+    sourceValidated: boolean("source_validated"),
   },
   (table) => [
     index("submissions_created_at_idx").on(table.createdAt),
     index("submissions_email_idx").on(table.email),
     index("submissions_form_type_idx").on(table.formType),
+    index("submissions_source_idx").on(table.source),
   ],
 );
 

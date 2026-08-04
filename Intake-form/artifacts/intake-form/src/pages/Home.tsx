@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
+import { readAttribution } from "@/lib/attribution";
 import {
   TextField,
   TextAreaField,
@@ -220,6 +221,9 @@ const initialData: RegistrationData = {
 
 export default function Home() {
   const [data, setData] = useState<RegistrationData>(initialData);
+  // Capture attribution once on mount; it persists in this component's state
+  // across every wizard step until submit (the wizard never unmounts).
+  const attribution = useMemo(readAttribution, []);
   const update = (patch: Partial<RegistrationData>) =>
     setData((d) => ({ ...d, ...patch }));
 
@@ -637,6 +641,7 @@ export default function Home() {
       stateResidence: data.state,
       insuranceCardFront: data.insuranceCardFront,
       insuranceCardBack: data.insuranceCardBack,
+      attribution,
     };
     try {
       const res = await fetch("/api/submit", {

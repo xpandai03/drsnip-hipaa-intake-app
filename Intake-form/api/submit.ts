@@ -10,6 +10,9 @@ import {
   notifyPatientSubmission,
   shouldNotify,
 } from "../lib/email/patientmail";
+import { extractAttribution, validateSource } from "./_lib/attribution";
+import { fireConversion } from "../lib/conversion/track";
+import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // POST /api/submit — accepts a submission from either DrSnip form.
@@ -117,6 +120,31 @@ export default async function handler(
     );
   }
 
+  // ---- Marketing attribution (passive metadata) -----------------------
+  // Extract + validate BEFORE the insert so the values persist atomically with
+  // the row. Fully defensive: any failure degrades to NULLs and never blocks
+  // the submission (attribution must never affect intake handling).
+  let attribution = {
+    source: null as string | null,
+    utmSource: null as string | null,
+    utmMedium: null as string | null,
+    utmCampaign: null as string | null,
+    utmTerm: null as string | null,
+    utmContent: null as string | null,
+    clickId: null as string | null,
+    clickIdType: null as string | null,
+  };
+  let sourceValidated: boolean | null = null;
+  try {
+    attribution = extractAttribution(body);
+    sourceValidated = await validateSource(attribution.source);
+  } catch (err) {
+    console.error(
+      "submit: attribution capture failed (degrading to NULLs)",
+      err instanceof Error ? err.name : "UnknownError",
+    );
+  }
+
   let submissionId: string;
   try {
     const [row] = await db
@@ -129,6 +157,16 @@ export default async function handler(
         phone: body.phone,
         dateOfBirth: body.dateOfBirth || null,
         stateResidence: body.stateResidence || null,
+        // Marketing attribution (0008) — NULL for direct/untagged traffic.
+        source: attribution.source,
+        utmSource: attribution.utmSource,
+        utmMedium: attribution.utmMedium,
+        utmCampaign: attribution.utmCampaign,
+        utmTerm: attribution.utmTerm,
+        utmContent: attribution.utmContent,
+        clickId: attribution.clickId,
+        clickIdType: attribution.clickIdType,
+        sourceValidated,
         // Filename + flag captured for audit; raw bytes are NEVER persisted
         // here (only in the n8n bridge call, which forwards them to DrChrono).
         insuranceCardFrontFilename: front?.filename ?? null,
@@ -156,6 +194,22 @@ export default async function handler(
       .json({ success: false, error: "Submission could not be saved" });
     return;
   }
+
+  // ---- Dormant conversion signal (Phase 2) -----------------------------
+  // Fires on SUBMISSION success (the row above committed), independent of the
+  // n8n bridge outcome below — manual_review and a failed bridge are still
+  // completed submissions. Inert by default: fireConversion returns without any
+  // network call unless CONVERSION_TRACKING_ENABLED is on AND GA4 is configured.
+  // Payload is whitelist-only (event + form_type + timestamp + gclid) — no PII.
+  void fireConversion({
+    formType: body.formType,
+    clickId: attribution.clickId,
+    clickIdType: attribution.clickIdType,
+    timestampMs: Date.now(),
+    clientId: randomUUID(),
+  }).catch(() => {
+    /* conversion signalling never affects intake */
+  });
 
   // ---- Fire-and-forget n8n bridge --------------------------------------
   // Runs AFTER res.json() has buffered the response. The Hono adapter

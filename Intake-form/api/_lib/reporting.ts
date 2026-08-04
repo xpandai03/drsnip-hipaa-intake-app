@@ -28,6 +28,8 @@ export const SUPPRESS_BELOW = 5;
 export const DIMENSION_EXPR: Record<string, string> = {
   form_type: "form_type",
   n8n_status: "coalesce(n8n_status, 'pending')",
+  // Marketing attribution channel (migration 0008). NULL = untagged/direct.
+  source: "source",
   // Non-identifying categoricals extracted from raw_payload (whitelist only).
   office_location: "raw_payload->>'officeLocation'",
   insurance_coverage: "raw_payload->>'insuranceCoverage'",

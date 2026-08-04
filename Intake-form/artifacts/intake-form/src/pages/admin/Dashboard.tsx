@@ -115,7 +115,10 @@ function summaryUrl(p: { from?: string; to?: string }): string {
 
 // ---- chartable helpers ----------------------------------------------------
 // Keep only numeric (non-suppressed) cells for plotting; report hidden count.
-function plottable(rows: CountRow[]): {
+function plottable(
+  rows: CountRow[],
+  nullLabel = "Unspecified",
+): {
   data: { name: string; count: number }[];
   hidden: number;
 } {
@@ -123,7 +126,7 @@ function plottable(rows: CountRow[]): {
   const data: { name: string; count: number }[] = [];
   for (const r of rows) {
     if (typeof r.count === "number") {
-      data.push({ name: r.value ?? "Unspecified", count: r.count });
+      data.push({ name: r.value ?? nullLabel, count: r.count });
     } else {
       hidden += 1;
     }
@@ -171,6 +174,10 @@ function DashboardPage() {
   const action = useQuery({
     queryKey: ["reports-action", range],
     queryFn: () => getJson<CountsResponse>(countsUrl("action_label", p)),
+  });
+  const source = useQuery({
+    queryKey: ["reports-source", range],
+    queryFn: () => getJson<CountsResponse>(countsUrl("source", p)),
   });
 
   return (
@@ -238,6 +245,12 @@ function DashboardPage() {
 
         {/* Category tiles */}
         <div className="grid gap-6 lg:grid-cols-2 mt-6">
+          <CategoryTile
+            title="Attribution — submissions by source"
+            subtitle="Tagged links only · untagged/direct shown for honest coverage"
+            q={source}
+            nullLabel="Untagged / direct"
+          />
           <CategoryTile
             title="How did you hear about us?"
             subtitle="Consultation form only · multi-select (selections can exceed submissions)"
@@ -352,6 +365,7 @@ function CategoryTile({
   title,
   subtitle,
   q,
+  nullLabel,
 }: {
   title: string;
   subtitle: string;
@@ -360,6 +374,7 @@ function CategoryTile({
     isError: boolean;
     data?: CountsResponse;
   };
+  nullLabel?: string;
 }) {
   return (
     <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
@@ -372,14 +387,20 @@ function CategoryTile({
       ) : q.isError ? (
         <TileError />
       ) : (
-        <CategoryChart data={q.data!} />
+        <CategoryChart data={q.data!} nullLabel={nullLabel} />
       )}
     </section>
   );
 }
 
-function CategoryChart({ data }: { data: CountsResponse }) {
-  const { data: rows, hidden } = plottable(data.rows);
+function CategoryChart({
+  data,
+  nullLabel,
+}: {
+  data: CountsResponse;
+  nullLabel?: string;
+}) {
+  const { data: rows, hidden } = plottable(data.rows, nullLabel);
   if (rows.length === 0) {
     return (
       <Insufficient
