@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/Input";
 import { RadioCard } from "@/components/ui/RadioCard";
 import { Label } from "@/components/ui/label";
+import { Code2 } from "lucide-react";
+import { EMBED_FORMS, formUrl, iframeSnippet } from "@/lib/embed";
 
 // DrSnip patient-form link generator (Phase 2 polish). Generates trackable
 // links for the Registration or Consultation form, records them in
@@ -53,6 +55,19 @@ function formTypeLabel(ft: string | null): string {
   return ft ?? "—";
 }
 
+// Active marketing sources for the embed source selector. Reuses the same
+// catalog the Sources tab manages; active-only by default (deactivated keys
+// never appear). On error the selector simply hides — bare snippets still work.
+type ActiveSource = { sourceKey: string; displayName: string };
+async function fetchActiveSources(): Promise<ActiveSource[]> {
+  const res = await fetch("/api/admin/marketing-sources", {
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw new Error(`marketing-sources ${res.status}`);
+  const data = (await res.json()) as { sources: ActiveSource[] };
+  return data.sources ?? [];
+}
+
 async function fetchRecentLinks(): Promise<RecentLink[]> {
   const res = await fetch("/api/admin/links", { credentials: "same-origin" });
   if (!res.ok) throw new Error(`Failed to load links (${res.status})`);
@@ -79,6 +94,15 @@ export default function LinkGenerator({
     queryFn: fetchRecentLinks,
     refetchOnWindowFocus: false,
   });
+
+  // Embed section: optional source tag drawn from the active catalog.
+  const [embedSource, setEmbedSource] = useState<string>("");
+  const sourcesQuery = useQuery({
+    queryKey: ["marketing-sources"],
+    queryFn: fetchActiveSources,
+    refetchOnWindowFocus: false,
+  });
+  const activeSources = sourcesQuery.data ?? [];
 
   const saveMutation = useMutation({
     mutationFn: async (payload: {
@@ -313,6 +337,119 @@ export default function LinkGenerator({
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Embed forms — copy-ready snippets for the WordPress site. */}
+        <Card className="rounded-3xl shadow-2xl shadow-black/20 border-0">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-slate-900 text-lg">
+              <Code2 className="w-5 h-5" />
+              Embed forms
+            </CardTitle>
+            <p className="text-sm text-slate-500">
+              Copy a form into the website. The insurance form auto-resizes
+              inline; registration and consultation are full-page forms — the
+              direct link is usually the simplest way to share them.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Optional source tag — hidden if the catalog is empty/unreachable */}
+            {activeSources.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-slate-500">
+                  Tag with a marketing source (optional)
+                </Label>
+                <div className="relative max-w-xs">
+                  <select
+                    value={embedSource}
+                    onChange={(e) => setEmbedSource(e.target.value)}
+                    className="w-full appearance-none bg-white border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-primary"
+                    data-testid="embed-source"
+                  >
+                    <option value="">Direct (no source)</option>
+                    {activeSources.map((s) => (
+                      <option key={s.sourceKey} value={s.sourceKey}>
+                        {s.displayName} ({s.sourceKey})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {embedSource !== "" && (
+                  <p className="text-xs text-slate-400">
+                    Appends <code>?source={embedSource}</code> to every link and
+                    snippet below.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {EMBED_FORMS.map((form) => {
+              const url = formUrl(form.path, embedSource);
+              const snippet = iframeSnippet(form, embedSource);
+              return (
+                <div
+                  key={form.key}
+                  className="rounded-2xl border border-slate-200 p-4 space-y-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border border-primary/20 bg-primary/5 text-primary">
+                      {form.label}
+                    </span>
+                  </div>
+
+                  {/* Direct link */}
+                  <div>
+                    <Label className="text-xs font-medium text-slate-500">
+                      Direct link
+                    </Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 break-all font-mono">
+                        {url}
+                      </code>
+                      <Button
+                        onClick={() => copy(url, `dir-${form.key}`)}
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                      >
+                        {copied === `dir-${form.key}` ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                        {copied === `dir-${form.key}` ? "Copied" : "Copy"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Embed snippet */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-slate-500">
+                        Embed code (iframe)
+                      </Label>
+                      <Button
+                        onClick={() => copy(snippet, `emb-${form.key}`)}
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                      >
+                        {copied === `emb-${form.key}` ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                        {copied === `emb-${form.key}` ? "Copied" : "Copy code"}
+                      </Button>
+                    </div>
+                    <pre className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] leading-relaxed text-slate-600 font-mono overflow-x-auto max-h-40">
+                      {snippet}
+                    </pre>
+                  </div>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       </main>
