@@ -64,10 +64,13 @@ const ALLOWED_PARENT_ORIGINS = [
 const HEIGHT_MESSAGE_TYPE = "drsnip:height";
 
 // --- Field option sets -----------------------------------------------------
-// Office: the insurance form offers only Portland/Seattle (recon §2), but we use
-// the registration pipeline's exact string format so officeLocation maps cleanly
-// in Phase 2 (registration uses "Seattle, WA" / "Portland, OR" / "Plano, TX").
-const OFFICE_LOCATIONS = ["Seattle, WA", "Portland, OR"];
+// Office: values MUST match the registration form's officeLocation literals
+// character-for-character ("Seattle, WA" / "Portland, OR" / "Plano, TX" — see
+// Home.tsx OFFICE_LOCATIONS) so the dashboard office-split tile groups them
+// together. A variant spelling (e.g. "Plano" vs "Plano, TX") would fork the
+// data. Plano added 2026-08 at the client's request. Guarded by
+// api/_test/embed.test.ts, which fails if these drift from Home.tsx.
+const OFFICE_LOCATIONS = ["Seattle, WA", "Portland, OR", "Plano, TX"];
 // DEVIATION (noted in PR): registration collects no Sex field to copy wording
 // from, so we define a standard DrChrono-compatible set. Required per the brief
 // for future profile creation.
