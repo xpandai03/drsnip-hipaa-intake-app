@@ -66,6 +66,9 @@ type SubmissionRow = {
   /** Phase 3 n8n bridge outcome. NULL while the bridge hasn't reported yet. */
   n8nStatus: "success" | "manual_review" | "failed" | null;
   n8nPatientId: number | null;
+  // Derived clinic location: own officeLocation for registration/insurance;
+  // from the patient's registration for consultation; null when unresolvable.
+  location: string | null;
 };
 
 type SubmissionsResponse = {
@@ -144,6 +147,7 @@ function n8nStatusBadgeClass(s: SubmissionRow["n8nStatus"]): string {
 type Filters = {
   page: number;
   form_type: string;
+  location: string;
   start_date: string;
   end_date: string;
   search: string;
@@ -152,17 +156,26 @@ type Filters = {
 const DEFAULTS: Filters = {
   page: 1,
   form_type: "all",
+  location: "all",
   start_date: "",
   end_date: "",
   search: "",
 };
 
-const FILTER_KEYS = ["page", "form_type", "start_date", "end_date", "search"];
+const FILTER_KEYS = [
+  "page",
+  "form_type",
+  "location",
+  "start_date",
+  "end_date",
+  "search",
+];
 
 function readFilters(params: URLSearchParams): Filters {
   return {
     page: Math.max(1, Number(params.get("page") ?? 1) || 1),
     form_type: params.get("form_type") ?? "all",
+    location: params.get("location") ?? "all",
     start_date: params.get("start_date") ?? "",
     end_date: params.get("end_date") ?? "",
     search: params.get("search") ?? "",
@@ -174,6 +187,8 @@ function writeFilters(prev: URLSearchParams, next: Filters): URLSearchParams {
   if (next.page > 1) params.set("page", String(next.page));
   if (next.form_type && next.form_type !== "all")
     params.set("form_type", next.form_type);
+  if (next.location && next.location !== "all")
+    params.set("location", next.location);
   if (next.start_date) params.set("start_date", next.start_date);
   if (next.end_date) params.set("end_date", next.end_date);
   if (next.search) params.set("search", next.search);
@@ -188,6 +203,7 @@ async function fetchSubmissions(filters: Filters): Promise<SubmissionsResponse> 
   qs.set("page", String(filters.page));
   qs.set("limit", "50");
   if (filters.form_type !== "all") qs.set("form_type", filters.form_type);
+  if (filters.location !== "all") qs.set("location", filters.location);
   if (filters.start_date) qs.set("start_date", filters.start_date);
   if (filters.end_date) qs.set("end_date", filters.end_date);
   if (filters.search) qs.set("search", filters.search);
@@ -353,6 +369,7 @@ function SubmissionsPage() {
 
   const hasFilters =
     filters.form_type !== "all" ||
+    filters.location !== "all" ||
     filters.start_date !== "" ||
     filters.end_date !== "" ||
     filters.search !== "";
@@ -552,6 +569,25 @@ function FilterBar({
         </Select>
       </FilterField>
 
+      <FilterField label="Location">
+        <Select
+          value={filters.location}
+          onValueChange={(v) => onChange({ location: v })}
+        >
+          <SelectTrigger className="w-full h-11 md:h-9 md:w-[160px]" data-testid="filter-location">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All locations</SelectItem>
+            {/* Literals match the registration form (Home.tsx OFFICE_LOCATIONS);
+                server whitelists them and ignores anything else. */}
+            <SelectItem value="Seattle, WA">Seattle, WA</SelectItem>
+            <SelectItem value="Portland, OR">Portland, OR</SelectItem>
+            <SelectItem value="Plano, TX">Plano, TX</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
+
       <FilterField label="From">
         <input
           type="date"
@@ -678,6 +714,7 @@ function ResultsTable({
                 <TableHead>Form</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Location</TableHead>
                 <TableHead>n8n</TableHead>
                 <TableHead>Submission ID</TableHead>
                 <TableHead>PDF</TableHead>
@@ -722,6 +759,18 @@ function ResultsTable({
                   </TableCell>
                   <TableCell className="text-sm text-slate-700">
                     {row.email}
+                  </TableCell>
+                  <TableCell className="text-sm text-slate-700">
+                    {row.location ? (
+                      <span>
+                        {row.location}
+                        {row.formType === "consultation" && (
+                          <span className="text-xs text-slate-400"> (from reg.)</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Chip className={n8nStatusBadgeClass(row.n8nStatus)}>

@@ -162,6 +162,7 @@ export {
   count,
   desc,
   eq,
+  getTableColumns,
   gt,
   gte,
   ilike,

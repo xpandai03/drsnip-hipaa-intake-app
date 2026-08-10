@@ -65,6 +65,9 @@ type DetailSubmission = {
   n8nResponseAt: string | null;
   n8nResponseBody: Record<string, unknown> | null;
   rawPayload: Record<string, unknown>;
+  // Derived clinic location (query-time; from the patient's registration for a
+  // consultation). Display-only — never a stored column.
+  location: string | null;
 };
 
 type DetailResponse = { submission: DetailSubmission };
@@ -291,6 +294,14 @@ function DetailBody({
         <KeyValue
           label="Address"
           value={composeAddress(raw, s.stateResidence) ?? "—"}
+        />
+        <KeyValue
+          label={
+            s.formType === "consultation"
+              ? "Location (from registration)"
+              : "Office Location"
+          }
+          value={s.location ?? "—"}
         />
       </Section>
 
