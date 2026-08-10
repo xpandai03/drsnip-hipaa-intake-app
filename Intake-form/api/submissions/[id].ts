@@ -10,8 +10,9 @@
 // UUID — keeps the DB from running a useless cast.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, eq, submissions } from "@workspace/db";
+import { db, eq, getTableColumns, submissions } from "@workspace/db";
 import { requireAuth, requireAdmin } from "../_lib/auth";
+import { resolvedLocationSql } from "../_lib/location";
 
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -46,7 +47,12 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
   }
 
   const rows = await db
-    .select()
+    .select({
+      ...getTableColumns(submissions),
+      // Derived clinic location (from the patient's registration for a
+      // consultation; own officeLocation otherwise). Display-only.
+      location: resolvedLocationSql(),
+    })
     .from(submissions)
     .where(eq(submissions.id, id))
     .limit(1);

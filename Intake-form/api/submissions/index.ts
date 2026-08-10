@@ -33,9 +33,11 @@ import {
   ilike,
   lte,
   or,
+  sql,
   submissions,
 } from "@workspace/db";
 import { requireAuth } from "../_lib/auth";
+import { resolvedLocationSql, isAllowedLocation } from "../_lib/location";
 
 const ALLOWED_FORM_TYPES = new Set(["registration", "consultation"]);
 
@@ -86,6 +88,7 @@ export default async function handler(
   const offset = (page - 1) * limit;
 
   const formTypeParam = firstOf(q.form_type);
+  const locationParam = firstOf(q.location);
   const search = firstOf(q.search);
   const startDate = parseDateStart(q.start_date);
   const endDateExclusive = parseDateEndExclusive(q.end_date);
@@ -93,6 +96,11 @@ export default async function handler(
   const filters: Array<ReturnType<typeof eq> | ReturnType<typeof and>> = [];
   if (formTypeParam && ALLOWED_FORM_TYPES.has(formTypeParam)) {
     filters.push(eq(submissions.formType, formTypeParam));
+  }
+  // Whitelisted, bound location filter. Registration/insurance filter on their
+  // own officeLocation; consultation on its DERIVED location (resolvedLocationSql).
+  if (isAllowedLocation(locationParam)) {
+    filters.push(sql`${resolvedLocationSql()} = ${locationParam}`);
   }
   if (startDate) filters.push(gte(submissions.createdAt, startDate));
   if (endDateExclusive) filters.push(lte(submissions.createdAt, endDateExclusive));
@@ -120,6 +128,9 @@ export default async function handler(
         // n8n outcome surfaces as a badge on the list view (Phase 3 bridge).
         n8nStatus: submissions.n8nStatus,
         n8nPatientId: submissions.n8nPatientId,
+        // Derived clinic location (own for reg/insurance; from the patient's
+        // registration for consultation). Display-only, query-time.
+        location: resolvedLocationSql(),
       })
       .from(submissions)
       .where(whereClause)

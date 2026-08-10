@@ -22,6 +22,7 @@ import {
   db,
   desc,
   eq,
+  getTableColumns,
   gte,
   ilike,
   lte,
@@ -29,8 +30,13 @@ import {
   submissions,
 } from "@workspace/db";
 import { requireAdmin } from "../_lib/auth";
+import { resolvedLocationSql } from "../_lib/location";
+import { toPacificParts, toPacific } from "../_lib/datetime";
 
-type SubmissionRow = typeof submissions.$inferSelect;
+// $inferSelect + the derived, query-time `location` (never a stored column).
+type SubmissionRow = typeof submissions.$inferSelect & {
+  location: string | null;
+};
 type FormType = "registration" | "consultation";
 const FORM_TYPES = new Set<FormType>(["registration", "consultation"]);
 
@@ -157,11 +163,13 @@ function flatQWithDetail(label: string, key: string, detailKey: string): Column[
 // Meta / ops columns — placed at the END (clinical answer data leads).
 const META_COLUMNS: Column[] = [
   { header: "Submission ID", get: (r) => r.id },
-  { header: "Submitted At", get: (r) => toIso(r.createdAt) },
+  // Pacific-time, split into two columns (client converts by hand from UTC today).
+  { header: "Submitted Date (PT)", get: (r) => toPacificParts(r.createdAt).date },
+  { header: "Submitted Time (PT)", get: (r) => toPacificParts(r.createdAt).time },
   { header: "Form Type", get: (r) => r.formType },
   { header: "DrChrono Sync Status", get: (r) => scalar(r.n8nStatus) },
   { header: "DrChrono Patient ID", get: (r) => (r.n8nPatientId == null ? "" : String(r.n8nPatientId)) },
-  { header: "DrChrono Sync At", get: (r) => toIso(r.n8nResponseAt) },
+  { header: "DrChrono Sync At (PT)", get: (r) => toPacific(r.n8nResponseAt) },
 ];
 
 // ---------------------------------------------------------------------------
@@ -243,6 +251,9 @@ const CONSULTATION_COLUMNS: Column[] = [
   { header: "Email", get: rp("email") },
   { header: "Phone", get: rp("phone") },
   { header: "Date of Birth", get: rp("dateOfBirth") },
+  // Consultation forms don't ask for a clinic; this is derived from the same
+  // patient's registration (blank when unresolvable). Display/export-only.
+  { header: "Location (from registration)", get: (r) => r.location ?? "" },
   { header: "Occupation", get: rp("occupation") },
   { header: "Employer", get: rp("employer") },
   { header: "Job Title", get: rp("jobTitle") },
@@ -349,7 +360,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const rows = (await db
-    .select()
+    .select({
+      ...getTableColumns(submissions),
+      location: resolvedLocationSql(),
+    })
     .from(submissions)
     .where(and(...filters))
     .orderBy(desc(submissions.createdAt))) as SubmissionRow[];
