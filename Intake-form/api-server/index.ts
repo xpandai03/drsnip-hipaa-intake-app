@@ -30,6 +30,10 @@ import linksHandler from "../api/admin/links";
 import reportingConnectorHandler from "../api/admin/reporting-connector";
 import reportsSummaryHandler from "../api/reports/summary";
 import reportsCountsHandler from "../api/reports/counts";
+import registrationPartialHandler from "../api/registration-partial";
+import registrationPartialsListHandler from "../api/registration-partials/index";
+import registrationPartialsExportHandler from "../api/registration-partials/export";
+import registrationPartialDeleteHandler from "../api/registration-partials/[id]";
 
 const app = new Hono();
 
@@ -60,6 +64,11 @@ app.all("/api/admin/links", adapt(linksHandler));
 app.all("/api/admin/reporting-connector", adapt(reportingConnectorHandler));
 app.all("/api/reports/summary", adapt(reportsSummaryHandler));
 app.all("/api/reports/counts", adapt(reportsCountsHandler));
+// Registration drop-off partials (Train 2). Specific paths before the :id route.
+app.all("/api/registration-partial", adapt(registrationPartialHandler));
+app.all("/api/registration-partials/export", adapt(registrationPartialsExportHandler));
+app.all("/api/registration-partials", adapt(registrationPartialsListHandler));
+app.all("/api/registration-partials/:id", adapt(registrationPartialDeleteHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

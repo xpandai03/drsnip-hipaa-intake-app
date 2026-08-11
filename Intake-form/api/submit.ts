@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { db, eq, submissions } from "@workspace/db";
+import { db, eq, or, registrationPartials, sql, submissions } from "@workspace/db";
 import {
   callN8nConsultation,
   callN8nRegistration,
@@ -211,6 +211,15 @@ export default async function handler(
     /* conversion signalling never affects intake */
   });
 
+  // ---- Drop-off conversion cleanup (Train 2) ---------------------------
+  // A completed REGISTRATION must not leave a drop-off twin on the list.
+  // Delete the partial by session partial id (primary) or exact normalized
+  // email (fallback). Any completed registration counts — created OR updated
+  // (returning patient). Never blocks intake.
+  if (body.formType === "registration") {
+    void clearRegistrationPartial(body);
+  }
+
   // ---- Fire-and-forget n8n bridge --------------------------------------
   // Runs AFTER res.json() has buffered the response. The Hono adapter
   // (api-server/vercel-adapter.ts) builds the final Response when this
@@ -241,6 +250,37 @@ export default async function handler(
 // (WHERE n8n_status IS NULL OR n8n_status = 'failed') never surfaces it, and the
 // admin badge helper falls through to its neutral default. `n8n_status` is a
 // free-text column, so this needs no migration.
+// Delete any drop-off partial for a just-completed registration. Matches the
+// session partial id first, then falls back to exact normalized email so a
+// conversion on a different device still clears the twin. Never throws.
+async function clearRegistrationPartial(
+  body: z.infer<typeof bodySchema>,
+): Promise<void> {
+  try {
+    const raw = body as Record<string, unknown>;
+    const partialId =
+      typeof raw.partialId === "string" && raw.partialId.length > 0
+        ? raw.partialId
+        : null;
+    const email = body.email ? body.email.toLowerCase().trim() : "";
+    const clauses = [];
+    if (partialId) clauses.push(eq(registrationPartials.partialId, partialId));
+    if (email)
+      clauses.push(
+        sql`lower(trim(${registrationPartials.email})) = ${email}`,
+      );
+    if (clauses.length === 0) return;
+    await db
+      .delete(registrationPartials)
+      .where(clauses.length === 1 ? clauses[0] : or(...clauses));
+  } catch (err) {
+    console.error(
+      "submit: registration partial cleanup failed",
+      err instanceof Error ? err.name : "UnknownError",
+    );
+  }
+}
+
 async function markBridgeSkipped(submissionId: string): Promise<void> {
   try {
     await db

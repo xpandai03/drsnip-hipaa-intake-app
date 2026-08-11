@@ -46,11 +46,16 @@ export function MultiStepForm({
   onSubmit,
   successTitle,
   successMessage,
+  onStepChange,
 }: {
   screens: FormScreen[];
   onSubmit: () => Promise<boolean>;
   successTitle: string;
   successMessage: string;
+  /** Optional: called with the new (0-based) step index when the user ADVANCES
+   *  past a valid step. Used by Registration for drop-off capture; other forms
+   *  simply don't pass it. Never affects wizard flow. */
+  onStepChange?: (nextIndex: number) => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -83,6 +88,13 @@ export function MultiStepForm({
     }
     setDirection(1);
     setStepIndex((i) => i + 1);
+    // The current step passed validation and we're advancing — notify (used for
+    // registration drop-off capture). Guarded so it never throws into the wizard.
+    try {
+      onStepChange?.(stepIndex + 1);
+    } catch {
+      /* capture must never affect the form */
+    }
   };
 
   const handleBack = () => {
