@@ -2,6 +2,11 @@ import { useMemo, useState } from "react";
 import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
 import { readAttribution } from "@/lib/attribution";
 import {
+  getPartialId,
+  sendPartialBeacon,
+  shouldCaptureAtStep,
+} from "@/lib/dropoff";
+import {
   TextField,
   TextAreaField,
   SelectField,
@@ -224,6 +229,12 @@ export default function Home() {
   // Capture attribution once on mount; it persists in this component's state
   // across every wizard step until submit (the wizard never unmounts).
   const attribution = useMemo(readAttribution, []);
+  // Drop-off capture (Train 2): per-session id + a beacon fired only AFTER the
+  // contact step is passed. The contact screen is index 1 (patient-info=0,
+  // contact=1), so we capture once the user advances to index >= 2 — the
+  // earliest point at which name + email + phone all exist.
+  const partialId = useMemo(getPartialId, []);
+  const CONTACT_STEP_INDEX = 1;
   const update = (patch: Partial<RegistrationData>) =>
     setData((d) => ({ ...d, ...patch }));
 
@@ -629,6 +640,24 @@ export default function Home() {
     },
   ];
 
+  // Fired when the wizard advances a step. Only captures a drop-off once the
+  // contact step is passed (index >= 2); whitelist fields only — never step
+  // answers. Silent + fire-and-forget.
+  const onStepChange = (nextIndex: number) => {
+    if (!shouldCaptureAtStep(nextIndex, CONTACT_STEP_INDEX)) return;
+    sendPartialBeacon({
+      partialId,
+      firstName: data.legalFirstName,
+      lastName: data.legalLastName,
+      email: data.email,
+      phone: data.mobileNumber,
+      officeLocation: data.officeLocation,
+      furthestStep: nextIndex + 1, // 1-based step reached
+      furthestStepLabel: screens[nextIndex]?.title,
+      attribution,
+    });
+  };
+
   const onSubmit = async (): Promise<boolean> => {
     const payload = {
       ...data,
@@ -642,6 +671,8 @@ export default function Home() {
       insuranceCardFront: data.insuranceCardFront,
       insuranceCardBack: data.insuranceCardBack,
       attribution,
+      // Lets the server delete this session's drop-off partial on success.
+      partialId,
     };
     try {
       const res = await fetch("/api/submit", {
@@ -661,6 +692,7 @@ export default function Home() {
     <MultiStepForm
       screens={screens}
       onSubmit={onSubmit}
+      onStepChange={onStepChange}
       successTitle="Thank you — your registration is in."
       successMessage="Our team at DrSnip will review your information and reach out to schedule your consultation. If we need anything else, we'll contact you at the email or phone number you provided."
     />
