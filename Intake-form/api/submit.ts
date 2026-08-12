@@ -11,6 +11,7 @@ import {
   shouldNotify,
 } from "../lib/email/patientmail";
 import { extractAttribution, validateSource } from "./_lib/attribution";
+import { storeSubmissionFiles } from "./_lib/card-files";
 import { fireConversion } from "../lib/conversion/track";
 import { randomUUID } from "node:crypto";
 
@@ -194,6 +195,12 @@ export default async function handler(
       .json({ success: false, error: "Submission could not be saved" });
     return;
   }
+
+  // ---- Card image storage (registration + insurance) -------------------
+  // Persist uploaded card bytes into submission_files. Runs after the response
+  // and never throws — a file failure must never fail intake. Consultation has
+  // no card fields, so this is a no-op there.
+  void storeSubmissionFiles(submissionId, body);
 
   // ---- Dormant conversion signal (Phase 2) -----------------------------
   // Fires on SUBMISSION success (the row above committed), independent of the
