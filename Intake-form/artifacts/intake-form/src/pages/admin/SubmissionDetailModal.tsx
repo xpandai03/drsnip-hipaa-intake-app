@@ -70,7 +70,23 @@ type DetailSubmission = {
   location: string | null;
 };
 
-type DetailResponse = { submission: DetailSubmission };
+type FileMeta = {
+  id: string;
+  kind: string;
+  filename: string | null;
+  mime: string | null;
+  sizeBytes: number | null;
+  status: string; // stored | too_large | rejected | failed
+};
+type DetailResponse = { submission: DetailSubmission; files: FileMeta[] };
+
+const RENDERABLE = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const KIND_LABEL: Record<string, string> = {
+  insurance_front: "Insurance card — front",
+  insurance_back: "Insurance card — back",
+  partner_front: "Secondary card — front",
+  partner_back: "Secondary card — back",
+};
 
 async function fetchDetail(id: string): Promise<DetailResponse> {
   const res = await fetch(`/api/submissions/${id}`, {
@@ -208,6 +224,7 @@ export function SubmissionDetailModal({
         ) : query.data ? (
           <DetailBody
             submission={query.data.submission}
+            files={query.data.files ?? []}
             canDelete={canDelete}
             onDeleted={onDeleted}
           />
@@ -219,10 +236,12 @@ export function SubmissionDetailModal({
 
 function DetailBody({
   submission,
+  files,
   canDelete,
   onDeleted,
 }: {
   submission: DetailSubmission;
+  files: FileMeta[];
   canDelete: boolean;
   onDeleted?: () => void;
 }) {
@@ -308,20 +327,9 @@ function DetailBody({
       {/* n8n bridge outcome — Phase 3 wire to DrChrono. */}
       <N8nOutcomeSection submission={s} />
 
-      {/* Insurance cards (stub) */}
+      {/* Insurance cards */}
       <Section title="Insurance Cards">
-        <KeyValue
-          label="Cards provided"
-          value={s.hasInsuranceCards ? "Yes" : "No"}
-        />
-        <KeyValue
-          label="Front"
-          value={s.insuranceCardFrontFilename ?? "—"}
-        />
-        <KeyValue label="Back" value={s.insuranceCardBackFilename ?? "—"} />
-        <p className="text-xs text-slate-400 mt-1">
-          Demo mode — only filenames are stored; no file bytes are persisted.
-        </p>
+        <InsuranceCards submission={s} files={files} />
       </Section>
 
       {/* Full form answers from raw_payload */}
@@ -556,6 +564,98 @@ function Section({
       <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-1">
         {children}
       </div>
+    </div>
+  );
+}
+
+function InsuranceCards({
+  submission: s,
+  files,
+}: {
+  submission: DetailSubmission;
+  files: FileMeta[];
+}) {
+  const filenames = [
+    s.insuranceCardFrontFilename,
+    s.insuranceCardBackFilename,
+  ].filter(Boolean);
+
+  // Nothing at all.
+  if (files.length === 0 && !s.hasInsuranceCards && filenames.length === 0) {
+    return <KeyValue label="Cards provided" value="No" />;
+  }
+
+  // Historical rows: a filename was recorded but bytes were never stored (this
+  // predates card storage). Be honest — never imply the file exists.
+  if (files.length === 0) {
+    return (
+      <div className="space-y-2">
+        <KeyValue label="Cards provided" value={s.hasInsuranceCards ? "Yes" : "No"} />
+        {s.insuranceCardFrontFilename && (
+          <KeyValue label="Front" value={s.insuranceCardFrontFilename} />
+        )}
+        {s.insuranceCardBackFilename && (
+          <KeyValue label="Back" value={s.insuranceCardBackFilename} />
+        )}
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          File not stored — this submission predates card image storage. Only the
+          filename was recorded.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {files.map((f) => (
+        <CardTile key={f.id} file={f} />
+      ))}
+    </div>
+  );
+}
+
+function CardTile({ file: f }: { file: FileMeta }) {
+  const label = KIND_LABEL[f.kind] ?? f.kind;
+  const stored = f.status === "stored";
+  const renderable = stored && !!f.mime && RENDERABLE.has(f.mime);
+  const href = `/api/files/${f.id}`;
+  const notStored =
+    f.status === "too_large"
+      ? "File too large — not stored"
+      : f.status === "rejected"
+        ? "Unsupported file type — not stored"
+        : f.status === "failed"
+          ? "Upload failed — not stored"
+          : null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-2 flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium text-slate-500">{label}</span>
+      {renderable ? (
+        <a href={href} target="_blank" rel="noreferrer" title="Open full size">
+          <img
+            src={href}
+            alt={label}
+            className="w-full h-28 object-cover rounded-lg bg-slate-50 border border-slate-100"
+          />
+        </a>
+      ) : stored ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="h-28 flex items-center justify-center rounded-lg bg-slate-50 border border-slate-100 text-sm text-primary underline"
+        >
+          View file
+        </a>
+      ) : (
+        <div className="h-28 flex items-center justify-center rounded-lg bg-slate-50 border border-dashed border-slate-200 text-[11px] text-slate-400 text-center px-2">
+          {notStored ?? "Not stored"}
+        </div>
+      )}
+      <span className="text-[10px] text-slate-400 truncate" title={f.filename ?? ""}>
+        {f.filename ?? "—"}
+      </span>
     </div>
   );
 }

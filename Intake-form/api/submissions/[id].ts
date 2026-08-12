@@ -10,7 +10,14 @@
 // UUID — keeps the DB from running a useless cast.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, eq, getTableColumns, submissions } from "@workspace/db";
+import {
+  db,
+  desc,
+  eq,
+  getTableColumns,
+  submissionFiles,
+  submissions,
+} from "@workspace/db";
 import { requireAuth, requireAdmin } from "../_lib/auth";
 import { resolvedLocationSql } from "../_lib/location";
 
@@ -57,12 +64,26 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
     .where(eq(submissions.id, id))
     .limit(1);
 
+  // Card file METADATA only — never the bytes (those stream from /api/files/:id).
+  const files = await db
+    .select({
+      id: submissionFiles.id,
+      kind: submissionFiles.kind,
+      filename: submissionFiles.filename,
+      mime: submissionFiles.mime,
+      sizeBytes: submissionFiles.sizeBytes,
+      status: submissionFiles.status,
+    })
+    .from(submissionFiles)
+    .where(eq(submissionFiles.submissionId, id))
+    .orderBy(desc(submissionFiles.createdAt));
+
   const row = rows[0];
   if (!row) {
     return res.status(404).json({ error: "Submission not found" });
   }
 
-  return res.status(200).json({ submission: row });
+  return res.status(200).json({ submission: row, files });
 }
 
 async function handleDelete(req: VercelRequest, res: VercelResponse) {

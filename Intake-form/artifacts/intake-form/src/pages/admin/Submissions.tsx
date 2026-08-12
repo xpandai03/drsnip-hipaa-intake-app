@@ -123,6 +123,9 @@ function n8nStatusLabel(s: SubmissionRow["n8nStatus"]): string {
   if (s === "success") return "n8n: success";
   if (s === "manual_review") return "n8n: manual review";
   if (s === "failed") return "n8n: failed";
+  // Insurance submissions intentionally skip the bridge (no n8n workflow), so
+  // their status is 'not_applicable' — show "n/a", not the misleading "pending".
+  if ((s as unknown as string) === "not_applicable") return "n8n: n/a";
   return "n8n: pending";
 }
 
