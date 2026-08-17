@@ -39,7 +39,11 @@ import {
 import { requireAuth } from "../_lib/auth";
 import { resolvedLocationSql, isAllowedLocation } from "../_lib/location";
 
-const ALLOWED_FORM_TYPES = new Set(["registration", "consultation"]);
+export const ALLOWED_FORM_TYPES = new Set([
+  "registration",
+  "consultation",
+  "insurance",
+]);
 
 function firstOf(value: unknown): string | undefined {
   if (Array.isArray(value)) return value[0] as string | undefined;

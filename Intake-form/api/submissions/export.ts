@@ -37,8 +37,12 @@ import { toPacificParts, toPacific } from "../_lib/datetime";
 type SubmissionRow = typeof submissions.$inferSelect & {
   location: string | null;
 };
-type FormType = "registration" | "consultation";
-const FORM_TYPES = new Set<FormType>(["registration", "consultation"]);
+type FormType = "registration" | "consultation" | "insurance";
+const FORM_TYPES = new Set<FormType>([
+  "registration",
+  "consultation",
+  "insurance",
+]);
 
 const MAX_CHILDREN = 8;
 
@@ -101,6 +105,18 @@ function raw(r: SubmissionRow): Record<string, unknown> {
 /** Read a scalar form field out of raw_payload by key. */
 function rp(key: string): (r: SubmissionRow) => string {
   return (r) => scalar(raw(r)[key]);
+}
+
+/** Read a scalar from a NESTED raw_payload path, e.g.
+ *  rpPath("insurance", "primary", "carrier"). Missing intermediate keys → "".
+ *  The insurance form nests its carrier/policy data under `insurance.primary`
+ *  and `insurance.secondary` (unlike registration's flat keys). */
+function rpPath(...keys: string[]): (r: SubmissionRow) => string {
+  return (r) => {
+    let cur: unknown = raw(r);
+    for (const k of keys) cur = asRecord(cur)[k];
+    return scalar(cur);
+  };
 }
 
 /** Multi-select array → single readable cell, joined with " | ". */
@@ -304,9 +320,57 @@ const CONSULTATION_COLUMNS: Column[] = [
   ...META_COLUMNS,
 ];
 
+// ---------------------------------------------------------------------------
+// Insurance column schema (mirrors Insurance.tsx payload — nested `insurance`).
+// Full admin export (behind requireAdmin): unlike the doorbell email, the CSV
+// carries the complete carrier/policy detail the benefits team verifies with.
+// Card columns remain FILENAME-ONLY (bytes never touch the CSV).
+// ---------------------------------------------------------------------------
+const INSURANCE_COLUMNS: Column[] = [
+  // Patient identity
+  { header: "First Name", get: rp("firstName") },
+  { header: "Last Name", get: rp("lastName") },
+  { header: "Email", get: rp("email") },
+  { header: "Phone", get: rp("phone") },
+  { header: "Date of Birth", get: rp("dateOfBirth") },
+  { header: "Sex", get: rp("sex") },
+  { header: "Office Location", get: rp("officeLocation") },
+  // Address
+  { header: "Street Address", get: rp("streetAddress") },
+  { header: "Address Line 2", get: rp("addressLine2") },
+  { header: "City", get: rp("city") },
+  { header: "State", get: rp("state") },
+  { header: "ZIP Code", get: rp("postalCode") },
+  // Primary insurance (nested under insurance.primary)
+  { header: "Primary Carrier", get: rpPath("insurance", "primary", "carrier") },
+  { header: "Primary Subscriber First", get: rpPath("insurance", "primary", "subscriberName", "first") },
+  { header: "Primary Subscriber Last", get: rpPath("insurance", "primary", "subscriberName", "last") },
+  { header: "Primary Policy No.", get: rpPath("insurance", "primary", "policyNo") },
+  { header: "Primary Group No.", get: rpPath("insurance", "primary", "groupNo") },
+  { header: "Primary Subscriber DOB", get: rpPath("insurance", "primary", "subscriberDob") },
+  { header: "Primary Relationship", get: rpPath("insurance", "primary", "relationship") },
+  // Secondary insurance (nested under insurance.secondary; blank when absent)
+  { header: "Secondary Carrier", get: rpPath("insurance", "secondary", "carrier") },
+  { header: "Secondary Subscriber First", get: rpPath("insurance", "secondary", "subscriberName", "first") },
+  { header: "Secondary Subscriber Last", get: rpPath("insurance", "secondary", "subscriberName", "last") },
+  { header: "Secondary Policy No.", get: rpPath("insurance", "secondary", "policyNo") },
+  { header: "Secondary Group No.", get: rpPath("insurance", "secondary", "groupNo") },
+  { header: "Secondary Subscriber DOB", get: rpPath("insurance", "secondary", "subscriberDob") },
+  { header: "Secondary Relationship", get: rpPath("insurance", "secondary", "relationship") },
+  // Card filenames (metadata only — no bytes)
+  { header: "Insurance Card Front (filename)", get: cardFilename("insuranceCardFront") },
+  { header: "Insurance Card Back (filename)", get: cardFilename("insuranceCardBack") },
+  { header: "Partner Insurance Card Front (filename)", get: cardFilename("partnerInsuranceCardFront") },
+  { header: "Partner Insurance Card Back (filename)", get: cardFilename("partnerInsuranceCardBack") },
+  { header: "Insurance Cards Uploaded", get: (r) => (r.hasInsuranceCards ? "Yes" : "No") },
+  // Ops / meta last
+  ...META_COLUMNS,
+];
+
 export const COLUMNS_BY_FORM: Record<FormType, Column[]> = {
   registration: REGISTRATION_COLUMNS,
   consultation: CONSULTATION_COLUMNS,
+  insurance: INSURANCE_COLUMNS,
 };
 
 /**
@@ -338,7 +402,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!formTypeParam || !FORM_TYPES.has(formTypeParam as FormType)) {
     return res
       .status(400)
-      .json({ error: "form_type query param is required (registration | consultation)" });
+      .json({ error: "form_type query param is required (registration | consultation | insurance)" });
   }
   const formType = formTypeParam as FormType;
 

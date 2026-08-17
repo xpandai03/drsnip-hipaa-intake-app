@@ -49,6 +49,7 @@ COPY --from=builder /app/dist/server.cjs ./dist/server.cjs
 COPY --from=builder /app/dist/migrate.cjs ./dist/migrate.cjs
 COPY --from=builder /app/dist/seed-viewer.cjs ./dist/seed-viewer.cjs
 COPY --from=builder /app/dist/admin-ops.cjs ./dist/admin-ops.cjs
+COPY --from=builder /app/dist/backfill-insurance-notify.cjs ./dist/backfill-insurance-notify.cjs
 COPY --from=builder /app/artifacts/intake-form/dist/public ./artifacts/intake-form/dist/public
 
 EXPOSE 8080
