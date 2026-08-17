@@ -104,6 +104,7 @@ function exactTime(iso: string): string {
 function formTypeLabel(formType: string): string {
   if (formType === "consultation") return "Consultation";
   if (formType === "registration") return "Registration";
+  if (formType === "insurance") return "Insurance";
   return formType;
 }
 
@@ -113,6 +114,8 @@ function formTypeBadgeClass(formType: string): string {
       return "bg-sky-100 text-sky-800 border-sky-200";
     case "consultation":
       return "bg-teal-100 text-teal-800 border-teal-200";
+    case "insurance":
+      return "bg-violet-100 text-violet-800 border-violet-200";
     default:
       return "bg-slate-100 text-slate-700 border-slate-200";
   }
@@ -221,7 +224,10 @@ async function fetchSubmissions(filters: Filters): Promise<SubmissionsResponse> 
 // dedicated button, so the export `form_type` is fixed by the button (not the
 // view's form-type filter). Date/search filters from the current view still
 // apply. The server (requireAdmin) is the gate; buttons are hidden for viewers.
-function buildExportUrl(formType: "registration" | "consultation", filters: Filters): string {
+function buildExportUrl(
+  formType: "registration" | "consultation" | "insurance",
+  filters: Filters,
+): string {
   const qs = new URLSearchParams();
   qs.set("form_type", formType);
   if (filters.start_date) qs.set("start_date", filters.start_date);
@@ -268,7 +274,7 @@ function SubmissionsPage() {
   // Trigger a single-form CSV download via a same-origin anchor (sends the
   // session cookie; the server's Content-Disposition names the file).
   const onExport = useCallback(
-    (formType: "registration" | "consultation") => {
+    (formType: "registration" | "consultation" | "insurance") => {
       const a = document.createElement("a");
       a.href = buildExportUrl(formType, filters);
       a.rel = "noopener";
@@ -410,6 +416,16 @@ function SubmissionsPage() {
               >
                 <Download className="w-4 h-4" />
                 Export Consultation
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onExport("insurance")}
+                className="w-full justify-center bg-white text-primary hover:bg-white/90 sm:w-auto sm:shrink-0"
+                data-testid="export-insurance-btn"
+              >
+                <Download className="w-4 h-4" />
+                Export Insurance
               </Button>
             </div>
           )}
@@ -568,6 +584,7 @@ function FilterBar({
             <SelectItem value="all">All forms</SelectItem>
             <SelectItem value="registration">Registration</SelectItem>
             <SelectItem value="consultation">Consultation</SelectItem>
+            <SelectItem value="insurance">Insurance</SelectItem>
           </SelectContent>
         </Select>
       </FilterField>

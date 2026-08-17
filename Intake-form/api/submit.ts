@@ -6,6 +6,7 @@ import {
   callN8nRegistration,
   type N8nOutcome,
 } from "../lib/n8n/bridge";
+import { notifyInsuranceSubmission } from "../lib/n8n/insurance-notify";
 import {
   notifyPatientSubmission,
   shouldNotify,
@@ -239,7 +240,19 @@ export default async function handler(
   // unreachable for form_type 'insurance' by construction — the only calls into
   // n8n live inside runN8nBridge, and this branch never enters it.
   if (body.formType === "insurance") {
+    // DrChrono bridge stays skipped (no insurance workflow) — status is still
+    // 'not_applicable'. Separately, fire the staff doorbell email so the
+    // benefits team learns the submission exists. Fire-and-forget, never
+    // throws, and no-ops cleanly until the notify webhook URL is configured —
+    // a notification failure must never fail or delay intake.
     void markBridgeSkipped(submissionId);
+    const insuranceOffice = (body as Record<string, unknown>).officeLocation;
+    void notifyInsuranceSubmission({
+      submissionId,
+      name: `${body.firstName} ${body.lastName}`.trim(),
+      office: typeof insuranceOffice === "string" ? insuranceOffice : "",
+      submittedAt: new Date(),
+    });
   } else {
     void runN8nBridge(submissionId, body).catch((err) => {
       // Defensive: should never hit. Bridge code catches internally.
