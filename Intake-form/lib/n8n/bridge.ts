@@ -432,6 +432,15 @@ export function insuranceBridgeEnabled(): boolean {
   return process.env.N8N_INSURANCE_BRIDGE_ENABLED === "true";
 }
 
+/** Train D document kill switch — INDEPENDENT of the chart bridge above.
+ *  Off => the payload tells n8n to skip its entire document branch, so charts
+ *  are still created exactly as they are today. On => n8n fetches the summary
+ *  PDF and each stored card from the app's service-token endpoints and uploads
+ *  them. Documents can therefore be stopped without stopping chart creation. */
+export function insuranceDocsEnabled(): boolean {
+  return process.env.N8N_INSURANCE_DOCS_ENABLED === "true";
+}
+
 /** Deliver an Insurance submission to the Insurance v1 n8n workflow. Never
  *  throws. Carries NO card bytes — n8n fetches those out-of-band from the
  *  internal service-token endpoints (see api/internal/*). */
@@ -455,7 +464,9 @@ export async function callN8nInsurance(
       "N8N_WEBHOOK_SECRET",
     );
 
-  const payload = buildInsurancePayload(submissionId, body, submittedAt);
+  const payload = buildInsurancePayload(submissionId, body, submittedAt, {
+    documentsEnabled: insuranceDocsEnabled(),
+  });
 
   // postToN8n reads only `secret` off this struct (the URL is a separate
   // argument). Built here rather than narrowing postToN8n's signature so that

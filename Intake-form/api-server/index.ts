@@ -37,6 +37,7 @@ import registrationPartialDeleteHandler from "../api/registration-partials/[id]"
 import fileHandler from "../api/files/[id]";
 import internalSubmissionFilesHandler from "../api/internal/submission-files/[submissionId]";
 import internalFileHandler from "../api/internal/files/[id]";
+import internalInsurancePdfHandler from "../api/internal/insurance-pdf/[submissionId]";
 
 const app = new Hono();
 
@@ -80,6 +81,7 @@ app.all("/api/files/:id", adapt(fileHandler));
 // Registered before the /api/* 404 so they resolve; nothing links to them.
 app.all("/api/internal/submission-files/:submissionId", adapt(internalSubmissionFilesHandler));
 app.all("/api/internal/files/:id", adapt(internalFileHandler));
+app.all("/api/internal/insurance-pdf/:submissionId", adapt(internalInsurancePdfHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

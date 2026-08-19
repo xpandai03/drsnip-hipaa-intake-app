@@ -7,7 +7,7 @@ import type { PDFImage } from "pdf-lib";
 import { PdfCursor, PAGE, MARGIN, COLOR } from "../cursor";
 
 export interface HeaderData {
-  formType: "registration" | "consultation";
+  formType: "registration" | "consultation" | "insurance";
   patientName: string;
   /** null on Registration, or when no spouse was given. */
   spouseName: string | null;
@@ -62,7 +62,9 @@ export function renderHeader(cursor: PdfCursor, d: HeaderData): void {
   const badge =
     d.formType === "consultation"
       ? "Consultation Intake"
-      : "Registration Intake";
+      : d.formType === "insurance"
+        ? "Insurance Inquiry"
+        : "Registration Intake";
   const badgeW = bold.widthOfTextAtSize(badge, 11);
   page.drawText(badge, {
     x: PAGE.width - MARGIN - badgeW,

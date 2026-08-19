@@ -21,6 +21,7 @@ import {
 } from "./layout/sections";
 import { REGISTRATION_SECTIONS } from "./templates/registration";
 import { CONSULTATION_SECTIONS } from "./templates/consultation";
+import { INSURANCE_SECTIONS } from "./templates/insurance";
 
 // The built SPA (and thus the logo) travels in the runtime image at this path.
 const LOGO_PATH = "artifacts/intake-form/dist/public/images/drsnip-logo.png";
@@ -41,13 +42,20 @@ export async function generateSubmissionPdf(
 
   const raw = asRecord(submission.rawPayload);
   const isConsultation = submission.formType === "consultation";
+  // Train D: insurance is a third form type. Kept as its own flag rather than
+  // folding into isConsultation so every existing branch below reads unchanged.
+  const isInsurance = submission.formType === "insurance";
   const children = toChildren(raw.children);
 
   const cursor = new PdfCursor(doc, fonts);
 
   // ---- Page-1 header (form-type-aware) ---------------------------------
   const header: HeaderData = {
-    formType: isConsultation ? "consultation" : "registration",
+    formType: isInsurance
+      ? "insurance"
+      : isConsultation
+        ? "consultation"
+        : "registration",
     patientName:
       `${submission.firstName} ${submission.lastName}`.trim() ||
       "Unknown Patient",
@@ -56,16 +64,23 @@ export async function generateSubmissionPdf(
     childCount: isConsultation ? children.length : null,
     age: calculateAge(submission.dateOfBirth),
     dateOfBirth: submission.dateOfBirth ?? null,
-    submittedAt: formatTimestamp(submission.createdAt),
+    // Insurance summaries are read by the benefits team against clinic hours,
+    // so they carry Pacific rather than UTC. Registration/Consultation keep UTC
+    // — changing those would alter documents already in patient charts.
+    submittedAt: isInsurance
+      ? formatTimestampPacific(submission.createdAt)
+      : formatTimestamp(submission.createdAt),
     submissionId: submission.id,
     logo,
   };
   renderHeader(cursor, header);
 
   // ---- Full submission, section by section -----------------------------
-  const sections = isConsultation
-    ? CONSULTATION_SECTIONS
-    : REGISTRATION_SECTIONS;
+  const sections = isInsurance
+    ? INSURANCE_SECTIONS
+    : isConsultation
+      ? CONSULTATION_SECTIONS
+      : REGISTRATION_SECTIONS;
   const medicalDetails = asRecord(raw.medicalDetails);
 
   for (const section of sections) {
@@ -76,21 +91,21 @@ export async function generateSubmissionPdf(
           renderMedicalAnswer(
             cursor,
             field.label,
-            scalar(raw[field.key]),
+            scalar(lookupPath(raw, field.key)),
             scalar(medicalDetails[field.key]),
           );
           break;
         case "array":
-          renderArrayValue(cursor, field.label, toStringArray(raw[field.key]));
+          renderArrayValue(cursor, field.label, toStringArray(lookupPath(raw, field.key)));
           break;
         case "children":
           renderChildrenBlock(cursor, children);
           break;
         case "file":
-          renderKeyValue(cursor, field.label, fileRefToString(raw[field.key]));
+          renderKeyValue(cursor, field.label, fileRefToString(lookupPath(raw, field.key)));
           break;
         default:
-          renderKeyValue(cursor, field.label, scalar(raw[field.key]));
+          renderKeyValue(cursor, field.label, scalar(lookupPath(raw, field.key)));
       }
     }
   }
@@ -120,10 +135,47 @@ function buildSpouseName(raw: Record<string, unknown>): string | null {
   return name || null;
 }
 
+/**
+ * Resolve a template field key against raw_payload. A plain key ("firstName")
+ * is a direct property read, byte-for-byte the previous behavior. A dotted key
+ * ("insurance.primary.carrier") walks nested objects, which the insurance form
+ * needs because it nests carrier data. Any missing or non-object link in the
+ * chain yields undefined, which every renderer already displays as "—".
+ * Exported for direct testing.
+ */
+export function lookupPath(
+  root: Record<string, unknown>,
+  key: string,
+): unknown {
+  if (!key.includes(".")) return root[key];
+  let node: unknown = root;
+  for (const part of key.split(".")) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return undefined;
+    node = (node as Record<string, unknown>)[part];
+  }
+  return node;
+}
+
 function formatTimestamp(value: Date | string): string {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/** "Aug 19, 2026, 2:41 PM PT" — clinic-local, for the insurance summary. */
+function formatTimestampPacific(value: Date | string): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const s = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+  return `${s} PT`;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -161,5 +213,5 @@ function toChildren(v: unknown): ChildRow[] {
 
 function fileRefToString(v: unknown): string {
   const filename = scalar(asRecord(v).filename);
-  return filename ? `${filename} — image not stored (demo mode)` : "";
+  return filename ? `${filename} — image attached separately` : "";
 }

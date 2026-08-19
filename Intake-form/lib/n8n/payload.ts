@@ -498,6 +498,20 @@ export interface InsuranceN8nPayload {
     hasCards: boolean;
     count: number;
   };
+  /** Train D. `enabled` is the document kill switch, evaluated per submission
+   *  in the app and carried here so n8n can gate its whole document branch on
+   *  it. Deliberately NOT an n8n env var: toggling that would require
+   *  restarting the n8n machine, which would drop in-flight registration and
+   *  consultation webhooks — chart creation outranks document delivery. */
+  documents: {
+    enabled: boolean;
+  };
+}
+
+export interface InsurancePayloadOptions {
+  /** Value of N8N_INSURANCE_DOCS_ENABLED, read by the caller. Kept as a
+   *  parameter so this module stays pure (no env reads, no I/O). */
+  documentsEnabled?: boolean;
 }
 
 // The four card slots api/submit.ts recognizes (see api/_lib/card-files.ts).
@@ -534,6 +548,7 @@ export function buildInsurancePayload(
   submissionId: string,
   body: SubmissionBody,
   submittedAt: Date,
+  options: InsurancePayloadOptions = {},
 ): InsuranceN8nPayload {
   const raw = body as Record<string, unknown>;
   const ins = rec(raw.insurance);
@@ -575,6 +590,9 @@ export function buildInsurancePayload(
     cards: {
       hasCards: cardCount > 0,
       count: cardCount,
+    },
+    documents: {
+      enabled: options.documentsEnabled === true,
     },
   };
 }

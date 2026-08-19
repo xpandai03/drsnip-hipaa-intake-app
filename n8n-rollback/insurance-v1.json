@@ -546,6 +546,482 @@
           "responseCode": 500
         }
       }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000020",
+      "name": "IF: Documents Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "docs-enabled",
+              "leftValue": "={{ $('Webhook').item.json.body.documents.enabled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000021",
+      "name": "HTTP: Fetch Insurance PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        120
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "20LqA3UdTAGXtxRM",
+          "name": "DrSnip App Service Token"
+        }
+      },
+      "parameters": {
+        "url": "=https://intake.drsnip.com/api/internal/insurance-pdf/{{ $('Parse & Normalize').item.json.submission_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000022",
+      "name": "DrChrono: Upload Insurance PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        120
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "vCwf0HNhIwA3cFV1",
+          "name": "DRSNIP-CHRONO"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.drchrono.com/api/documents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient",
+              "value": "={{ $('Resolve Patient ID').item.json.patient_id }}"
+            },
+            {
+              "name": "description",
+              "value": "Insurance Inquiry (custom app v1)"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "document",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "doctor",
+              "value": "324569"
+            },
+            {
+              "name": "date",
+              "value": "={{ $now.format('yyyy-MM-dd') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000023",
+      "name": "IF: PDF Upload Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pdf-failed",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000024",
+      "name": "Sheets: PDF Upload Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        600,
+        20
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hQTs0UCcXWEtQ3j0",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "InsuranceUploadFailures",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "form_type": "insurance",
+            "source": "custom-app-insurance-v1",
+            "submission_id": "={{ $('Parse & Normalize').item.json.submission_id }}",
+            "patient_id": "={{ $('Resolve Patient ID').item.json.patient_id }}",
+            "document_type": "insurance_summary_pdf",
+            "error": "={{ ($json.error && $json.error.message) || $json.error || 'unknown' }}"
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000025",
+      "name": "HTTP: List Card Files",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "20LqA3UdTAGXtxRM",
+          "name": "DrSnip App Service Token"
+        }
+      },
+      "parameters": {
+        "url": "=https://intake.drsnip.com/api/internal/submission-files/{{ $('Parse & Normalize').item.json.submission_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000026",
+      "name": "IF: Has Cards?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-cards",
+              "leftValue": "={{ $json.hasCards }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000027",
+      "name": "Split Card Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        140
+      ],
+      "parameters": {
+        "jsCode": "// Train D — fan the stored card list into one item per uploadable file.\n// Input is the app's /api/internal/submission-files response (metadata only —\n// the bytes are fetched one at a time by the next node, so no card image ever\n// sits in this workflow's memory as a batch).\nconst resp = $input.first().json || {};\nconst files = resp.files || [];\nconst patient_id = $('Resolve Patient ID').first().json.patient_id;\nconst submission_id = $('Parse & Normalize').first().json.submission_id;\n\nconst SLOT = {\n  insurance_front: 'primary front',\n  insurance_back: 'primary back',\n  partner_front: 'secondary front',\n  partner_back: 'secondary back'\n};\n\nreturn files.map((f) => ({\n  json: {\n    file_id: f.id,\n    kind: f.kind,\n    slot_label: SLOT[f.kind] || f.kind,\n    mime: f.mime,\n    patient_id,\n    submission_id\n  }\n}));"
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000028",
+      "name": "HTTP: Fetch Card Bytes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        140
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "20LqA3UdTAGXtxRM",
+          "name": "DrSnip App Service Token"
+        }
+      },
+      "parameters": {
+        "url": "=https://intake.drsnip.com/api/internal/files/{{ $json.file_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000029",
+      "name": "DrChrono: Upload Card Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        140
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "vCwf0HNhIwA3cFV1",
+          "name": "DRSNIP-CHRONO"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.drchrono.com/api/documents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient",
+              "value": "={{ $('Split Card Files').item.json.patient_id }}"
+            },
+            {
+              "name": "description",
+              "value": "=Insurance card ({{ $('Split Card Files').item.json.slot_label }}) — custom app intake"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "document",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "doctor",
+              "value": "324569"
+            },
+            {
+              "name": "date",
+              "value": "={{ $now.format('yyyy-MM-dd') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000030",
+      "name": "IF: Card Upload Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "card-failed",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000031",
+      "name": "Sheets: Card Upload Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        2000,
+        60
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hQTs0UCcXWEtQ3j0",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "InsuranceUploadFailures",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "form_type": "insurance",
+            "source": "custom-app-insurance-v1",
+            "submission_id": "={{ $('Parse & Normalize').item.json.submission_id }}",
+            "patient_id": "={{ $('Resolve Patient ID').item.json.patient_id }}",
+            "document_type": "={{ $('Split Card Files').item.json.kind }}",
+            "error": "={{ ($json.error && $json.error.message) || $json.error || 'unknown' }}"
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000032",
+      "name": "Gmail: Notify PDF Upload Failure",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        -80
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "66n9Hae31tNosGib",
+          "name": "Gmail account"
+        }
+      },
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "patientmail@drsnip.com, raunek@xpandai.com",
+        "subject": "DrSnip insurance — the summary PDF failed to upload (needs attention)",
+        "emailType": "text",
+        "message": "=An insurance inquiry was saved to DrChrono, but its summary PDF failed to upload and may need to be re-attached manually.\n\nThe patient's chart WAS created, and any card images are uploaded separately — only the summary is missing.\n\nOpen the submission here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000033",
+      "name": "Gmail: Notify Card Upload Failure",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        60
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "66n9Hae31tNosGib",
+          "name": "Gmail account"
+        }
+      },
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "patientmail@drsnip.com, raunek@xpandai.com",
+        "subject": "DrSnip insurance — a card image failed to upload (needs attention)",
+        "emailType": "text",
+        "message": "=An insurance inquiry was saved to DrChrono, but one of its insurance card images failed to upload and may need to be re-attached manually.\n\nThe patient's chart WAS created — only the card image is missing. The image is still viewable in the admin console.\n\nOpen the submission here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
+        "options": {
+          "appendAttribution": false
+        }
+      }
     }
   ],
   "connections": {
@@ -732,6 +1208,170 @@
         [
           {
             "node": "Respond: Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond: Success": {
+      "main": [
+        [
+          {
+            "node": "IF: Documents Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Documents Enabled?": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Fetch Insurance PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "HTTP: Fetch Insurance PDF": {
+      "main": [
+        [
+          {
+            "node": "DrChrono: Upload Insurance PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DrChrono: Upload Insurance PDF": {
+      "main": [
+        [
+          {
+            "node": "IF: PDF Upload Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: PDF Upload Failed?": {
+      "main": [
+        [
+          {
+            "node": "Sheets: PDF Upload Failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP: List Card Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets: PDF Upload Failure": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Notify PDF Upload Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: List Card Files": {
+      "main": [
+        [
+          {
+            "node": "IF: Has Cards?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Has Cards?": {
+      "main": [
+        [
+          {
+            "node": "Split Card Files",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Split Card Files": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Fetch Card Bytes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Fetch Card Bytes": {
+      "main": [
+        [
+          {
+            "node": "DrChrono: Upload Card Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DrChrono: Upload Card Document": {
+      "main": [
+        [
+          {
+            "node": "IF: Card Upload Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Card Upload Failed?": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Card Upload Failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Sheets: Card Upload Failure": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Notify Card Upload Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Notify PDF Upload Failure": {
+      "main": [
+        [
+          {
+            "node": "HTTP: List Card Files",
             "type": "main",
             "index": 0
           }
