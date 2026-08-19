@@ -70,8 +70,8 @@ SELECT
     s.id,                                        -- opaque submission uuid (not a patient identifier)
     s.created_at::date      AS created_at,       -- DATE ONLY — sub-day precision dropped (tools bucket by day/week/month); removes a minor re-identification vector
     s.updated_at::date      AS updated_at,       -- DATE ONLY
-    s.form_type,                                 -- 'registration' | 'consultation'
-    s.n8n_status,                                -- 'success' | 'manual_review' | 'failed' | NULL(pending)
+    s.form_type,                                 -- 'registration' | 'consultation' | 'insurance'
+    s.n8n_status,                                -- 'success' | 'manual_review' | 'failed' | 'not_applicable' | NULL(pending)
     s.n8n_response_at::date AS n8n_response_at,   -- DATE ONLY
     s.has_insurance_cards,                        -- boolean flag only
 
@@ -95,10 +95,26 @@ SELECT
     --     always matches an existing chart -> label 'matched' (returning).
     --   * manual_review / failed / pending are handled by n8n_status first.
     -- Mapping: new = 'create'; returning = 'update' (reg) or 'matched' (cons).
+    -- Train C (2026-08) added two branches:
+    --   * 'not_applicable' — insurance rows from before the insurance bridge
+    --     existed. Previously these fell all the way through to 'unknown',
+    --     mixing a deliberate skip in with genuine unclassifiable rows.
+    --   * form_type='insurance' — an insurance INQUIRY is not a patient
+    --     registration. Its own labels keep inquirer charts out of the
+    --     new-vs-returning PATIENT counts, and stop insurance successes
+    --     landing in 'unknown'. This branch MUST sit above the generic
+    --     drchrono_action branches, which would otherwise claim these rows.
     CASE
-        WHEN s.n8n_status = 'manual_review' THEN 'manual_review'
-        WHEN s.n8n_status = 'failed'        THEN 'failed'
-        WHEN s.n8n_status IS NULL           THEN 'pending'
+        WHEN s.n8n_status = 'manual_review'  THEN 'manual_review'
+        WHEN s.n8n_status = 'failed'         THEN 'failed'
+        WHEN s.n8n_status = 'not_applicable' THEN 'not_applicable'   -- bridge deliberately skipped
+        WHEN s.n8n_status IS NULL            THEN 'pending'
+        WHEN s.form_type = 'insurance' THEN
+            CASE
+                WHEN lower(s.n8n_response_body -> 'response' ->> 'drchrono_action') IN ('created','create') THEN 'inquiry_create'   -- inquiry created a chart
+                WHEN lower(s.n8n_response_body -> 'response' ->> 'drchrono_action') IN ('updated','update') THEN 'inquiry_update'   -- inquiry attached to an existing chart
+                ELSE 'inquiry_unknown'
+            END
         WHEN s.form_type = 'consultation'   THEN 'matched'          -- returning (consultations attach to an existing chart)
         WHEN lower(s.n8n_response_body -> 'response' ->> 'drchrono_action') IN ('created','create') THEN 'create'  -- new patient
         WHEN lower(s.n8n_response_body -> 'response' ->> 'drchrono_action') IN ('updated','update') THEN 'update'  -- returning patient

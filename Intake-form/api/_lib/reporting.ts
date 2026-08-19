@@ -24,7 +24,8 @@ export const SUPPRESS_BELOW = 5;
 
 // Allow-listed grouping dimensions → trusted SQL expressions over `submissions`.
 // These mirror drsnip_reporting_view (see
-// mcp/drsnip-reporting/sql/001_reporting_view_and_role.sql lines 78–106).
+// mcp/drsnip-reporting/sql/001_reporting_view_and_role.sql, kept in step with
+// mcp/drsnip-reporting/sql/002_action_label_insurance.sql).
 export const DIMENSION_EXPR: Record<string, string> = {
   form_type: "form_type",
   n8n_status: "coalesce(n8n_status, 'pending')",
@@ -34,11 +35,21 @@ export const DIMENSION_EXPR: Record<string, string> = {
   office_location: "raw_payload->>'officeLocation'",
   insurance_coverage: "raw_payload->>'insuranceCoverage'",
   // Derived new-vs-returning label (never the patient id) — replicates the view.
+  // Train C added the 'not_applicable' and form_type='insurance' branches; the
+  // insurance branch MUST stay above the generic drchrono_action branches, which
+  // would otherwise claim insurance rows and inflate the PATIENT create/update
+  // counts with inquirers. Mirror of 002_action_label_insurance.sql — change
+  // both together.
   action_label:
     "(CASE " +
     "WHEN n8n_status = 'manual_review' THEN 'manual_review' " +
     "WHEN n8n_status = 'failed' THEN 'failed' " +
+    "WHEN n8n_status = 'not_applicable' THEN 'not_applicable' " +
     "WHEN n8n_status IS NULL THEN 'pending' " +
+    "WHEN form_type = 'insurance' THEN (CASE " +
+    "WHEN lower(n8n_response_body->'response'->>'drchrono_action') IN ('created','create') THEN 'inquiry_create' " +
+    "WHEN lower(n8n_response_body->'response'->>'drchrono_action') IN ('updated','update') THEN 'inquiry_update' " +
+    "ELSE 'inquiry_unknown' END) " +
     "WHEN form_type = 'consultation' THEN 'matched' " +
     "WHEN lower(n8n_response_body->'response'->>'drchrono_action') IN ('created','create') THEN 'create' " +
     "WHEN lower(n8n_response_body->'response'->>'drchrono_action') IN ('updated','update') THEN 'update' " +

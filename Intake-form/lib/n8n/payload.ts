@@ -441,3 +441,140 @@ export function buildConsultationPayload(
 
   return payload;
 }
+
+// ---------------------------------------------------------------------------
+// Insurance payload (Train C)
+// ---------------------------------------------------------------------------
+// The embedded insurance form (artifacts/intake-form/src/pages/Insurance.tsx)
+// posts a DIFFERENT shape from Registration: it nests carrier data under
+// `insurance.primary` / `insurance.secondary`, collects `sex` (which
+// Registration does not), and captures a fully structured address (so the
+// `00000` / `Unspecified` sentinel path in n8n's Parse & Normalize is not
+// reachable from this form).
+//
+// HARD RULE — no card bytes. This payload NEVER carries base64Data, for any of
+// the four card slots. n8n fetches the bytes out-of-band from the internal
+// service-token endpoints (FINDINGS-bridge-insurance.md §4 option C). Putting
+// them here is what produced 38–85 MB n8n execution records and OOM-killed
+// production n8n twice (notification-audit-2026-07-13.md §0). Only the non-PHI
+// presence flag + count travel with the payload; filenames are deliberately
+// omitted (they can carry identifiers).
+
+export interface InsuranceCarrierBlock {
+  carrier: string;
+  subscriberFirstName: string;
+  subscriberLastName: string;
+  policyNo: string;
+  groupNo: string;
+  subscriberDateOfBirth: string;
+  relationship: string;
+}
+
+export interface InsuranceN8nPayload {
+  submissionId: string;
+  formType: "insurance";
+  submittedAt: string;
+  patient: {
+    officeLocation: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    sex: string;
+    streetAddress: string;
+    addressLine2: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+    phone: string;
+    email: string;
+  };
+  insurance: {
+    primary: InsuranceCarrierBlock;
+    secondary: InsuranceCarrierBlock | null;
+  };
+  /** Non-PHI card presence signal only. NEVER bytes, NEVER filenames. */
+  cards: {
+    hasCards: boolean;
+    count: number;
+  };
+}
+
+// The four card slots api/submit.ts recognizes (see api/_lib/card-files.ts).
+// Used ONLY to count what was attached — never to forward content.
+const CARD_SLOTS = [
+  "insuranceCardFront",
+  "insuranceCardBack",
+  "partnerInsuranceCardFront",
+  "partnerInsuranceCardBack",
+] as const;
+
+function carrierBlock(v: unknown): InsuranceCarrierBlock {
+  const c = rec(v);
+  const name = rec(c.subscriberName);
+  return {
+    carrier: str(c.carrier),
+    subscriberFirstName: str(name.first),
+    subscriberLastName: str(name.last),
+    policyNo: str(c.policyNo),
+    groupNo: str(c.groupNo),
+    subscriberDateOfBirth: str(c.subscriberDob),
+    relationship: str(c.relationship),
+  };
+}
+
+/** True when a carrier block carries any content at all. An absent/blank
+ *  secondary must serialize as `null`, not as a block of empty strings, so the
+ *  workflow's "has secondary?" check is unambiguous. */
+function carrierHasContent(b: InsuranceCarrierBlock): boolean {
+  return Object.values(b).some((v) => v !== "");
+}
+
+export function buildInsurancePayload(
+  submissionId: string,
+  body: SubmissionBody,
+  submittedAt: Date,
+): InsuranceN8nPayload {
+  const raw = body as Record<string, unknown>;
+  const ins = rec(raw.insurance);
+
+  const secondaryBlock = carrierBlock(ins.secondary);
+
+  const cardCount = CARD_SLOTS.filter((slot) => {
+    const ref = rec(raw[slot]);
+    return typeof ref.base64Data === "string" && ref.base64Data !== "";
+  }).length;
+
+  return {
+    submissionId,
+    formType: "insurance",
+    submittedAt: submittedAt.toISOString(),
+    patient: {
+      officeLocation: str(raw.officeLocation),
+      firstName: str(body.firstName),
+      lastName: str(body.lastName),
+      dateOfBirth: str(body.dateOfBirth),
+      sex: str(raw.sex),
+      streetAddress: str(raw.streetAddress),
+      addressLine2: str(raw.addressLine2),
+      city: str(raw.city),
+      // The form writes the same value to `state` and `stateResidence`; prefer
+      // `state` and fall back, mirroring buildRegistrationPayload.
+      state: str(raw.state) || str(raw.stateResidence),
+      postalCode: str(raw.postalCode),
+      // Not collected by the insurance form; present for shape parity with the
+      // registration contract so n8n's parser can be a near-copy.
+      country: str(raw.country),
+      phone: str(body.phone),
+      email: str(body.email),
+    },
+    insurance: {
+      primary: carrierBlock(ins.primary),
+      secondary: carrierHasContent(secondaryBlock) ? secondaryBlock : null,
+    },
+    cards: {
+      hasCards: cardCount > 0,
+      count: cardCount,
+    },
+  };
+}

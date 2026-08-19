@@ -35,6 +35,8 @@ import registrationPartialsListHandler from "../api/registration-partials/index"
 import registrationPartialsExportHandler from "../api/registration-partials/export";
 import registrationPartialDeleteHandler from "../api/registration-partials/[id]";
 import fileHandler from "../api/files/[id]";
+import internalSubmissionFilesHandler from "../api/internal/submission-files/[submissionId]";
+import internalFileHandler from "../api/internal/files/[id]";
 
 const app = new Hono();
 
@@ -71,6 +73,13 @@ app.all("/api/registration-partials/export", adapt(registrationPartialsExportHan
 app.all("/api/registration-partials", adapt(registrationPartialsListHandler));
 app.all("/api/registration-partials/:id", adapt(registrationPartialDeleteHandler));
 app.all("/api/files/:id", adapt(fileHandler));
+
+// ---- Internal service-to-service routes (Train C) ----------------------
+// Called by the n8n Insurance workflow ONLY, authenticated by X-DrSnip-Service-Token
+// (api/_lib/service-auth.ts) — never by a browser, never by a console session.
+// Registered before the /api/* 404 so they resolve; nothing links to them.
+app.all("/api/internal/submission-files/:submissionId", adapt(internalSubmissionFilesHandler));
+app.all("/api/internal/files/:id", adapt(internalFileHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
