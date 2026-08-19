@@ -3,7 +3,9 @@ import { z } from "zod";
 import { db, eq, or, registrationPartials, sql, submissions } from "@workspace/db";
 import {
   callN8nConsultation,
+  callN8nInsurance,
   callN8nRegistration,
+  insuranceBridgeEnabled,
   type N8nOutcome,
 } from "../lib/n8n/bridge";
 import { notifyInsuranceSubmission } from "../lib/n8n/insurance-notify";
@@ -234,18 +236,33 @@ export default async function handler(
   // handler returns; the bridge work continues on the Node event loop
   // because the long-running Fly process stays alive. The bridge never
   // throws — every code path returns an N8nOutcome.
-  // Phase 1 insurance forms have NO n8n workflow yet (Phase 2 wires the bridge +
-  // DrChrono + notifications). This skip is load-bearing, not cosmetic: there is
-  // no insurance workflow to receive the payload, so the bridge must be
-  // unreachable for form_type 'insurance' by construction — the only calls into
-  // n8n live inside runN8nBridge, and this branch never enters it.
+  // Insurance takes a SEPARATE route (Train C). It never enters runN8nBridge:
+  // the registration/consultation path below is reached only by the `else`
+  // branch and is untouched by this train (guardrail B7).
   if (body.formType === "insurance") {
-    // DrChrono bridge stays skipped (no insurance workflow) — status is still
-    // 'not_applicable'. Separately, fire the staff doorbell email so the
-    // benefits team learns the submission exists. Fire-and-forget, never
-    // throws, and no-ops cleanly until the notify webhook URL is configured —
-    // a notification failure must never fail or delay intake.
-    void markBridgeSkipped(submissionId);
+    // Train C — insurance → DrChrono chart via the dedicated Insurance v1
+    // workflow, behind its OWN kill switch (N8N_INSURANCE_BRIDGE_ENABLED, not
+    // N8N_BRIDGE_ENABLED) so it can be disabled without touching the path that
+    // runs the practice. Flag OFF reproduces the pre-Train-C behavior exactly:
+    // status 'not_applicable', no n8n call of any kind.
+    if (insuranceBridgeEnabled()) {
+      void runInsuranceBridge(submissionId, body).catch((err) => {
+        // Defensive: should never hit. Bridge code catches internally.
+        console.error(
+          "submit: unexpected insurance bridge error",
+          err instanceof Error ? err.name : "UnknownError",
+        );
+      });
+    } else {
+      void markBridgeSkipped(submissionId);
+    }
+    // The staff doorbell email is UNCHANGED by this train — it still fires at
+    // submit time with the console link, for every insurance submission,
+    // regardless of the bridge outcome. Train E is what moves the send into the
+    // workflow (chart link) and turns this into the non-success fallback.
+    // Fire-and-forget, never throws, and no-ops cleanly until the notify
+    // webhook URL is configured — a notification failure must never fail or
+    // delay intake.
     const insuranceOffice = (body as Record<string, unknown>).officeLocation;
     void notifyInsuranceSubmission({
       submissionId,
@@ -366,6 +383,46 @@ async function runN8nBridge(
       dob: body.dateOfBirth ?? "",
       phone: body.phone,
     });
+  }
+}
+
+// Train C — insurance bridge. Deliberately a SIBLING of runN8nBridge rather
+// than a refactor of it: extracting a shared write-back helper would edit the
+// function that carries registration + consultation, and this train's contract
+// is that that code is untouched (guardrails B7/B8). The ~15 duplicated lines
+// below are the price of that guarantee; `outcomeForDb` is reused as-is.
+//
+// Differences from runN8nBridge, both intentional:
+//   * no patientmail call — the insurance doorbell is a separate mechanism that
+//     already fired in the handler above (Train E revisits this).
+//   * no consultation/registration branching — one route, one builder.
+async function runInsuranceBridge(
+  submissionId: string,
+  body: z.infer<typeof bodySchema>,
+): Promise<void> {
+  const submittedAt = new Date();
+  const outcome: N8nOutcome = await callN8nInsurance(
+    submissionId,
+    body,
+    submittedAt,
+  );
+
+  try {
+    await db
+      .update(submissions)
+      .set({
+        n8nStatus: outcome.status,
+        n8nPatientId: outcome.patientId ?? null,
+        n8nResponseAt: new Date(),
+        n8nResponseBody: outcomeForDb(outcome),
+      })
+      .where(eq(submissions.id, submissionId));
+  } catch (err) {
+    // Persistence failure — log type only, never the body.
+    console.error(
+      "submit: insurance bridge outcome write failed",
+      err instanceof Error ? err.name : "UnknownError",
+    );
   }
 }
 

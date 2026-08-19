@@ -12,6 +12,7 @@
 import {
   buildRegistrationPayload,
   buildConsultationPayload,
+  buildInsurancePayload,
   type SubmissionBody,
 } from "./payload";
 
@@ -394,4 +395,76 @@ export async function callN8nConsultation(
 
   const payload = buildConsultationPayload(submissionId, body, submittedAt);
   return postToN8n(submissionId, env.consultationUrl, payload, env);
+}
+
+// ---------------------------------------------------------------------------
+// Insurance route (Train C)
+// ---------------------------------------------------------------------------
+// Deliberately additive. It reuses postToN8n / classify / TIMEOUT_MS EXACTLY as
+// the registration and consultation routes do — those are frozen shared helpers
+// (FINDINGS-bridge-insurance.md guardrail B8), so the Insurance v1 workflow is
+// built to conform to the existing response contract rather than the classifier
+// being bent to fit a new one.
+//
+// SEPARATE KILL SWITCH (guardrail B13): this route reads
+// N8N_INSURANCE_BRIDGE_ENABLED, NOT N8N_BRIDGE_ENABLED. The two are fully
+// independent, so insurance can be killed without touching the registration /
+// consultation path that runs the practice, and vice versa.
+
+interface InsuranceBridgeEnv {
+  enabled: boolean;
+  url: string;
+  secret: string;
+}
+
+function readInsuranceEnv(): InsuranceBridgeEnv {
+  return {
+    enabled: process.env.N8N_INSURANCE_BRIDGE_ENABLED === "true",
+    url: process.env.N8N_WEBHOOK_INSURANCE_URL ?? "",
+    secret: process.env.N8N_WEBHOOK_SECRET ?? "",
+  };
+}
+
+/** Kill-switch predicate for the insurance route. Exported so api/submit.ts can
+ *  choose between the real bridge call and the pre-Train-C 'not_applicable'
+ *  behavior without duplicating the env-var name. */
+export function insuranceBridgeEnabled(): boolean {
+  return process.env.N8N_INSURANCE_BRIDGE_ENABLED === "true";
+}
+
+/** Deliver an Insurance submission to the Insurance v1 n8n workflow. Never
+ *  throws. Carries NO card bytes — n8n fetches those out-of-band from the
+ *  internal service-token endpoints (see api/internal/*). */
+export async function callN8nInsurance(
+  submissionId: string,
+  body: SubmissionBody,
+  submittedAt: Date = new Date(),
+): Promise<N8nOutcome> {
+  const env = readInsuranceEnv();
+  if (!env.enabled) return disabledOutcome(submissionId, "insurance");
+  if (!env.url)
+    return missingConfigOutcome(
+      submissionId,
+      "insurance",
+      "N8N_WEBHOOK_INSURANCE_URL",
+    );
+  if (!env.secret)
+    return missingConfigOutcome(
+      submissionId,
+      "insurance",
+      "N8N_WEBHOOK_SECRET",
+    );
+
+  const payload = buildInsurancePayload(submissionId, body, submittedAt);
+
+  // postToN8n reads only `secret` off this struct (the URL is a separate
+  // argument). Built here rather than narrowing postToN8n's signature so that
+  // shared helper stays byte-identical — see guardrail B8 above.
+  const transportEnv: BridgeEnv = {
+    enabled: true,
+    registrationUrl: "",
+    consultationUrl: "",
+    secret: env.secret,
+  };
+  return postToN8n(submissionId, env.url, payload, transportEnv);
 }

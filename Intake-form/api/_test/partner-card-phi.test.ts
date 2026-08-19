@@ -1,12 +1,20 @@
 // HIPAA regression (Block B × Block D): partner insurance cards must behave
 // EXACTLY like the original cards — base64 bytes stripped before raw_payload,
 // and excluded from the CSV export's generic rp_ sweep. DB-free: exercises the
-// real sanitizeForPersistence + buildSubmissionsCsv functions directly.
+// real sanitizeForPersistence + buildFormCsv functions directly.
+//
+// 2026-08-19 (Train C): repaired. The export was rewritten in fc3e788 from a
+// generic `rp_*` raw_payload sweep to an explicit per-form column allow-list
+// (buildFormCsv + COLUMNS_BY_FORM), and `buildSubmissionsCsv` ceased to exist —
+// but this file still imported it, so the whole suite died on the import and
+// this HIPAA guard had not run since. The invariant is unchanged and still
+// worth asserting; only the mechanism it asserts against moved. (api/tsconfig
+// excludes _test/**, which is why typecheck never surfaced the dead import.)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sanitizeForPersistence } from "../submit";
-import { buildSubmissionsCsv } from "../submissions/export";
+import { buildFormCsv, COLUMNS_BY_FORM } from "../submissions/export";
 
 const SECRET = "BASE64_SECRET_SHOULD_NEVER_PERSIST";
 
@@ -68,75 +76,78 @@ test("sanitizeForPersistence strips base64 from partner cards (keeps metadata)",
   assert.equal(out.insuranceCardFront.filename, "own-front.jpg");
 });
 
-// ---- Fix 2: export excludes partner cards from the rp_ sweep ---------------
+// ---- Fix 2: no card bytes reach the CSV, for any form --------------------
 
-test("buildSubmissionsCsv: no partner-card JSON dump, no base64; filename column present", () => {
-  const rows = [
-    {
-      id: "00000000-0000-0000-0000-000000000001",
-      createdAt: new Date("2026-05-20T15:42:00Z"),
-      formType: "registration",
-      firstName: "Jordan",
-      lastName: "Rivera",
-      email: "jordan@example.com",
-      phone: "(206) 555-0142",
-      dateOfBirth: "1986-03-14",
-      stateResidence: "WA",
-      insuranceCardFrontFilename: "own-front.jpg",
-      insuranceCardBackFilename: "own-back.jpg",
-      hasInsuranceCards: true,
-      mhMentalIllness: "No",
-      n8nStatus: "success",
-      n8nPatientId: null,
-      n8nResponseAt: null,
-      rawPayload: {
-        officeLocation: "Seattle, WA",
-        // Defense-in-depth: even if a legacy row still carried partner-card
-        // bytes, the export must never emit them.
-        partnerInsuranceCardFront: {
-          filename: "partner-front.jpg",
-          size: 2000,
-          contentType: "image/jpeg",
-          base64Data: SECRET,
-        },
-        partnerInsuranceCardBack: {
-          filename: "partner-back.jpg",
-          size: 2100,
-          base64Data: SECRET,
-        },
-        // Block B: howHeard is now an array.
-        howHeard: ["Family", "Friend", "Radio"],
-        mhBleeding: "Yes",
-        medicalDetails: { mhBleeding: "Resolved in 2021." },
+test("export CSV: no card base64 for any form; partner filenames still recorded", () => {
+  const row = {
+    id: "00000000-0000-0000-0000-000000000001",
+    createdAt: new Date("2026-05-20T15:42:00Z"),
+    formType: "registration",
+    firstName: "Jordan",
+    lastName: "Rivera",
+    email: "jordan@example.com",
+    phone: "(206) 555-0142",
+    dateOfBirth: "1986-03-14",
+    stateResidence: "WA",
+    insuranceCardFrontFilename: "own-front.jpg",
+    insuranceCardBackFilename: "own-back.jpg",
+    hasInsuranceCards: true,
+    mhMentalIllness: "No",
+    n8nStatus: "success",
+    n8nPatientId: null,
+    n8nResponseAt: null,
+    rawPayload: {
+      officeLocation: "Seattle, WA",
+      // Defense-in-depth: even if a legacy row still carried card bytes, the
+      // export must never emit them. Every slot, primary and partner.
+      insuranceCardFront: {
+        filename: "own-front.jpg",
+        size: 1900,
+        contentType: "image/jpeg",
+        base64Data: SECRET,
+      },
+      partnerInsuranceCardFront: {
+        filename: "partner-front.jpg",
+        size: 2000,
+        contentType: "image/jpeg",
+        base64Data: SECRET,
+      },
+      partnerInsuranceCardBack: {
+        filename: "partner-back.jpg",
+        size: 2100,
+        base64Data: SECRET,
+      },
+      howHeard: ["Family", "Friend", "Radio"],
+      mhBleeding: "Yes",
+      medicalDetails: { mhBleeding: "Resolved in 2021." },
+      // The insurance form nests its cards the same way.
+      insurance: {
+        primary: { carrier: "Test Carrier", policyNo: "POL1" },
+        secondary: null,
       },
     },
-  ] as unknown as Parameters<typeof buildSubmissionsCsv>[0];
+  } as unknown as Parameters<typeof buildFormCsv>[0][number];
 
-  const csv = buildSubmissionsCsv(rows);
-  const header = csv.split("\r\n")[0].split(",");
+  // The allow-list design means a raw_payload key can only reach the CSV if a
+  // column names it — so assert the invariant across EVERY form's schema, which
+  // also covers any column added to one form and forgotten in another.
+  for (const [form, columns] of Object.entries(COLUMNS_BY_FORM)) {
+    const csv = buildFormCsv([row], columns);
+    assert.ok(
+      !csv.includes(SECRET),
+      `card base64 leaked into the ${form} export`,
+    );
+    assert.ok(
+      !/base64Data/i.test(csv),
+      `a card object was stringified into the ${form} export`,
+    );
+  }
 
-  // No generic rp_ dump of the partner card objects.
-  assert.ok(
-    !header.includes("rp_partnerInsuranceCardFront"),
-    "partner card front must not be swept into an rp_ column",
-  );
-  assert.ok(
-    !header.includes("rp_partnerInsuranceCardBack"),
-    "partner card back must not be swept into an rp_ column",
-  );
-
-  // Dedicated partner filename columns are present (records the upload).
-  assert.ok(header.includes("partner_insurance_card_front_filename"));
-  assert.ok(header.includes("partner_insurance_card_back_filename"));
-
-  // No base64 anywhere in the CSV.
-  assert.ok(!csv.includes(SECRET), "no base64 may appear in the export");
-
-  // The partner filename IS recorded, and howHeard is the joined string.
-  assert.ok(csv.includes("partner-front.jpg"), "partner filename recorded");
-  assert.ok(
-    csv.includes("Family | Friend | Radio"),
-    "howHeard array rendered as a pipe-joined string in rp_howHeard",
-  );
-  assert.ok(header.includes("rp_howHeard"));
+  // Registration records the partner card FILENAMES (the upload happened) while
+  // carrying none of the bytes.
+  const regCsv = buildFormCsv([row], COLUMNS_BY_FORM.registration);
+  const header = regCsv.split("\r\n")[0];
+  assert.ok(header.includes("Partner Insurance Card Front (filename)"));
+  assert.ok(header.includes("Partner Insurance Card Back (filename)"));
+  assert.ok(regCsv.includes("partner-front.jpg"), "partner filename recorded");
 });

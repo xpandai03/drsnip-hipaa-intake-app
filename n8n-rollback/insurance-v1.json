@@ -1,0 +1,748 @@
+{
+  "name": "[Custom App] DrSnip Insurance v1",
+  "nodes": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2400,
+        200
+      ],
+      "webhookId": "custom-insurance-v1-3d7a91c4",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "custom-insurance-v1-3d7a91c4",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000002",
+      "name": "IF: Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2200,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-check",
+              "leftValue": "={{ $json.headers && $json.headers['x-drsnip-token'] }}",
+              "rightValue": "={{ $env.DRSNIP_WEBHOOK_SECRET }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000003",
+      "name": "Respond: Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2000,
+        400
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'unauthorized' } }}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000004",
+      "name": "Parse & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2000,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Parse & normalize the DrSnip custom-app INSURANCE payload (Train C).\n// Shape comes from lib/n8n/payload.ts buildInsurancePayload — flatter than\n// Registration (no medical history, no consents) and with two additions:\n// `sex` (Registration does not collect it) and a nested primary/secondary\n// carrier block.\n//\n// OUTPUT CONTRACT: the field names below are what `Disambiguate Patient`\n// consumes (first_name / last_name / dob / email / phone_digits). That node is\n// a VERBATIM copy of Registration v2's, so this parser must feed it exactly\n// what Registration's parser feeds it. Do not rename these keys.\n//\n// NO CARD BYTES ever arrive here — only the non-PHI cards.hasCards / cards.count\n// signal. Train D fetches the bytes from the app's internal service-token\n// endpoints.\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst patient = body.patient || {};\nconst insurance = body.insurance || {};\nconst primary = insurance.primary || {};\nconst secondary = insurance.secondary || null;\nconst cards = body.cards || {};\n\nconst phoneDigits = (patient.phone || '').replace(/\\D/g, '');\n\nfunction trimStr(v) { return typeof v === 'string' ? v.trim() : ''; }\n\n// The insurance form marks street / city / state / ZIP required, so unlike\n// Registration there is no freeform blob to parse. The sentinels below mirror\n// Registration's Parse & Normalize purely as defence-in-depth for a malformed\n// or replayed payload: DrChrono's create rejects a blank city/zip.\n// NOTE (known, deliberate): DrChrono's UPDATE rejects the '00000' sentinel even\n// though create accepts it (see verification-test-2026-07-20.md). Behaviour is\n// identical to Registration here on purpose — this path is unreachable from the\n// live form, and diverging from the proven node is the larger risk.\nconst city = trimStr(patient.city);\nconst zip = trimStr(patient.postalCode);\nconst finalCity = city || 'Unspecified';\nconst finalZip = zip || '00000';\n\nreturn [{ json: {\n  submission_id: body.submissionId || '',\n  form_type: body.formType || 'insurance',\n  timestamp: body.submittedAt || new Date().toISOString(),\n  source: 'custom-app-insurance-v1',\n\n  first_name: patient.firstName || '',\n  last_name: patient.lastName || '',\n  dob: patient.dateOfBirth || '',\n  sex: patient.sex || '',\n  email: (patient.email || '').toLowerCase().trim(),\n  phone: patient.phone || '',\n  phone_digits: phoneDigits,\n\n  address_line1: trimStr(patient.streetAddress),\n  address_line2: trimStr(patient.addressLine2),\n  address_city: finalCity,\n  address_state: trimStr(patient.state),\n  address_zip: finalZip,\n  address_country: trimStr(patient.country),\n  address_city_sentinel: !city,\n  address_zip_sentinel: !zip,\n\n  office_location: patient.officeLocation || '',\n\n  // Carrier data — carried for the audit row and for Train D's summary PDF.\n  // NOT written to DrChrono in Train C (Registration sets no insurance fields\n  // either; see FINDINGS-bridge-insurance.md OPEN QUESTION 3).\n  primary_carrier: primary.carrier || '',\n  primary_policy_no: primary.policyNo || '',\n  primary_group_no: primary.groupNo || '',\n  primary_relationship: primary.relationship || '',\n  has_secondary: !!secondary,\n  secondary_carrier: (secondary && secondary.carrier) || '',\n\n  has_cards: cards.hasCards === true,\n  card_count: cards.count || 0\n}}];"
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000005",
+      "name": "Sheets: InsuranceAudit",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -1800,
+        200
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hQTs0UCcXWEtQ3j0",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "InsuranceAudit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "submission_id": "={{ $json.submission_id }}",
+            "source": "custom-app-insurance-v1",
+            "form_type": "insurance",
+            "first_name": "={{ $json.first_name }}",
+            "last_name": "={{ $json.last_name }}",
+            "dob": "={{ $json.dob }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "office": "={{ $json.office_location }}",
+            "primary_carrier": "={{ $json.primary_carrier }}",
+            "has_cards": "={{ $json.has_cards }}",
+            "card_count": "={{ $json.card_count }}"
+          }
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000006",
+      "name": "DrChrono: Search Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1600,
+        200
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "vCwf0HNhIwA3cFV1",
+          "name": "DRSNIP-CHRONO"
+        }
+      },
+      "parameters": {
+        "url": "https://app.drchrono.com/api/patients",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "first_name",
+              "value": "={{ $('Parse & Normalize').item.json.first_name }}"
+            },
+            {
+              "name": "last_name",
+              "value": "={{ $('Parse & Normalize').item.json.last_name }}"
+            },
+            {
+              "name": "date_of_birth",
+              "value": "={{ $('Parse & Normalize').item.json.dob }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000007",
+      "name": "Disambiguate Patient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Tighter duplicate detection than the original Registration workflow.\n// DrChrono returns candidates matching name + DOB. We then require email OR\n// digit-only phone to also match before treating it as the same patient. If\n// nothing passes, or multiple pass, we route to manual review instead of\n// silently overwriting an unrelated record.\nconst searchResp = $input.first().json;\nconst candidates = (searchResp && searchResp.results) || [];\nconst original = $('Parse & Normalize').first().json;\n\nconst wantedEmail = (original.email || '').toLowerCase().trim();\nconst wantedPhone = original.phone_digits || '';\nconst normPhone = (p) => (p || '').replace(/\\D/g, '');\n\nconst scored = candidates.map((c) => {\n  const cEmail = (c.email || '').toLowerCase().trim();\n  const cPhone = normPhone(c.cell_phone || c.home_phone || c.office_phone || '');\n  const emailOk = !!wantedEmail && cEmail === wantedEmail;\n  const phoneOk = !!wantedPhone && cPhone === wantedPhone;\n  return { id: c.id, email_match: emailOk, phone_match: phoneOk, pass: emailOk || phoneOk };\n});\n\nlet match_outcome, match_reason, patient_id = null;\nconst candidate_count = candidates.length;\nconst passing = scored.filter((s) => s.pass);\nlet candidates_summary = '';\n\nif (candidate_count === 0) {\n  match_outcome = 'create';\n  match_reason = 'no_candidates_create_new';\n} else if (passing.length === 1) {\n  match_outcome = 'update';\n  match_reason = 'unique_disambiguated_match';\n  patient_id = passing[0].id;\n} else if (passing.length === 0) {\n  match_outcome = 'manual_review';\n  match_reason = candidate_count === 1 ? 'single_candidate_failed_disambiguation' : 'no_candidate_passed_disambiguation';\n  candidates_summary = scored.map((s) => 'id=' + s.id).join(';');\n} else {\n  match_outcome = 'manual_review';\n  match_reason = 'multiple_candidates_passed_disambiguation';\n  candidates_summary = passing.map((s) => 'id=' + s.id).join(';');\n}\n\nreturn [{ json: {\n  ...original,\n  candidates_searched: candidate_count,\n  passing_count: passing.length,\n  candidates_summary,\n  match_outcome,\n  match_reason,\n  patient_id\n}}];"
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000008",
+      "name": "IF: Is Manual Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-manual-review",
+              "leftValue": "={{ $json.match_outcome }}",
+              "rightValue": "manual_review",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000009",
+      "name": "Sheets: InsuranceManualReview",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -1000,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hQTs0UCcXWEtQ3j0",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "InsuranceManualReview",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "form_type": "insurance",
+            "source": "custom-app-insurance-v1",
+            "submission_id": "={{ $json.submission_id }}",
+            "first_name": "={{ $json.first_name }}",
+            "last_name": "={{ $json.last_name }}",
+            "dob": "={{ $json.dob }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "candidate_count": "={{ $json.candidates_searched }}",
+            "passing_count": "={{ $json.passing_count }}",
+            "candidates_summary": "={{ $json.candidates_summary }}",
+            "match_reason": "={{ $json.match_reason }}"
+          }
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000010",
+      "name": "Respond: Manual Review",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        400
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, reason: 'manual_review_required', submission_id: $('Disambiguate Patient').item.json.submission_id, candidate_count: $('Disambiguate Patient').item.json.candidates_searched, match_reason: $('Disambiguate Patient').item.json.match_reason } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000011",
+      "name": "IF: Patient Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "exists",
+              "leftValue": "={{ $json.match_outcome }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000012",
+      "name": "DrChrono: Update Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        100
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "vCwf0HNhIwA3cFV1",
+          "name": "DRSNIP-CHRONO"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://app.drchrono.com/api/patients/{{ $json.patient_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $('Parse & Normalize').item.json.email }}"
+            },
+            {
+              "name": "cell_phone",
+              "value": "={{ $('Parse & Normalize').item.json.phone }}"
+            },
+            {
+              "name": "address",
+              "value": "={{ $('Parse & Normalize').item.json.address_line1 }}"
+            },
+            {
+              "name": "city",
+              "value": "={{ $('Parse & Normalize').item.json.address_city }}"
+            },
+            {
+              "name": "state",
+              "value": "={{ $('Parse & Normalize').item.json.address_state }}"
+            },
+            {
+              "name": "zip_code",
+              "value": "={{ $('Parse & Normalize').item.json.address_zip }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000013",
+      "name": "DrChrono: Create Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        300
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "vCwf0HNhIwA3cFV1",
+          "name": "DRSNIP-CHRONO"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.drchrono.com/api/patients",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "first_name",
+              "value": "={{ $('Parse & Normalize').item.json.first_name }}"
+            },
+            {
+              "name": "last_name",
+              "value": "={{ $('Parse & Normalize').item.json.last_name }}"
+            },
+            {
+              "name": "date_of_birth",
+              "value": "={{ $('Parse & Normalize').item.json.dob }}"
+            },
+            {
+              "name": "email",
+              "value": "={{ $('Parse & Normalize').item.json.email }}"
+            },
+            {
+              "name": "cell_phone",
+              "value": "={{ $('Parse & Normalize').item.json.phone }}"
+            },
+            {
+              "name": "address",
+              "value": "={{ $('Parse & Normalize').item.json.address_line1 }}"
+            },
+            {
+              "name": "city",
+              "value": "={{ $('Parse & Normalize').item.json.address_city }}"
+            },
+            {
+              "name": "state",
+              "value": "={{ $('Parse & Normalize').item.json.address_state }}"
+            },
+            {
+              "name": "zip_code",
+              "value": "={{ $('Parse & Normalize').item.json.address_zip }}"
+            },
+            {
+              "name": "doctor",
+              "value": "324569"
+            },
+            {
+              "name": "gender",
+              "value": "={{ $('Parse & Normalize').item.json.sex || 'Other' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000014",
+      "name": "Resolve Patient ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Merge DrChrono response (Create or Update) with the original normalized payload.\nconst drchrono = $input.first().json;\nconst original = $('Parse & Normalize').first().json;\nconst disambig = $('Disambiguate Patient').first().json;\n\nlet patient_id = null;\nlet drchrono_action = null;\n\nif (disambig.match_outcome === 'update') {\n  // Update path — DrChrono PATCH may return an empty body; fall back to the\n  // patient_id we already disambiguated.\n  patient_id = disambig.patient_id || drchrono.id || null;\n  drchrono_action = 'updated';\n} else if (disambig.match_outcome === 'create') {\n  patient_id = drchrono.id || null;\n  drchrono_action = 'created';\n}\n\nreturn [{ json: { ...original, patient_id, drchrono_action } }];"
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000015",
+      "name": "Respond: Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -400,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, submission_id: $('Parse & Normalize').item.json.submission_id, patient_id: $('Resolve Patient ID').item.json.patient_id, drchrono_action: $('Resolve Patient ID').item.json.drchrono_action, documents_uploaded: 0, manual_review_required: false } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000016",
+      "name": "Gmail: Notify Review",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -800,
+        560
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "66n9Hae31tNosGib",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "patientmail@drsnip.com, raunek@xpandai.com",
+        "subject": "DrSnip insurance — a submission needs manual review",
+        "emailType": "text",
+        "message": "=An insurance form submission could not be matched to a DrChrono chart automatically and needs manual review in the DrSnip admin portal.\n\nOpen it here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — the submission details are visible only after you sign in.\n\n— DrSnip automated notification",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000017",
+      "name": "Gmail: Notify Failure",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -560,
+        320
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "66n9Hae31tNosGib",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "patientmail@drsnip.com, raunek@xpandai.com",
+        "subject": "DrSnip insurance — a submission FAILED to process (needs attention)",
+        "emailType": "text",
+        "message": "=An insurance form submission could not be saved to DrChrono automatically and needs manual attention.\n\nOpen it here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000018",
+      "name": "Respond: Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        320
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, reason: 'processing_failed', submission_id: $('Parse & Normalize').item.json.submission_id } }}",
+        "options": {
+          "responseCode": 500
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "IF: Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Parse & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Normalize": {
+      "main": [
+        [
+          {
+            "node": "Sheets: InsuranceAudit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets: InsuranceAudit": {
+      "main": [
+        [
+          {
+            "node": "DrChrono: Search Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DrChrono: Search Patient": {
+      "main": [
+        [
+          {
+            "node": "Disambiguate Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disambiguate Patient": {
+      "main": [
+        [
+          {
+            "node": "IF: Is Manual Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Is Manual Review?": {
+      "main": [
+        [
+          {
+            "node": "Sheets: InsuranceManualReview",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF: Patient Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets: InsuranceManualReview": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Notify Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Notify Review": {
+      "main": [
+        [
+          {
+            "node": "Respond: Manual Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Patient Exists?": {
+      "main": [
+        [
+          {
+            "node": "DrChrono: Update Patient",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DrChrono: Create Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DrChrono: Update Patient": {
+      "main": [
+        [
+          {
+            "node": "Resolve Patient ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail: Notify Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DrChrono: Create Patient": {
+      "main": [
+        [
+          {
+            "node": "Resolve Patient ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail: Notify Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Patient ID": {
+      "main": [
+        [
+          {
+            "node": "Respond: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Notify Failure": {
+      "main": [
+        [
+          {
+            "node": "Respond: Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true
+  }
+}
