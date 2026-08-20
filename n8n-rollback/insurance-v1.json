@@ -609,7 +609,10 @@
             }
           }
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c0000000-0000-0000-0000-000000000022",
@@ -660,7 +663,10 @@
           ]
         },
         "options": {}
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c0000000-0000-0000-0000-000000000023",
@@ -760,7 +766,10 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c0000000-0000-0000-0000-000000000026",
@@ -837,7 +846,10 @@
             }
           }
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c0000000-0000-0000-0000-000000000029",
@@ -888,7 +900,10 @@
           ]
         },
         "options": {}
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c0000000-0000-0000-0000-000000000030",
@@ -989,7 +1004,7 @@
         "sendTo": "patientmail@drsnip.com, raunek@xpandai.com",
         "subject": "DrSnip insurance — the summary PDF failed to upload (needs attention)",
         "emailType": "text",
-        "message": "=An insurance inquiry was saved to DrChrono, but its summary PDF failed to upload and may need to be re-attached manually.\n\nThe patient's chart WAS created, and any card images are uploaded separately — only the summary is missing.\n\nOpen the submission here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
+        "message": "=An insurance inquiry was saved to DrChrono, but its summary PDF failed to upload after 3 attempts and may need to be re-attached manually.\n\nThe patient's chart WAS created, and any card images are uploaded separately — only the summary is missing.\n\nError: {{ ($json.error && $json.error.message) || $json.error || 'unknown' }}\n\nOpen the submission here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
         "options": {
           "appendAttribution": false
         }
@@ -1017,7 +1032,7 @@
         "sendTo": "patientmail@drsnip.com, raunek@xpandai.com",
         "subject": "DrSnip insurance — a card image failed to upload (needs attention)",
         "emailType": "text",
-        "message": "=An insurance inquiry was saved to DrChrono, but one of its insurance card images failed to upload and may need to be re-attached manually.\n\nThe patient's chart WAS created — only the card image is missing. The image is still viewable in the admin console.\n\nOpen the submission here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
+        "message": "=An insurance inquiry was saved to DrChrono, but one of its insurance card images failed to upload after 3 attempts and may need to be re-attached manually.\n\nThe patient's chart WAS created — only the card image is missing. The image is still viewable in the admin console.\n\nCard: {{ $('Split Card Files').item.json.slot_label }}\nError: {{ ($json.error && $json.error.message) || $json.error || 'unknown' }}\n\nOpen the submission here (sign in if prompted):\nhttps://intake.doctorsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\nFor privacy, this message contains no patient information — details are visible only after you sign in.\n\n— DrSnip automated notification",
         "options": {
           "appendAttribution": false
         }

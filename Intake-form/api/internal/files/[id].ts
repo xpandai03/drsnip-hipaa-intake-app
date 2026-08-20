@@ -48,6 +48,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ error: "Not found" });
   }
 
+  // Observability: until now the only record that n8n fetched a given card was
+  // the aggregate list call, so a document that never reached DrChrono could not
+  // be traced past the list. One line per file served closes that gap.
+  // HIPAA: id + kind + size only — never the filename (which can carry a name)
+  // and never the bytes.
+  console.log(
+    "[internal-files] served " +
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        file_id: id,
+        mime: row.mime,
+        bytes: row.bytes.length,
+      }),
+  );
+
   res.setHeader("Content-Type", row.mime || "application/octet-stream");
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
