@@ -9,6 +9,7 @@ import {
   buildInsuranceNotification,
   formatPacific,
   notifyInsuranceSubmission,
+  shouldSendFallback,
   type NotifyTransport,
 } from "../../lib/n8n/insurance-notify";
 import { ALLOWED_FORM_TYPES } from "../submissions/index";
@@ -233,4 +234,128 @@ test("buildFormCsv(insurance): reads NESTED insurance data + card filename, no b
   assert.ok(!csv.includes("SHOULD_NEVER_APPEAR"), "card base64 never enters CSV");
   // Pacific split columns render.
   assert.ok(csv.includes("Aug 16, 2026") || /2026/.test(csv));
+});
+
+// ---- Train E: exactly one email, never zero -------------------------------
+// The two senders are mutually exclusive by CONSTRUCTION (keyed on the bridge
+// outcome), not by timing. There is no timer anywhere in this design.
+
+import { buildInsurancePayload } from "../../lib/n8n/payload";
+import { readFileSync } from "node:fs";
+
+const WF = JSON.parse(
+  readFileSync(new URL("../../../n8n-rollback/insurance-v1.json", import.meta.url), "utf8"),
+) as { nodes: Array<{ name: string; parameters?: Record<string, unknown> }>;
+       connections: Record<string, { main: Array<Array<{ node: string }>> }> };
+
+test("fallback copy uses processing language, never failure language", () => {
+  const msg = buildInsuranceNotification(
+    { submissionId: "b64e5cfb-58da-42b5-b14f-83c55637c0d3", name: "Jacob J.",
+      office: "Seattle, WA", submittedAt: new Date("2026-08-16T21:14:00Z") },
+    "https://intake.drsnip.com",
+  );
+  assert.ok(msg.body.includes("being processed"));
+  // The duplicate-email race means this can land beside a success email. It must
+  // not read as an incident.
+  for (const word of ["failed", "Failed", "error", "Error", "unable", "problem"]) {
+    assert.equal(msg.body.includes(word), false, `fallback must not say "${word}"`);
+  }
+  assert.ok(msg.body.includes("separate email"), "should set expectations for the pair");
+});
+
+test("both email bodies stay PHI-light — no policy/group/subscriber/DOB", () => {
+  const fallback = buildInsuranceNotification(
+    { submissionId: "b64e5cfb-58da-42b5-b14f-83c55637c0d3", name: "Jacob J.",
+      office: "Seattle, WA", submittedAt: new Date("2026-08-16T21:14:00Z") },
+  ).body;
+  const chartNode = WF.nodes.find((n) => n.name === "Gmail: Notify Insurance Chart");
+  assert.ok(chartNode, "chart notification node must exist");
+  const chartBody = String((chartNode!.parameters as { message?: string }).message ?? "");
+
+  for (const forbidden of [
+    "policyNo", "policy_no", "groupNo", "group_no", "subscriber",
+    "carrier", "dob", "date_of_birth", "insurance_member", "phone",
+  ]) {
+    assert.equal(fallback.toLowerCase().includes(forbidden.toLowerCase()), false,
+      `fallback leaked ${forbidden}`);
+    assert.equal(chartBody.toLowerCase().includes(forbidden.toLowerCase()), false,
+      `chart email leaked ${forbidden}`);
+  }
+});
+
+test("chart email links to the canonical Documents URL, and to the console", () => {
+  const node = WF.nodes.find((n) => n.name === "Gmail: Notify Insurance Chart")!;
+  const body = String((node.parameters as { message?: string }).message ?? "");
+  assert.ok(body.includes("app.drchrono.com/chart/"), "must use the canonical chart host");
+  assert.ok(body.includes("/documents"), "must land on the Documents tab");
+  assert.equal(body.includes("app.drchrono.com/patients/"), false,
+    "legacy /patients/ form must not be used");
+  assert.ok(body.includes("intake.drsnip.com/admin/submissions/"),
+    "console link must be present as a secondary");
+});
+
+test("chart email goes to patientmail only — it names a patient", () => {
+  const node = WF.nodes.find((n) => n.name === "Gmail: Notify Insurance Chart")!;
+  const to = String((node.parameters as { sendTo?: string }).sendTo ?? "");
+  assert.equal(to, "patientmail@drsnip.com");
+});
+
+test("ordering: chart email sits AFTER Respond, BEFORE the document branch", () => {
+  // After Respond => cannot delay the bridge response the app is waiting on.
+  assert.deepEqual(
+    WF.connections["Respond: Success"].main[0].map((e) => e.node),
+    ["Gmail: Notify Insurance Chart"],
+  );
+  // Before documents => uploads cannot delay the email.
+  assert.deepEqual(
+    WF.connections["Gmail: Notify Insurance Chart"].main[0].map((e) => e.node),
+    ["IF: Documents Enabled?"],
+  );
+});
+
+test("chart notification does not retry (Gmail nodes never retry)", () => {
+  const node = WF.nodes.find((n) => n.name === "Gmail: Notify Insurance Chart") as
+    Record<string, unknown>;
+  assert.notEqual(node.retryOnFail, true);
+  assert.equal(node.onError, "continueRegularOutput");
+});
+
+test("payload carries a Pacific-rendered timestamp for the notification", () => {
+  const p = buildInsurancePayload(
+    "b64e5cfb-58da-42b5-b14f-83c55637c0d3",
+    { formType: "insurance", firstName: "A", lastName: "B" },
+    new Date("2026-08-16T21:14:00Z"),
+  );
+  assert.equal(p.submittedAtPacific, "Aug 16, 2:14 PM PT");
+});
+
+test("canonical console host is used when PUBLIC_APP_URL is unset", () => {
+  const prev = process.env.PUBLIC_APP_URL;
+  delete process.env.PUBLIC_APP_URL;
+  try {
+    const msg = buildInsuranceNotification({
+      submissionId: "b64e5cfb-58da-42b5-b14f-83c55637c0d3",
+      name: "A", office: "", submittedAt: new Date("2026-08-16T21:14:00Z"),
+    });
+    assert.ok(msg.body.includes("https://intake.drsnip.com/admin/submissions/"));
+    assert.equal(msg.body.includes("fly.dev"), false, "must not fall back to the Fly hostname");
+  } finally {
+    if (prev !== undefined) process.env.PUBLIC_APP_URL = prev;
+  }
+});
+
+test("shouldSendFallback: exactly one sender, never zero", () => {
+  // Success => the workflow emailed the chart link; the app must stay silent,
+  // otherwise every successful submission produces two emails.
+  assert.equal(shouldSendFallback("success"), false);
+  // Every other outcome the bridge can produce means nothing has emailed yet.
+  for (const status of [
+    "failed",            // non-2xx, connection refused, DrChrono rejection
+    "manual_review",     // matched nothing / ambiguous
+    "not_applicable",    // kill switch off
+    "",                  // defensive: unknown shape must not silence the app
+    "timeout",
+  ]) {
+    assert.equal(shouldSendFallback(status), true, `${status} must still notify`);
+  }
 });

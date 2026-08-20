@@ -79,7 +79,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Parse & normalize the DrSnip custom-app INSURANCE payload (Train C).\n// Shape comes from lib/n8n/payload.ts buildInsurancePayload — flatter than\n// Registration (no medical history, no consents) and with two additions:\n// `sex` (Registration does not collect it) and a nested primary/secondary\n// carrier block.\n//\n// OUTPUT CONTRACT: the field names below are what `Disambiguate Patient`\n// consumes (first_name / last_name / dob / email / phone_digits). That node is\n// a VERBATIM copy of Registration v2's, so this parser must feed it exactly\n// what Registration's parser feeds it. Do not rename these keys.\n//\n// NO CARD BYTES ever arrive here — only the non-PHI cards.hasCards / cards.count\n// signal. Train D fetches the bytes from the app's internal service-token\n// endpoints.\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst patient = body.patient || {};\nconst insurance = body.insurance || {};\nconst primary = insurance.primary || {};\nconst secondary = insurance.secondary || null;\nconst cards = body.cards || {};\n\nconst phoneDigits = (patient.phone || '').replace(/\\D/g, '');\n\nfunction trimStr(v) { return typeof v === 'string' ? v.trim() : ''; }\n\n// The insurance form marks street / city / state / ZIP required, so unlike\n// Registration there is no freeform blob to parse. The sentinels below mirror\n// Registration's Parse & Normalize purely as defence-in-depth for a malformed\n// or replayed payload: DrChrono's create rejects a blank city/zip.\n// NOTE (known, deliberate): DrChrono's UPDATE rejects the '00000' sentinel even\n// though create accepts it (see verification-test-2026-07-20.md). Behaviour is\n// identical to Registration here on purpose — this path is unreachable from the\n// live form, and diverging from the proven node is the larger risk.\nconst city = trimStr(patient.city);\nconst zip = trimStr(patient.postalCode);\nconst finalCity = city || 'Unspecified';\nconst finalZip = zip || '00000';\n\nreturn [{ json: {\n  submission_id: body.submissionId || '',\n  form_type: body.formType || 'insurance',\n  timestamp: body.submittedAt || new Date().toISOString(),\n  source: 'custom-app-insurance-v1',\n\n  first_name: patient.firstName || '',\n  last_name: patient.lastName || '',\n  dob: patient.dateOfBirth || '',\n  sex: patient.sex || '',\n  email: (patient.email || '').toLowerCase().trim(),\n  phone: patient.phone || '',\n  phone_digits: phoneDigits,\n\n  address_line1: trimStr(patient.streetAddress),\n  address_line2: trimStr(patient.addressLine2),\n  address_city: finalCity,\n  address_state: trimStr(patient.state),\n  address_zip: finalZip,\n  address_country: trimStr(patient.country),\n  address_city_sentinel: !city,\n  address_zip_sentinel: !zip,\n\n  office_location: patient.officeLocation || '',\n\n  // Carrier data — carried for the audit row and for Train D's summary PDF.\n  // NOT written to DrChrono in Train C (Registration sets no insurance fields\n  // either; see FINDINGS-bridge-insurance.md OPEN QUESTION 3).\n  primary_carrier: primary.carrier || '',\n  primary_policy_no: primary.policyNo || '',\n  primary_group_no: primary.groupNo || '',\n  primary_relationship: primary.relationship || '',\n  has_secondary: !!secondary,\n  secondary_carrier: (secondary && secondary.carrier) || '',\n\n  has_cards: cards.hasCards === true,\n  card_count: cards.count || 0\n}}];"
+        "jsCode": "// Parse & normalize the DrSnip custom-app INSURANCE payload (Train C).\n// Shape comes from lib/n8n/payload.ts buildInsurancePayload — flatter than\n// Registration (no medical history, no consents) and with two additions:\n// `sex` (Registration does not collect it) and a nested primary/secondary\n// carrier block.\n//\n// OUTPUT CONTRACT: the field names below are what `Disambiguate Patient`\n// consumes (first_name / last_name / dob / email / phone_digits). That node is\n// a VERBATIM copy of Registration v2's, so this parser must feed it exactly\n// what Registration's parser feeds it. Do not rename these keys.\n//\n// NO CARD BYTES ever arrive here — only the non-PHI cards.hasCards / cards.count\n// signal. Train D fetches the bytes from the app's internal service-token\n// endpoints.\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst patient = body.patient || {};\nconst insurance = body.insurance || {};\nconst primary = insurance.primary || {};\nconst secondary = insurance.secondary || null;\nconst cards = body.cards || {};\n\nconst phoneDigits = (patient.phone || '').replace(/\\D/g, '');\n\nfunction trimStr(v) { return typeof v === 'string' ? v.trim() : ''; }\n\n// The insurance form marks street / city / state / ZIP required, so unlike\n// Registration there is no freeform blob to parse. The sentinels below mirror\n// Registration's Parse & Normalize purely as defence-in-depth for a malformed\n// or replayed payload: DrChrono's create rejects a blank city/zip.\n// NOTE (known, deliberate): DrChrono's UPDATE rejects the '00000' sentinel even\n// though create accepts it (see verification-test-2026-07-20.md). Behaviour is\n// identical to Registration here on purpose — this path is unreachable from the\n// live form, and diverging from the proven node is the larger risk.\nconst city = trimStr(patient.city);\nconst zip = trimStr(patient.postalCode);\nconst finalCity = city || 'Unspecified';\nconst finalZip = zip || '00000';\n\nreturn [{ json: {\n  submission_id: body.submissionId || '',\n  form_type: body.formType || 'insurance',\n  timestamp: body.submittedAt || new Date().toISOString(),\n  // Train E: pre-rendered clinic-local time from the app, so the staff\n  // notification cannot silently render in UTC if this template is edited.\n  submitted_at_pacific: body.submittedAtPacific || '',\n  source: 'custom-app-insurance-v1',\n\n  first_name: patient.firstName || '',\n  last_name: patient.lastName || '',\n  dob: patient.dateOfBirth || '',\n  sex: patient.sex || '',\n  email: (patient.email || '').toLowerCase().trim(),\n  phone: patient.phone || '',\n  phone_digits: phoneDigits,\n\n  address_line1: trimStr(patient.streetAddress),\n  address_line2: trimStr(patient.addressLine2),\n  address_city: finalCity,\n  address_state: trimStr(patient.state),\n  address_zip: finalZip,\n  address_country: trimStr(patient.country),\n  address_city_sentinel: !city,\n  address_zip_sentinel: !zip,\n\n  office_location: patient.officeLocation || '',\n\n  // Carrier data — carried for the audit row and for Train D's summary PDF.\n  // NOT written to DrChrono in Train C (Registration sets no insurance fields\n  // either; see FINDINGS-bridge-insurance.md OPEN QUESTION 3).\n  primary_carrier: primary.carrier || '',\n  primary_policy_no: primary.policyNo || '',\n  primary_group_no: primary.groupNo || '',\n  primary_relationship: primary.relationship || '',\n  has_secondary: !!secondary,\n  secondary_carrier: (secondary && secondary.carrier) || '',\n\n  has_cards: cards.hasCards === true,\n  card_count: cards.count || 0\n}}];"
       }
     },
     {
@@ -1037,6 +1037,34 @@
           "appendAttribution": false
         }
       }
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000034",
+      "name": "Gmail: Notify Insurance Chart",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -200,
+        320
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "66n9Hae31tNosGib",
+          "name": "Gmail account"
+        }
+      },
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "patientmail@drsnip.com",
+        "subject": "=New DrSnip insurance inquiry — {{ $('Parse & Normalize').item.json.first_name }} {{ $('Parse & Normalize').item.json.last_name }}",
+        "emailType": "text",
+        "message": "=Office: {{ $('Parse & Normalize').item.json.office_location }}\nName: {{ $('Parse & Normalize').item.json.first_name }} {{ $('Parse & Normalize').item.json.last_name }}\nSubmitted: {{ $('Parse & Normalize').item.json.submitted_at_pacific }}\n\nAn insurance inquiry was received and the patient's DrChrono chart is ready.\n\nOpen the chart (Documents — insurance summary + card images):\nhttps://app.drchrono.com/chart/{{ $('Resolve Patient ID').item.json.patient_id }}/documents\n\nOpen in the admin console:\nhttps://intake.drsnip.com/admin/submissions/{{ $('Parse & Normalize').item.json.submission_id }}\n\n— DrSnip automated notification",
+        "options": {
+          "appendAttribution": false
+        }
+      }
     }
   ],
   "connections": {
@@ -1233,7 +1261,7 @@
       "main": [
         [
           {
-            "node": "IF: Documents Enabled?",
+            "node": "Gmail: Notify Insurance Chart",
             "type": "main",
             "index": 0
           }
@@ -1387,6 +1415,17 @@
         [
           {
             "node": "HTTP: List Card Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Notify Insurance Chart": {
+      "main": [
+        [
+          {
+            "node": "IF: Documents Enabled?",
             "type": "main",
             "index": 0
           }

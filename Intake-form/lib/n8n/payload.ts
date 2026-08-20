@@ -18,6 +18,8 @@
 // types when new form fields land.
 // ---------------------------------------------------------------------------
 
+import { formatPacific } from "./insurance-notify";
+
 export type SubmissionBody = Record<string, unknown> & {
   formType?: string;
   firstName?: string;
@@ -474,6 +476,11 @@ export interface InsuranceN8nPayload {
   submissionId: string;
   formType: "insurance";
   submittedAt: string;
+  /** Train E: submission time already rendered in clinic-local Pacific, e.g.
+   *  "Aug 19, 2:14 PM PT". Formatted here rather than in an n8n expression so
+   *  the notification's timestamp is unit-testable and cannot quietly render in
+   *  UTC if a workflow template is edited. */
+  submittedAtPacific: string;
   patient: {
     officeLocation: string;
     firstName: string;
@@ -564,6 +571,7 @@ export function buildInsurancePayload(
     submissionId,
     formType: "insurance",
     submittedAt: submittedAt.toISOString(),
+    submittedAtPacific: formatPacific(submittedAt),
     patient: {
       officeLocation: str(raw.officeLocation),
       firstName: str(body.firstName),

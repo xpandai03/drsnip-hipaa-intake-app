@@ -8,7 +8,10 @@ import {
   insuranceBridgeEnabled,
   type N8nOutcome,
 } from "../lib/n8n/bridge";
-import { notifyInsuranceSubmission } from "../lib/n8n/insurance-notify";
+import {
+  notifyInsuranceSubmission,
+  shouldSendFallback,
+} from "../lib/n8n/insurance-notify";
 import {
   notifyPatientSubmission,
   shouldNotify,
@@ -245,8 +248,28 @@ export default async function handler(
     // N8N_BRIDGE_ENABLED) so it can be disabled without touching the path that
     // runs the practice. Flag OFF reproduces the pre-Train-C behavior exactly:
     // status 'not_applicable', no n8n call of any kind.
+    //
+    // Train E — EXACTLY ONE staff email per submission, and never zero. The two
+    // senders are mutually exclusive by construction, not by timing:
+    //   * bridge reports success  -> the Insurance v1 workflow already emailed,
+    //                                carrying the DrChrono chart link. App sends
+    //                                nothing.
+    //   * anything else           -> the app sends the console-link doorbell.
+    //     "Anything else" covers timeout, non-2xx, connection refused,
+    //     kill-switch-off and missing config — every non-success outcome in
+    //     FINDINGS-bridge-insurance.md §1.6.
+    // There is deliberately NO timer: the bridge's existing 30s AbortController
+    // IS the timeout, so the fallback fires the moment a non-success outcome
+    // exists, and cannot fire twice.
+    const insuranceOffice = (body as Record<string, unknown>).officeLocation;
+    const notification = {
+      submissionId,
+      name: `${body.firstName} ${body.lastName}`.trim(),
+      office: typeof insuranceOffice === "string" ? insuranceOffice : "",
+      submittedAt: new Date(),
+    };
     if (insuranceBridgeEnabled()) {
-      void runInsuranceBridge(submissionId, body).catch((err) => {
+      void runInsuranceBridge(submissionId, body, notification).catch((err) => {
         // Defensive: should never hit. Bridge code catches internally.
         console.error(
           "submit: unexpected insurance bridge error",
@@ -254,22 +277,10 @@ export default async function handler(
         );
       });
     } else {
+      // Bridge off => no workflow runs => the app is the ONLY possible sender.
       void markBridgeSkipped(submissionId);
+      void notifyInsuranceSubmission(notification);
     }
-    // The staff doorbell email is UNCHANGED by this train — it still fires at
-    // submit time with the console link, for every insurance submission,
-    // regardless of the bridge outcome. Train E is what moves the send into the
-    // workflow (chart link) and turns this into the non-success fallback.
-    // Fire-and-forget, never throws, and no-ops cleanly until the notify
-    // webhook URL is configured — a notification failure must never fail or
-    // delay intake.
-    const insuranceOffice = (body as Record<string, unknown>).officeLocation;
-    void notifyInsuranceSubmission({
-      submissionId,
-      name: `${body.firstName} ${body.lastName}`.trim(),
-      office: typeof insuranceOffice === "string" ? insuranceOffice : "",
-      submittedAt: new Date(),
-    });
   } else {
     void runN8nBridge(submissionId, body).catch((err) => {
       // Defensive: should never hit. Bridge code catches internally.
@@ -399,6 +410,7 @@ async function runN8nBridge(
 async function runInsuranceBridge(
   submissionId: string,
   body: z.infer<typeof bodySchema>,
+  notification: Parameters<typeof notifyInsuranceSubmission>[0],
 ): Promise<void> {
   const submittedAt = new Date();
   const outcome: N8nOutcome = await callN8nInsurance(
@@ -423,6 +435,13 @@ async function runInsuranceBridge(
       "submit: insurance bridge outcome write failed",
       err instanceof Error ? err.name : "UnknownError",
     );
+  }
+
+  // Fallback sender. On success the workflow's Gmail node already sent the
+  // chart-linked email, so sending here too would duplicate it. On anything
+  // else nothing has emailed yet, and staff must still be told.
+  if (shouldSendFallback(outcome.status)) {
+    await notifyInsuranceSubmission(notification);
   }
 }
 
