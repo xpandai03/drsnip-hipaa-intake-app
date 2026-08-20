@@ -30,11 +30,12 @@ export interface NotifyMessage {
 }
 
 // The one prod origin the console is served from. Overridable via env for
-// staging/preview; falls back to the known Fly hostname so a missing env never
-// produces a broken (relative) link.
+// staging/preview. The fallback is the CANONICAL console host (intake.drsnip.com)
+// — previously the raw Fly hostname, which produced correct-but-unbranded links
+// whenever PUBLIC_APP_URL was unset (which it was, in production).
 function consoleBaseUrl(): string {
   const raw = process.env.PUBLIC_APP_URL?.trim();
-  const base = raw && raw.length > 0 ? raw : "https://drsnip-intake-demo.fly.dev";
+  const base = raw && raw.length > 0 ? raw : "https://intake.drsnip.com";
   return base.replace(/\/+$/, "");
 }
 
@@ -67,12 +68,33 @@ export function buildInsuranceNotification(
   const office = input.office.trim();
   const where = office ? ` (${office})` : "";
   const link = `${baseUrl.replace(/\/+$/, "")}/admin/submissions/${input.submissionId}`;
+  // Train E: this is now the NON-SUCCESS fallback. It also fires in the known
+  // race where n8n exceeds the app's 30s abort but later succeeds — in which
+  // case the chart email arrives too and staff see two messages for one
+  // submission. The copy therefore says "being processed", never "failed":
+  // a duplicate that reads as an error would send staff chasing a problem that
+  // does not exist. A duplicate beats a silent miss, but only if it reads right.
   return {
     subject: "New insurance form submission — DrSnip intake",
     body:
       `${name} submitted an insurance form on ${formatPacific(input.submittedAt)}${where}.\n\n` +
-      `View it here: ${link}`,
+      `The submission is being processed. Open it in the console:\n${link}\n\n` +
+      `If a DrChrono chart is created, a separate email with the chart link follows.`,
   };
+}
+
+/**
+ * Train E — should the APP send the fallback doorbell?
+ *
+ * Exactly one email must reach staff per insurance submission, and never zero.
+ * On a successful bridge call the Insurance v1 workflow has already sent the
+ * chart-linked email, so the app must stay silent; on every other outcome
+ * nothing has emailed yet and the app is the only sender left. Mirrors
+ * shouldNotify() in lib/email/patientmail.ts. Pure, so the "exactly one"
+ * property is asserted without a DB, an n8n instance, or a timer.
+ */
+export function shouldSendFallback(bridgeStatus: string): boolean {
+  return bridgeStatus !== "success";
 }
 
 interface NotifyEnv {
