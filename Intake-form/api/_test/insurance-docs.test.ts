@@ -254,3 +254,100 @@ test("zero-card submission reports nothing to fetch", () => {
   assert.deepEqual(p.cards, { hasCards: false, count: 0 });
   assert.deepEqual(p.documents, { enabled: true });
 });
+
+// ---- Regression guards for the 2026-08-20 upload-loss investigation -------
+// A real card failed to upload once and was lost permanently. Capture, transport
+// and storage were all proven clean (client sent 2, both stored with bytes;
+// 0/19 sent-vs-stored mismatches across every insurance submission). The defect
+// was that NOTHING RETRIED, so a transient DrChrono error is terminal. These
+// lock in the fix.
+
+test("workflow: every document I/O node retries (transient failure must self-heal)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const wf = JSON.parse(
+    readFileSync(
+      new URL("../../../n8n-rollback/insurance-v1.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { nodes: Array<Record<string, unknown>> };
+
+  const mustRetry = [
+    "HTTP: Fetch Insurance PDF",
+    "DrChrono: Upload Insurance PDF",
+    "HTTP: List Card Files",
+    "HTTP: Fetch Card Bytes",
+    "DrChrono: Upload Card Document",
+  ];
+  for (const name of mustRetry) {
+    const node = wf.nodes.find((n) => n.name === name);
+    assert.ok(node, `missing node: ${name}`);
+    assert.equal(node!.retryOnFail, true, `${name} must retry`);
+    assert.ok((node!.maxTries as number) >= 2, `${name} needs >1 attempt`);
+  }
+});
+
+test("workflow: chart create/update must NOT retry (a retry could duplicate a chart)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const wf = JSON.parse(
+    readFileSync(
+      new URL("../../../n8n-rollback/insurance-v1.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { nodes: Array<Record<string, unknown>> };
+
+  for (const name of ["DrChrono: Create Patient", "DrChrono: Update Patient"]) {
+    const node = wf.nodes.find((n) => n.name === name);
+    assert.ok(node, `missing node: ${name}`);
+    assert.notEqual(
+      node!.retryOnFail,
+      true,
+      `${name} must NOT retry — documents are additive, charts are not`,
+    );
+  }
+});
+
+test("workflow: upload failure alerts carry the error text, not just a link", async () => {
+  const { readFileSync } = await import("node:fs");
+  const wf = JSON.parse(
+    readFileSync(
+      new URL("../../../n8n-rollback/insurance-v1.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { nodes: Array<{ name: string; parameters?: { message?: string } }> };
+
+  for (const name of [
+    "Gmail: Notify PDF Upload Failure",
+    "Gmail: Notify Card Upload Failure",
+  ]) {
+    const node = wf.nodes.find((n) => n.name === name);
+    assert.ok(node, `missing node: ${name}`);
+    const msg = node!.parameters?.message ?? "";
+    assert.ok(msg.includes("Error:"), `${name} should surface the error text`);
+    assert.ok(
+      msg.includes("chart WAS created"),
+      `${name} must say the chart survived — the alert must not read as data loss`,
+    );
+  }
+});
+
+test("console: chart link uses the canonical Documents URL", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(
+    new URL(
+      "../../artifacts/intake-form/src/pages/admin/SubmissionDetailModal.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.ok(
+    src.includes("app.drchrono.com/chart/${s.n8nPatientId}/documents"),
+    "detail modal should deep-link to the Documents tab",
+  );
+  // The old form 302s to /chart/<id>/demographics — works, but lands staff on
+  // the wrong tab.
+  assert.equal(
+    src.includes("app.drchrono.com/patients/${s.n8nPatientId}"),
+    false,
+    "the legacy /patients/ link form should be gone",
+  );
+});

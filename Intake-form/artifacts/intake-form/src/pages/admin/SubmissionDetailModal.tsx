@@ -450,7 +450,11 @@ function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
         <span className="text-sm font-medium text-slate-900 text-right">
           {s.n8nPatientId != null ? (
             <a
-              href={`https://app.drchrono.com/patients/${s.n8nPatientId}`}
+              // Canonical host + Documents tab. The old /patients/<id> form still
+              // works but 302s via /patient_demographics/ to /chart/<id>/demographics,
+              // landing staff on demographics; the insurance summary PDF and card
+              // images they actually need live under Documents.
+              href={`https://app.drchrono.com/chart/${s.n8nPatientId}/documents`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-primary hover:underline"
