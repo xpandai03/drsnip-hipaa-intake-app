@@ -32,6 +32,16 @@ RUN rm -rf lib/db/dist \
  && test -f lib/db/dist/index.d.ts \
  && echo "lib/db compiled OK"
 
+# Client-side conversion signal (see artifacts/intake-form/src/lib/conversion.ts).
+# VITE_* variables are inlined by Vite at BUILD time, so this cannot be a Fly
+# runtime secret — `fly secrets set` has no effect on it. Absent/false by
+# default: Vite folds the flag to `false` and eliminates the branch entirely.
+#
+# To ENABLE later (one line, no code change):
+#   fly deploy -a drsnip-intake-demo --build-arg VITE_CONVERSION_TRACKING_ENABLED=true
+ARG VITE_CONVERSION_TRACKING_ENABLED
+ENV VITE_CONVERSION_TRACKING_ENABLED=$VITE_CONVERSION_TRACKING_ENABLED
+
 # `pnpm run build` = typecheck + per-package build (SPA) + build:server
 # (the esbuild bundle of the Hono server).
 RUN pnpm run build

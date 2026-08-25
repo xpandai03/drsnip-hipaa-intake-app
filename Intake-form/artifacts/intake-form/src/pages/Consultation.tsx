@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
 import { readAttribution } from "@/lib/attribution";
+import { postConversion } from "@/lib/conversion";
 import {
   TextField,
   TextAreaField,
@@ -741,7 +742,15 @@ export default function Consultation() {
         body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => ({}));
-      return res.ok && json.success === true;
+      const ok = res.ok && json.success === true;
+      // Dormant conversion signal, identical to the insurance call site: inert
+      // unless VITE_CONVERSION_TRACKING_ENABLED was baked in at build time AND
+      // we are inside an iframe. Emits only a PII-free { event, form_type }
+      // postMessage to an allowlisted parent origin — no third-party script
+      // ever runs here. Fires ONLY on a confirmed success, so a validation
+      // failure or a network error can never report a conversion.
+      if (ok) postConversion("consultation");
+      return ok;
     } catch {
       // HIPAA: never log the submission body.
       return false;
