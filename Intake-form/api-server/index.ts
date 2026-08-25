@@ -12,6 +12,10 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { adapt } from "./vercel-adapter";
+import {
+  frameAncestorsFor,
+  xFrameOptionsFor,
+} from "../api/_lib/frame-policy";
 
 import submitHandler from "../api/submit";
 import loginHandler from "../api/auth/login";
@@ -40,6 +44,30 @@ import internalFileHandler from "../api/internal/files/[id]";
 import internalInsurancePdfHandler from "../api/internal/insurance-pdf/[submissionId]";
 
 const app = new Hono();
+
+// ---- Framing policy ----------------------------------------------------
+// Registered FIRST so it covers every route, including the static SPA and the
+// client-side-routing fallback. Sets the header BEFORE next(), matching the
+// existing /plan/* X-Robots-Tag middleware — that pattern is proven to ride the
+// index.html document response through serveStatic.
+//
+// Public form routes are embeddable by the client's marketing site only;
+// /api/*, /admin/* and /healthz are not framable at all. Only frame-ancestors
+// is set — see api/_lib/frame-policy.ts for why a fuller CSP is out of scope.
+app.use("*", async (c, next) => {
+  await next();
+  // Set AFTER next() on purpose. The /api/* routes run through
+  // ./vercel-adapter, which builds a brand-new Response from only the headers
+  // the wrapped handler set — anything applied before next() is discarded on
+  // those routes. Applying afterwards lands on the final response for every
+  // route shape: adapted handlers, c.json(), and serveStatic alike.
+  const path = c.req.path;
+  c.header("Content-Security-Policy", frameAncestorsFor(path));
+  const xfo = xFrameOptionsFor(path);
+  // Omitted on the form routes on purpose: X-Frame-Options cannot express a
+  // third-party allowlist, so SAMEORIGIN there would block the intended embed.
+  if (xfo) c.header("X-Frame-Options", xfo);
+});
 
 // ---- Health check (Fly.io http_service checks hit this) ----------------
 app.get("/healthz", (c) => c.json({ status: "ok" }));
