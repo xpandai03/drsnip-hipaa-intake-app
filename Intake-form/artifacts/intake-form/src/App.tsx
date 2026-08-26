@@ -8,6 +8,7 @@ import Home from "@/pages/Home";
 import Consultation from "@/pages/Consultation";
 import Insurance from "@/pages/Insurance";
 import Roadmap, { PLAN_PATH } from "@/pages/Roadmap";
+import Integration, { INTEGRATION_PATH } from "@/pages/Integration";
 import NotFound from "@/pages/not-found";
 import LinkGenerator from "@/pages/LinkGenerator";
 import SignIn from "@/pages/admin/SignIn";
@@ -61,6 +62,10 @@ function Router() {
       {/* Hidden, URL-only client roadmap — fully static, no auth, no DB. Only
           the exact token path renders; any other /plan/* → NotFound. */}
       <Route path={PLAN_PATH} component={Roadmap} />
+      {/* Public integration guide for the marketing agency. Shareable by link,
+          noindexed at both the meta and header layers. Fully static: no auth,
+          no DB, no tracking scripts, and no links into the admin tree. */}
+      <Route path={INTEGRATION_PATH} component={Integration} />
       {/* Internal link-generator tool (not linked from the public forms).
           Rendered via children so LinkGenerator's optional props (D.3
           `readOnly`) don't collide with wouter's RouteComponentProps. */}

@@ -122,6 +122,14 @@ app.use("/plan/*", async (c, next) => {
   await next();
 });
 
+// Public integration guide (/integration) — meant to be shared and forwarded by
+// link, so it has no token, but it should never turn up in search results.
+// Same belt-and-suspenders as /plan: this header plus the page's own robots meta.
+app.use("/integration", async (c, next) => {
+  c.header("X-Robots-Tag", "noindex, nofollow");
+  await next();
+});
+
 // ---- Static SPA + client-side-routing fallback ------------------------
 // STATIC_ROOT is resolved relative to the process working directory. Both
 // local (`pnpm start` from Intake-form/) and the Docker image keep the SPA
