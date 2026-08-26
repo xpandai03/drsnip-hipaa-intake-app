@@ -201,12 +201,27 @@ function DataTable({ rows, head }: { rows: [string, string][]; head: [string, st
   );
 }
 
-function Step({ n, title, children }: { n: number; title: string; children?: React.ReactNode }) {
-  return (
-    <div className="mt-7 flex gap-4">
+function Step({
+  n,
+  title,
+  children,
+  highlight,
+}: {
+  n: number;
+  title: string;
+  children?: React.ReactNode;
+  /** For the one step people actually get stuck on. */
+  highlight?: boolean;
+}) {
+  const body = (
+    <div className="flex gap-4">
       <div
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white tabular-nums"
-        style={{ background: NAVY }}
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold tabular-nums"
+        style={
+          highlight
+            ? { background: GOLD, color: NAVY_DEEP }
+            : { background: NAVY, color: "#fff" }
+        }
         aria-hidden
       >
         {n}
@@ -217,6 +232,15 @@ function Step({ n, title, children }: { n: number; title: string; children?: Rea
           <div className="mt-1.5 text-[15px] leading-relaxed text-slate-700">{children}</div>
         )}
       </div>
+    </div>
+  );
+  if (!highlight) return <div className="mt-7">{body}</div>;
+  return (
+    <div
+      className="mt-7 rounded-2xl border-2 p-5"
+      style={{ borderColor: GOLD, background: "#FFFBF3" }}
+    >
+      {body}
     </div>
   );
 }
@@ -349,8 +373,14 @@ export default function Integration() {
       {/* Brand band. The logo is a white knockout, so navy is the only ground
           it can sit on. Gold hairline separates band from page. */}
       <div style={{ background: NAVY, borderBottom: `3px solid ${GOLD}` }} className="print:hidden">
-        <div className="mx-auto w-full max-w-3xl px-5 py-6 sm:px-8">
-          <img src={LOGO} alt="DrSnip" className="h-8 w-auto" width={250} height={83} />
+        <div className="mx-auto w-full max-w-3xl px-5 py-8 sm:px-8">
+          <img
+            src={LOGO}
+            alt="DrSnip"
+            className="mx-auto h-16 w-auto"
+            width={250}
+            height={83}
+          />
         </div>
       </div>
 
@@ -612,14 +642,38 @@ export default function Integration() {
           <C>Ctrl + Shift + J</C>. That opens the Console tab in Chrome or Edge.
         </Step>
 
-        <Step n={3} title="Paste this line into the console and press Enter">
+        <Step
+          n={3}
+          highlight
+          title={'Set the console context to "top" \u2014 this is the step people miss'}
+        >
+          At the top of the Console panel there is a dropdown, usually reading{" "}
+          <C>top</C>. When a page contains a frame, that dropdown can be switched to the
+          frame instead &mdash; here, <C>intake.drsnip.com</C>.
+          <div className="mt-3">
+            <B>
+              It must be set to <C>top</C>.
+            </B>{" "}
+            If it is pointing at the form&rsquo;s frame, the listener you paste next runs{" "}
+            <em>inside</em> the form rather than on the page around it. The form sends its
+            event outward to the parent page, so a listener sitting inside the frame never
+            receives anything &mdash; the console stays silent and everything looks broken
+            when it is working perfectly.
+          </div>
+          <div className="mt-3 text-[14.5px] text-slate-600">
+            In Chrome the dropdown sits just left of the &ldquo;Filter&rdquo; box, above
+            the console output. Set it to <C>top</C> before continuing.
+          </div>
+        </Step>
+
+        <Step n={4} title="Paste this line into the console and press Enter">
           <CodeBlock code={CONSOLE_SNIPPET} />
           <div className="mt-1 text-[14px] text-slate-500">
             It prints every message the page receives from the form.
           </div>
         </Step>
 
-        <Step n={4} title="Watch the height messages appear">
+        <Step n={5} title="Watch the height messages appear">
           Before you submit anything, as the form loads and you move through it, you will
           see lines like this. They are the form telling the page how tall it needs to be
           &mdash; normal, and a good sign the connection is working:
@@ -628,13 +682,13 @@ export default function Integration() {
           </div>
         </Step>
 
-        <Step n={5} title="Fill in the form and submit it">
+        <Step n={6} title="Fill in the form and submit it">
           Use an obviously fake name so the row is easy to spot &mdash; something like{" "}
           <C>Test Testerson</C>. Real submissions and test submissions land in the same
           place, so tell us which ones were tests and we will remove them.
         </Step>
 
-        <Step n={6} title="Watch the conversion event arrive">
+        <Step n={7} title="Watch the conversion event arrive">
           The moment the submission succeeds, this appears in the console:
           <div className="mt-3">
             <CodeBlock code={SAMPLE_CONVERSION} />
@@ -645,7 +699,7 @@ export default function Integration() {
           </div>
         </Step>
 
-        <Step n={7} title="Check it reached GTM">
+        <Step n={8} title="Check it reached GTM">
           With GTM Preview running on the page, the same submission should show a{" "}
           <C>drsnip_intake_conversion</C> event in the events list, with{" "}
           <C>drsnip_form_type</C> available as a Data Layer Variable.
