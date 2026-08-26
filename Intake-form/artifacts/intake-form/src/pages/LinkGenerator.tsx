@@ -34,7 +34,7 @@ type RecentLink = {
 
 // Registration → /?source=<campaign>
 // Consultation → /consultation?source=<campaign>&patient_id=<uuid>
-// (the Consultation form is gated on a source/patient_id param).
+// (patient_id is OPTIONAL on the Consultation form — it renders fine without one).
 function buildUrl(formType: FormType, campaign: string): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const source = campaign.trim() || "direct";
@@ -348,9 +348,10 @@ export default function LinkGenerator({
               Embed forms
             </CardTitle>
             <p className="text-sm text-slate-500">
-              Copy a form into the website. The insurance form auto-resizes
-              inline; registration and consultation are full-page forms — the
-              direct link is usually the simplest way to share them.
+              Copy a form into the website. Each snippet forwards the page&rsquo;s
+              own campaign parameters (utm_*, gclid, fbclid) into the form, so
+              submissions record where they came from. The insurance form also
+              auto-resizes inline.
             </p>
           </CardHeader>
           <CardContent className="space-y-5">
