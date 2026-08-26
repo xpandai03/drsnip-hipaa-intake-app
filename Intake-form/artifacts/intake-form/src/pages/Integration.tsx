@@ -10,10 +10,18 @@ import { useEffect, useState } from "react";
 
 export const INTEGRATION_PATH = "/integration";
 
+// DrSnip brand values, taken from source rather than eyeballed:
+//   NAVY  — index.css `--primary: 208 79% 28%`, commented "deep clinical blue".
+//           The navy on the intake form header.
+//   GOLD  — the marketing site's CTA orange, already used by the insurance form
+//           shell (Insurance.tsx BRAND_ACCENT / BRAND_ACCENT_HOVER).
+//   The logo is a WHITE KNOCKOUT (250x83 RGBA) — invisible on light ground, so
+//   it only ever sits on the navy band, matching lib/pdf/layout/header.ts.
 const NAVY = "#0F4C81";
-
-/** Paste the video URL here when it exists; the slot renders itself. */
-const VIDEO_URL = "";
+const NAVY_DEEP = "#0B3A63";
+const GOLD = "#F9B050";
+const GOLD_DEEP = "#EFA143";
+const LOGO = "/images/drsnip-logo.png";
 
 // ---------------------------------------------------------------------------
 // Copy-to-clipboard code block — the most important interaction on this page.
@@ -101,8 +109,14 @@ function H2({ id, children }: { id: string; children: React.ReactNode }) {
   return (
     <h2
       id={id}
-      className="mt-16 mb-2 scroll-mt-8 text-2xl sm:text-[28px] font-semibold tracking-tight text-slate-900"
+      className="mt-16 mb-2 scroll-mt-8 text-2xl sm:text-[28px] font-semibold tracking-tight"
+      style={{ color: NAVY }}
     >
+      <span
+        aria-hidden
+        className="mb-3 block h-1 w-10 rounded-full"
+        style={{ background: GOLD }}
+      />
       {children}
     </h2>
   );
@@ -110,7 +124,7 @@ function H2({ id, children }: { id: string; children: React.ReactNode }) {
 
 function H3({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mt-10 mb-1 text-lg font-semibold tracking-tight text-slate-900">
+    <h3 className="mt-10 mb-1 text-lg font-semibold tracking-tight" style={{ color: NAVY_DEEP }}>
       {children}
     </h3>
   );
@@ -119,6 +133,15 @@ function H3({ children }: { children: React.ReactNode }) {
 function P({ children }: { children: React.ReactNode }) {
   return (
     <p className="mt-4 text-[15.5px] leading-[1.75] text-slate-700">{children}</p>
+  );
+}
+
+/** Inline code token. */
+function C({ children }: { children: React.ReactNode }) {
+  return (
+    <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
+      {children}
+    </code>
   );
 }
 
@@ -132,8 +155,8 @@ function A({ href, children }: { href: string; children: React.ReactNode }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="font-medium underline decoration-slate-300 underline-offset-2 hover:decoration-current"
-      style={{ color: NAVY }}
+      className="font-medium underline underline-offset-2 hover:opacity-80"
+      style={{ color: NAVY, textDecorationColor: GOLD }}
     >
       {children}
     </a>
@@ -174,6 +197,26 @@ function DataTable({ rows, head }: { rows: [string, string][]; head: [string, st
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children?: React.ReactNode }) {
+  return (
+    <div className="mt-7 flex gap-4">
+      <div
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white tabular-nums"
+        style={{ background: NAVY }}
+        aria-hidden
+      >
+        {n}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold text-slate-900">{title}</div>
+        {children && (
+          <div className="mt-1.5 text-[15px] leading-relaxed text-slate-700">{children}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -264,14 +307,19 @@ const EMBED_SNIPPET = `<iframe
 
 const CONSOLE_SNIPPET = `addEventListener('message', e => console.log(e.origin, e.data))`;
 
+// Shown verbatim so the developer knows exactly what to look for.
+const SAMPLE_HEIGHT = `https://intake.drsnip.com  {type: 'drsnip:height', height: 1284}`;
+
+const SAMPLE_CONVERSION = `https://intake.drsnip.com  {event: 'intake_conversion', form_type: 'insurance'}`;
+
 const TEST_URL =
   "https://drsnip.com/cost-insurance/?utm_source=test&utm_medium=cpc&utm_campaign=your-test&gclid=TESTCLICK123";
 
 const TOC: [string, string][] = [
   ["what-you-asked-for", "What you asked for"],
-  ["what-was-wrong", "What was actually wrong"],
+  ["why-tracking", "Why tracking wasn\'t working"],
+  ["your-snippet", "About the tracking snippet you sent"],
   ["what-is-live", "What is live now"],
-  ["video", "Walkthrough video"],
   ["for-your-developer", "For your developer"],
   ["troubleshooting", "Troubleshooting"],
   ["next", "What is worth doing together next"],
@@ -298,10 +346,21 @@ export default function Integration() {
 
   return (
     <div className="min-h-screen w-full bg-slate-50 text-slate-800 print:bg-white">
-      <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
+      {/* Brand band. The logo is a white knockout, so navy is the only ground
+          it can sit on. Gold hairline separates band from page. */}
+      <div style={{ background: NAVY, borderBottom: `3px solid ${GOLD}` }} className="print:hidden">
+        <div className="mx-auto w-full max-w-3xl px-5 py-6 sm:px-8">
+          <img src={LOGO} alt="DrSnip" className="h-8 w-auto" width={250} height={83} />
+        </div>
+      </div>
+
+      <div className="mx-auto w-full max-w-3xl px-5 py-12 sm:px-8 sm:py-16">
         {/* ---- Header ---- */}
         <header>
-          <h1 className="text-[30px] sm:text-[40px] font-bold leading-[1.15] tracking-tight text-slate-900">
+          <h1
+            className="text-[30px] sm:text-[40px] font-bold leading-[1.15] tracking-tight"
+            style={{ color: NAVY }}
+          >
             DrSnip intake forms: tracking and integration
           </h1>
           <p className="mt-4 text-[14.5px] text-slate-500">
@@ -370,39 +429,54 @@ export default function Integration() {
 
         <Rule />
 
-        {/* ---- What was actually wrong ---- */}
-        <H2 id="what-was-wrong">What was actually wrong</H2>
-        <P>
-          The migration spec identified the subdomain as the cause, noting that a
-          standalone app on a subdomain cannot access the site's UTM tracking. That was a
-          fair read of the symptom. The actual cause turned out to be narrower and easier
-          to fix.
-        </P>
+        {/* ---- Why tracking wasn't working ---- */}
+        <H2 id="why-tracking">Why tracking wasn&rsquo;t working</H2>
         <P>
           <B>Campaign parameters were never being passed to the form.</B>
         </P>
         <P>
           When someone clicks a Google ad, they arrive at a drsnip.com page carrying a{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">gclid</code>{" "}
-          and UTM parameters in the URL. The form sits inside a frame on that page, and a
-          frame can only read its own address, not the address of the page around it.
-          Nobody had ever passed those values through. The form was ready to receive them;
-          it was never handed them.
+          <C>gclid</C> and UTM parameters in the URL. The form sits inside a frame on that
+          page, and a frame can only read its own address, not the address of the page
+          around it. The form was built to receive those values; nothing was passing them
+          in. The live embed also carried no tag of its own, which is why insurance
+          submissions recorded no source.
         </P>
         <P>
-          The intake system has had database columns for{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">gclid</code>,{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">fbclid</code>,
-          and all six UTM parameters for weeks. Across 2,131 submissions, every one of them
-          was empty.
+          The intake system has had columns for <C>gclid</C>, <C>fbclid</C>, and all six
+          UTM parameters for weeks. Until this week, every one of them was empty.
         </P>
         <P>
-          <B>Additionally, the live embed carried no tag at all.</B> The insurance form on
-          the cost and insurance page was loading a bare URL with no parameters, which is
-          why every insurance submission recorded no source.
+          Fixing it did not require moving the forms or changing where patient data lives.
+        </P>
+
+        <Rule />
+
+        {/* ---- About the tracking snippet you sent ---- */}
+        <H2 id="your-snippet">About the tracking snippet you sent</H2>
+        <P>
+          Your tracking document asks for two containers, Google Tag Manager and the
+          Intrepy analytics container, to be added to the head and body of the form pages.
         </P>
         <P>
-          Neither problem required moving the forms or changing where patient data lives.
+          Those containers are already installed across drsnip.com, including the pages the
+          forms sit on. What we have not done is run them <B>inside</B> the form itself,
+          because that is where patients enter medical histories, dates of birth, and
+          photographs of insurance cards. Tag containers can load additional scripts after
+          the fact, and clinics have faced action over patient data reaching advertising
+          platforms this way.
+        </P>
+        <P>
+          The approach below gives you the same conversion data without that exposure. The
+          form sends a single event to the page it sits on, carrying nothing but the event
+          name and which form was submitted. Your GTM container is already on that page and
+          can act on the event exactly as it would any other trigger. You keep your tags,
+          your triggers, and your reporting; the only difference is that nothing
+          third-party executes on a page where patient data is being typed.
+        </P>
+        <P>
+          If there is something in your setup this does not cover, tell us and we will work
+          it out.
         </P>
 
         <Rule />
@@ -412,9 +486,9 @@ export default function Integration() {
         <P>
           <B>Campaign parameters flow through.</B> The embed on
           drsnip.com/cost-insurance now forwards{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">gclid</code>,{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">fbclid</code>,{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">source</code>,
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">gclid</code>,{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">fbclid</code>,{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">source</code>,
           and all six UTM parameters from the page's URL into the form. Verified in
           production on August 26:
         </P>
@@ -441,60 +515,31 @@ export default function Integration() {
 
         <Rule />
 
-        {/* ---- Video ---- */}
-        <H2 id="video">Walkthrough video</H2>
-        {VIDEO_URL ? (
-          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-black">
-            <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
-              <iframe
-                src={VIDEO_URL}
-                title="DrSnip integration walkthrough"
-                allow="accelerometer; clipboard-write; encrypted-media; picture-in-picture; fullscreen"
-                allowFullScreen
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="mt-5 flex min-h-[180px] items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white p-8 text-center">
-            <div>
-              <div className="text-[15px] font-medium text-slate-500">
-                Walkthrough video — link coming
-              </div>
-              <div className="mt-1 text-[13px] text-slate-400">
-                This section will hold a short screen recording.
-              </div>
-            </div>
-          </div>
-        )}
-
-        <Rule />
-
         {/* ---- For your developer ---- */}
         <H2 id="for-your-developer">For your developer</H2>
 
         <H3>1. The listener tag</H3>
         <P>
           Add as a Custom HTML tag in GTM{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">GTM-K6883FZH</code>
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">GTM-K6883FZH</code>
           , firing on All Pages. It listens for the conversion event and makes it available
           to both Google Tag Manager and your Matomo container.
         </P>
         <CodeBlock code={LISTENER_TAG} label="GTM — Custom HTML tag" />
         <P>
           Then in GTM: a <B>Custom Event</B> trigger on{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             drsnip_intake_conversion
           </code>
           , and a Data Layer Variable on{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             drsnip_form_type
           </code>{" "}
           if you want conversions split by form.
         </P>
         <P>
           <B>One note on Matomo:</B> pushing to{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">_mtm</code>{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">_mtm</code>{" "}
           makes the trigger available in Matomo Tag Manager; it does not record anything by
           itself. A Matomo tag needs to be bound to that trigger. Without that step the
           data layer will look correct and Matomo will show nothing.
@@ -511,11 +556,11 @@ export default function Integration() {
         <P>
           Fires exactly once, on confirmed submission success. Never on page view,
           validation failure, or step change. Sent only to{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             https://drsnip.com
           </code>{" "}
           and{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             https://www.drsnip.com
           </code>
           .
@@ -530,9 +575,9 @@ export default function Integration() {
         <H3>3. The embed snippet</H3>
         <P>
           To place a form on any page, use this in an HTML block. Change{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">FORM_URL</code>{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">FORM_URL</code>{" "}
           and{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             DEFAULT_SOURCE
           </code>{" "}
           per placement.
@@ -540,11 +585,11 @@ export default function Integration() {
         <CodeBlock code={EMBED_SNIPPET} label="WordPress — HTML block" />
         <P>
           Form URLs: insurance is{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">/insurance</code>,
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">/insurance</code>,
           registration is{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">/</code>,
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">/</code>,
           consultation is{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             /consultation
           </code>
           .
@@ -552,19 +597,88 @@ export default function Integration() {
 
         <H3>4. Test it yourself</H3>
         <P>
-          Open this in a browser, submit the form, and watch the event arrive:
+          This takes about two minutes and needs nothing installed. Every step is below.
         </P>
-        <P>
+
+        <Step n={1} title="Open the test link">
           <A href={TEST_URL}>{TEST_URL}</A>
-        </P>
-        <P>
-          Before submitting, paste this into the browser console to watch messages arrive:
-        </P>
-        <CodeBlock code={CONSOLE_SNIPPET} label="Browser console" />
-        <P>
-          You will see height messages as the form resizes, then the conversion event on
-          submit.
-        </P>
+          <div className="mt-2 text-[14px] text-slate-500">
+            The parameters in this link are what a real ad click would carry.
+          </div>
+        </Step>
+
+        <Step n={2} title="Open the browser console before you submit">
+          On a Mac press <C>&#8984; + Option + J</C>. On Windows press{" "}
+          <C>Ctrl + Shift + J</C>. That opens the Console tab in Chrome or Edge.
+        </Step>
+
+        <Step n={3} title="Paste this line into the console and press Enter">
+          <CodeBlock code={CONSOLE_SNIPPET} />
+          <div className="mt-1 text-[14px] text-slate-500">
+            It prints every message the page receives from the form.
+          </div>
+        </Step>
+
+        <Step n={4} title="Watch the height messages appear">
+          Before you submit anything, as the form loads and you move through it, you will
+          see lines like this. They are the form telling the page how tall it needs to be
+          &mdash; normal, and a good sign the connection is working:
+          <div className="mt-3">
+            <CodeBlock code={SAMPLE_HEIGHT} />
+          </div>
+        </Step>
+
+        <Step n={5} title="Fill in the form and submit it">
+          Use an obviously fake name so the row is easy to spot &mdash; something like{" "}
+          <C>Test Testerson</C>. Real submissions and test submissions land in the same
+          place, so tell us which ones were tests and we will remove them.
+        </Step>
+
+        <Step n={6} title="Watch the conversion event arrive">
+          The moment the submission succeeds, this appears in the console:
+          <div className="mt-3">
+            <CodeBlock code={SAMPLE_CONVERSION} />
+          </div>
+          <div className="mt-2">
+            That is the event your listener tag reacts to. <C>form_type</C> tells you which
+            form was submitted.
+          </div>
+        </Step>
+
+        <Step n={7} title="Check it reached GTM">
+          With GTM Preview running on the page, the same submission should show a{" "}
+          <C>drsnip_intake_conversion</C> event in the events list, with{" "}
+          <C>drsnip_form_type</C> available as a Data Layer Variable.
+        </Step>
+
+        <div
+          className="mt-9 rounded-2xl border p-5"
+          style={{ background: "#F0FDF4", borderColor: "#BBF7D0" }}
+        >
+          <div className="font-semibold" style={{ color: "#166534" }}>
+            What a successful test looks like
+          </div>
+          <ul className="mt-2.5 space-y-1.5 text-[15px] leading-relaxed text-slate-700">
+            <li>
+              &bull; Height messages appear in the console as the form loads and resizes.
+            </li>
+            <li>
+              &bull; Exactly one <C>intake_conversion</C> message appears, on submit, and
+              never before.
+            </li>
+            <li>
+              &bull; That message contains two fields and nothing else: <C>event</C> and{" "}
+              <C>form_type</C>.
+            </li>
+            <li>&bull; GTM Preview shows the matching custom event.</li>
+          </ul>
+          <div className="mt-3 text-[14.5px] text-slate-600">
+            If the height messages appear but the conversion does not, the connection is
+            fine and the problem is in the submission itself &mdash; tell us and we will
+            look. If nothing appears at all, start with the first item in Troubleshooting
+            below.
+          </div>
+        </div>
 
         <Rule />
 
@@ -572,14 +686,14 @@ export default function Integration() {
         <H2 id="troubleshooting">Troubleshooting</H2>
         <Trouble title="Nothing fires at all.">
           Check the origin comparison in your listener. It must be{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             https://intake.drsnip.com
           </code>
           , the frame's origin, not your own site's.
         </Trouble>
         <Trouble title="Test on production over https.">
           Parameters and events do not travel from{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">http://</code>{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">http://</code>{" "}
           pages or from staging hosts, because those origins are not on the form's
           allowlist. If you need a staging host allowlisted for testing, tell us and we
           will add it.
@@ -591,7 +705,7 @@ export default function Integration() {
         </Trouble>
         <Trouble title="Data layer looks right, Matomo shows nothing.">
           The Matomo tag is missing. The{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">_mtm</code>{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">_mtm</code>{" "}
           push creates a trigger, not a recording.
         </Trouble>
         <Trouble title="Conversions undercount relative to submissions.">
@@ -608,7 +722,7 @@ export default function Integration() {
           <B>Persisting campaign parameters across the visit.</B> Right now the parameters
           are read from the page the form sits on. Someone who lands on the homepage from
           an ad, browses, and later reaches the form has lost the{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">gclid</code>{" "}
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">gclid</code>{" "}
           by the time they get there. Your site already runs the AFL UTM Tracker plugin,
           which your migration spec describes as capturing UTM parameters from the landing
           URL. If those stored values are written into the embed URL, attribution holds
@@ -628,7 +742,7 @@ export default function Integration() {
         </P>
         <P>
           <B>Forcing HTTPS on the site.</B>{" "}
-          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px]">
+          <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             http://drsnip.com
           </code>{" "}
           currently serves without redirecting to https. Visitors arriving that way lose
@@ -663,9 +777,26 @@ export default function Integration() {
         {/* ---- Questions ---- */}
         <H2 id="questions">Questions</H2>
         <P>
-          Raunek Pratap, Xpand Technology. Happy to get on a call with your developer any
-          time.
+          If anything about the listener event or setting it up is unclear, email Raunek
+          directly &mdash; short questions are welcome and usually answered the same day.
+          We are also happy to jump on a call with your developer and walk through it
+          together, or sit in while you wire up the tag.
         </P>
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="text-[15px] font-semibold text-slate-900">Raunek Pratap</div>
+          <div className="mt-0.5 text-[14.5px] text-slate-500">Xpand Technology</div>
+          <a
+            href="mailto:raunek@xpandai.com?subject=DrSnip%20intake%20tracking"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[15px] font-semibold transition-opacity hover:opacity-90"
+            style={{ background: GOLD, color: NAVY_DEEP, border: `1px solid ${GOLD_DEEP}` }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="m2 7 10 6 10-6" />
+            </svg>
+            raunek@xpandai.com
+          </a>
+        </div>
 
         <footer className="mt-20 border-t border-slate-200 pt-6 text-[13px] text-slate-400">
           Xpand Technology · August 2026
