@@ -739,7 +739,10 @@ export default function Integration() {
         {/* ---- Troubleshooting ---- */}
         <H2 id="troubleshooting">Troubleshooting</H2>
         <Trouble title="Nothing fires at all.">
-          Check the origin comparison in your listener. It must be{" "}
+          If you are testing by hand in the console, check the context dropdown
+          first: it must be set to <C>top</C>, not the form&rsquo;s frame (step 3
+          above). That is the most common cause by some margin. Otherwise, check the
+          origin comparison in your listener &mdash; it must be{" "}
           <code className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[13.5px] text-slate-800">
             https://intake.drsnip.com
           </code>
