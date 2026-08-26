@@ -13,6 +13,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { FileUploadStub, type StubFileRef } from "@/components/ui/FileUploadStub";
 import { cn } from "@/lib/utils";
 import { postConversion } from "@/lib/conversion";
+import { readAttribution } from "@/lib/attribution";
 
 // ===========================================================================
 // DrSnip — native Insurance form (Phase 1: form + route + embed + DB storage).
@@ -160,6 +161,12 @@ const initialData: InsuranceData = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Reads the SAME eight campaign params the registration/consultation forms read
+// (lib/attribution.ts). Previously this form read only `source`, so even when a
+// parent page forwarded gclid/utm_* into the iframe URL they were dropped here
+// and could never reach the server — which is why 0 click IDs had ever been
+// captured. `source` is still sent top-level as well, because the server's
+// extractAttribution falls back to it (api/_lib/attribution.ts).
 function readSourceParam(): string {
   if (typeof window === "undefined") return "";
   const s = new URLSearchParams(window.location.search).get("source");
@@ -175,6 +182,8 @@ export default function Insurance() {
   const [showErrors, setShowErrors] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const source = useMemo(readSourceParam, []);
+  // Full campaign attribution, captured once on mount and sent at submit.
+  const attribution = useMemo(readAttribution, []);
 
   const update = (patch: Partial<InsuranceData>) =>
     setData((d) => ({ ...d, ...patch }));
@@ -281,6 +290,7 @@ export default function Insurance() {
       state: data.state.trim(),
       postalCode: data.postalCode.trim(),
       source,
+      attribution,
       insurance: {
         primary: {
           carrier: data.primaryCarrier.trim(),

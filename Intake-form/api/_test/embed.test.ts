@@ -12,6 +12,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  ATTRIBUTION_MAX_LEN,
+  ATTRIBUTION_PARAMS,
   formUrl,
   iframeSnippet,
   EMBED_FORMS,
@@ -73,26 +75,75 @@ describe("formUrl — source tagging", () => {
   });
 });
 
-describe("iframeSnippet — shape + no third-party scripts", () => {
+describe("iframeSnippet — attribution forwarding + no third-party scripts", () => {
   const insurance = EMBED_FORMS.find((f) => f.key === "insurance")!;
   const registration = EMBED_FORMS.find((f) => f.key === "registration")!;
 
-  it("embeds the correct (optionally tagged) src", () => {
+  it("ships the iframe WITHOUT src so the script assigns it pre-load", () => {
+    // A src on the element plus a script that rewrites it later = two loads,
+    // and a late rewrite would reload a partially filled form.
     const s = iframeSnippet(insurance, "cost-insurance-page");
-    assert.ok(s.includes(`src="${INTAKE_BASE}/insurance?source=cost-insurance-page"`));
     assert.ok(s.includes("<iframe"));
+    assert.equal(/<iframe[^>]*\ssrc=/.test(s), false, "iframe must ship with no src");
+    assert.ok(s.includes("el.src = FORM_URL"), "script assigns the src");
     assert.ok(s.includes("min-width: 100%"));
   });
 
-  it("insurance includes the origin-locked auto-height listener", () => {
-    const s = iframeSnippet(insurance);
-    assert.ok(s.includes("drsnip:height"));
-    assert.ok(s.includes(`e.origin !== "${INTAKE_BASE}"`) || s.includes("ALLOWED_ORIGIN"));
+  it("forwards ONLY the eight campaign params the form reads", () => {
+    const s = iframeSnippet(insurance, "cost-insurance-page");
+    for (const k of ATTRIBUTION_PARAMS) {
+      assert.ok(s.includes(`"${k}"`), `snippet should forward ${k}`);
+    }
+    assert.equal(ATTRIBUTION_PARAMS.length, 8);
   });
 
-  it("registration/consultation are plain iframes (no script)", () => {
-    const s = iframeSnippet(registration);
-    assert.ok(!s.includes("<script"));
+  it("never forwards the page URL, referrer, or an arbitrary passthrough", () => {
+    for (const form of EMBED_FORMS) {
+      const s = iframeSnippet(form, "x");
+      assert.equal(s.includes("document.referrer"), false, "referrer must not travel");
+      assert.equal(s.includes("window.location.href"), false, "page URL must not travel");
+      assert.equal(s.includes("location.pathname"), false);
+      // Only the search string is read, and only through the allowlist loop.
+      assert.ok(s.includes("window.location.search"));
+      assert.ok(s.includes("for (var i = 0; i < KEYS.length"));
+    }
+  });
+
+  it("a campaign ?source= wins over the placement default", () => {
+    const s = iframeSnippet(insurance, "cost-insurance-page");
+    assert.ok(
+      s.includes('if (!out.get("source") && DEFAULT_SOURCE) out.set("source", DEFAULT_SOURCE)'),
+      "default fills in only when the visitor arrived untagged",
+    );
+    assert.ok(s.includes('"cost-insurance-page"'));
+  });
+
+  it("produces a clean URL when nothing is tagged — no trailing ? and no undefined", () => {
+    const s = iframeSnippet(registration, "");
+    assert.ok(s.includes('(qs ? "?" + qs : "")'), "no trailing ? when empty");
+    assert.equal(s.includes("undefined"), false);
+    // Empty values are skipped rather than forwarded as blanks.
+    assert.ok(s.includes("if (v) out.set(KEYS[i], v)"));
+  });
+
+  it("values are length-capped, matching the form's own reader", () => {
+    const s = iframeSnippet(insurance, "x");
+    assert.ok(s.includes(`slice(0, ${ATTRIBUTION_MAX_LEN})`));
+  });
+
+  it("insurance keeps its origin-locked auto-height listener alongside forwarding", () => {
+    const s = iframeSnippet(insurance);
+    assert.ok(s.includes("drsnip:height"));
+    assert.ok(s.includes("e.origin !== BASE_ORIGIN"), "listener stays origin-locked");
+    assert.ok(s.includes("el.src = FORM_URL"), "and forwarding still happens");
+  });
+
+  it("registration/consultation forward attribution but carry no height listener", () => {
+    for (const f of [registration, EMBED_FORMS.find((x) => x.key === "consultation")!]) {
+      const s = iframeSnippet(f);
+      assert.ok(s.includes("el.src = FORM_URL"), `${f.key} should forward`);
+      assert.equal(s.includes("drsnip:height"), false, `${f.key} posts no height yet`);
+    }
   });
 
   it("NEVER injects a third-party tag manager / analytics script", () => {
@@ -105,6 +156,7 @@ describe("iframeSnippet — shape + no third-party scripts", () => {
         "tracking.intrepy",
         "connect.facebook",
         "google-analytics.com",
+        "<script src",
       ]) {
         assert.ok(!s.includes(bad), `${form.key} snippet must not contain ${bad}`);
       }
