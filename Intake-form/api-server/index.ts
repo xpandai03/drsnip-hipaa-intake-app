@@ -8,6 +8,7 @@
 //
 // Listens on $PORT (default 8080).
 
+import { readFile } from "node:fs/promises";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -16,6 +17,12 @@ import {
   frameAncestorsFor,
   xFrameOptionsFor,
 } from "../api/_lib/frame-policy";
+import {
+  ANALYTICS_ROUTES,
+  analyticsEnabled,
+  analyticsSrc,
+  injectAnalytics,
+} from "../api/_lib/analytics";
 
 import submitHandler from "../api/submit";
 import loginHandler from "../api/auth/login";
@@ -130,12 +137,50 @@ app.use("/integration", async (c, next) => {
   await next();
 });
 
-// ---- Static SPA + client-side-routing fallback ------------------------
 // STATIC_ROOT is resolved relative to the process working directory. Both
 // local (`pnpm start` from Intake-form/) and the Docker image keep the SPA
 // build at this same relative path.
 const STATIC_ROOT = "artifacts/intake-form/dist/public";
 
+// ---- Marketing analytics tag (agency container) -----------------------
+// Registered BEFORE the static handlers, on three LITERAL paths, so it can only
+// ever run for the three public intake forms. /admin/* does not match any of
+// them and falls straight through to serveStatic, which returns the build's
+// index.html byte-for-byte — the tag is absent from the admin document, not
+// merely suppressed inside it. See api/_lib/analytics.ts for why that matters.
+//
+// Off unless INTREPY_ANALYTICS_ENABLED=true AND INTREPY_ANALYTICS_SRC is a valid
+// https URL; either missing means the routes are never registered at all.
+const ANALYTICS_SRC = analyticsSrc(process.env.INTREPY_ANALYTICS_SRC);
+const ANALYTICS_ON = analyticsEnabled(process.env.INTREPY_ANALYTICS_ENABLED);
+
+if (ANALYTICS_ON && ANALYTICS_SRC) {
+  for (const route of ANALYTICS_ROUTES) {
+    app.get(route, async (c, next) => {
+      let shell: string;
+      try {
+        shell = await readFile(`${STATIC_ROOT}/index.html`, "utf-8");
+      } catch {
+        // Unreadable shell: hand the request to serveStatic untouched. A form
+        // page must never fail to render because of an analytics tag.
+        return next();
+      }
+      const html = injectAnalytics(c.req.path, shell, ANALYTICS_SRC);
+      if (html === null) return next();
+      return c.html(html);
+    });
+  }
+  console.log(
+    `[analytics] enabled for ${ANALYTICS_ROUTES.join(", ")} — src ${ANALYTICS_SRC}`,
+  );
+} else {
+  console.log("[analytics] disabled (no tag injected on any route)");
+}
+
+// ---- Static SPA + client-side-routing fallback ------------------------
+// STATIC_ROOT is resolved relative to the process working directory. Both
+// local (`pnpm start` from Intake-form/) and the Docker image keep the SPA
+// build at this same relative path.
 app.use("/*", serveStatic({ root: STATIC_ROOT }));
 // SPA fallback: any unmatched non-API GET returns index.html so wouter can
 // resolve client-side routes (/admin/*, etc.).
