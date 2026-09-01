@@ -671,6 +671,19 @@ export default function Integration() {
           <div className="mt-1 text-[14px] text-slate-500">
             It prints every message the page receives from the form.
           </div>
+          <div className="mt-3">
+            <B>If Chrome refuses to paste</B>, it will print a warning about pasting
+            code into the console instead of running the line. Type <C>allow pasting</C>{" "}
+            into the console, press Enter, then paste the line again. Chrome blocks
+            console pasting by default, so this happens on most machines the first time
+            &mdash; it is not a sign anything is wrong.
+          </div>
+          <div className="mt-3 text-[14.5px] text-slate-600">
+            Paste it <em>before</em> the form has finished loading. The listener only
+            sees messages sent after it is running, and the first height messages arrive
+            while the form is still coming up. Arm it late and the console stays quiet
+            until you interact with the form, which looks like nothing is happening.
+          </div>
         </Step>
 
         <Step n={5} title="Watch the height messages appear">
