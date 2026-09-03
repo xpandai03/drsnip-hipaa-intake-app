@@ -286,3 +286,55 @@
     inset: -1px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Insurance form — compact density
+   ---------------------------------------------------------------------------
+   The client asked for the embedded insurance form to take less vertical space.
+   The field kit it uses (components/ui/form-fields.tsx, Input.tsx, DatePicker,
+   FileUploadStub) is SHARED with the Registration and Consultation forms, which
+   were explicitly out of scope — so none of those components were touched.
+   Instead the sizing is overridden here, scoped under .ins-compact, a class set
+   on the Insurance page's root element only (pages/Insurance.tsx). Nothing
+   outside that subtree can match these rules.
+
+   The doubled .ins-compact.ins-compact carries specificity (0,2,x), which beats
+   a Tailwind utility (0,1,0) without needing !important. space-y-* ships inside
+   :where() at (0,0,0), so it is overridden by anything.
+
+   Floors held on purpose:
+     • 16px control font — below that iOS Safari zooms the page on focus, which
+       on a two-step form reads as the layout breaking.
+     • 48px control height — above the 44px minimum touch target. That is what
+       sets the padding at 10px rather than something tighter.
+   --------------------------------------------------------------------------- */
+
+.ins-compact.ins-compact :is(input:not([type="file"]), select, textarea, button.py-4) {
+  padding-block: 0.625rem;          /* 16px -> 10px */
+  padding-inline: 1rem;             /* 20px -> 16px */
+  font-size: 1rem;                  /* 18px -> 16px (iOS zoom floor) */
+  line-height: 1.5rem;
+  border-radius: 0.75rem;           /* 16px -> 12px */
+}
+
+/* The native select's chevron is absolutely positioned 20px from the edge;
+   keep the value clear of it now that the box is tighter. */
+.ins-compact.ins-compact select {
+  padding-inline-end: 2.75rem;
+}
+
+.ins-compact.ins-compact textarea {
+  min-height: 5.5rem;               /* 120px -> 88px */
+}
+
+/* Label -> control gap inside FieldShell. */
+.ins-compact.ins-compact .space-y-2 > :not(:last-child) {
+  margin-block-end: 0.25rem;        /* 8px -> 4px */
+}
+
+/* Gap between fields, and between the two-column pairs. */
+.ins-compact.ins-compact .gap-5 { gap: 0.875rem; }   /* 20px -> 14px */
+.ins-compact.ins-compact .gap-6 { gap: 1rem; }       /* 24px -> 16px */
+
+/* Card-image dropzone. */
+.ins-compact.ins-compact .border-dashed { padding: 0.875rem; }

@@ -378,16 +378,30 @@ export default function Insurance() {
   } as React.CSSProperties;
 
   return (
-    <div ref={rootRef} style={themeStyle} className="w-full min-w-0 text-slate-800">
-      <div className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 sm:py-8">
+    <div
+      ref={rootRef}
+      style={themeStyle}
+      // ins-compact scopes the tighter field sizing to THIS form only — see the
+      // block at the end of src/index.css. Registration and consultation share
+      // the same field components and must not inherit it.
+      className="ins-compact w-full min-w-0 text-slate-800"
+    >
+      <div className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-4 sm:py-6">
         {submitState === "success" ? (
           <SuccessCard />
         ) : (
           <div className="rounded-3xl bg-white shadow-xl shadow-black/5 ring-1 ring-slate-100 p-5 sm:p-8">
             {/* Header + progress */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
+            <div className="mb-5">
+              {/* Form title (client request). Deliberately an h2: the step title
+                  below is the page's h1 and a third party's tag reads
+                  document.querySelector("h1"), so promoting this would change
+                  what that selector returns. */}
+              <h2 className="text-2xl sm:text-[28px] font-bold leading-tight text-slate-900 mb-4">
+                Get Your Vasectomy Cost Estimate
+              </h2>
+              <div className="flex items-center justify-between mb-2.5">
+                <h1 className="text-sm font-semibold text-slate-500">
                   {current.title}
                 </h1>
                 <span className="text-xs font-medium text-slate-400 shrink-0 ml-3">
@@ -417,7 +431,7 @@ export default function Insurance() {
             )}
 
             {/* Nav (inline, not fixed — flows with content for auto-height) */}
-            <div className="mt-8 flex items-center justify-between gap-4">
+            <div className="mt-6 flex items-center justify-between gap-4">
               {stepIndex > 0 ? (
                 <button
                   type="button"
