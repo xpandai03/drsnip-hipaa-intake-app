@@ -1,0 +1,35 @@
+{
+ "consultation_v2": {
+  "id": "4UicLLZRRMeENXhx",
+  "versionId": "02a34303-bafe-4112-9054-45be95e50e02",
+  "updatedAt": "2026-07-20T22:19:29.233Z",
+  "nodes": 18,
+  "conns": 14,
+  "active": true,
+  "put_valid": true,
+  "full_bytes": 84281,
+  "put_bytes": 41027
+ },
+ "registration_v2": {
+  "id": "H2HihkGKntbfRNcK",
+  "versionId": "a2945235-e734-473d-b885-6b230a823bd6",
+  "updatedAt": "2026-07-20T22:19:20.751Z",
+  "nodes": 29,
+  "conns": 23,
+  "active": true,
+  "put_valid": true,
+  "full_bytes": 119005,
+  "put_bytes": 58127
+ },
+ "insurance_v1": {
+  "id": "oLbn4ZWFXu8Lei3I",
+  "versionId": "2d8e9d7c-229f-4bce-a494-e0ee5b1400eb",
+  "updatedAt": "2026-08-20T01:29:09.877Z",
+  "nodes": 33,
+  "conns": 29,
+  "active": true,
+  "put_valid": true,
+  "full_bytes": 85919,
+  "put_bytes": 41493
+ }
+}
