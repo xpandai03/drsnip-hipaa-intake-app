@@ -177,13 +177,33 @@ function flatQWithDetail(label: string, key: string, detailKey: string): Column[
 }
 
 // Meta / ops columns — placed at the END (clinical answer data leads).
+/** Stuck threshold, mirrored from api/internal/sweep.ts. */
+const STUCK_AFTER_MS = 10 * 60 * 1000;
+
+/** "stuck" once a row has no bridge result and has waited longer than any
+ *  plausible run; "pending" before that. Exported for the unit test. */
+export function syncStatusCell(
+  r: { n8nStatus: unknown; createdAt: unknown },
+  now: number = Date.now(),
+): string {
+  if (r.n8nStatus !== null && r.n8nStatus !== undefined) {
+    return scalar(r.n8nStatus);
+  }
+  const t = Date.parse(String(r.createdAt));
+  if (!Number.isNaN(t) && now - t > STUCK_AFTER_MS) return "stuck";
+  return "pending";
+}
+
 const META_COLUMNS: Column[] = [
   { header: "Submission ID", get: (r) => r.id },
   // Pacific-time, split into two columns (client converts by hand from UTC today).
   { header: "Submitted Date (PT)", get: (r) => toPacificParts(r.createdAt).date },
   { header: "Submitted Time (PT)", get: (r) => toPacificParts(r.createdAt).time },
   { header: "Form Type", get: (r) => r.formType },
-  { header: "DrChrono Sync Status", get: (r) => scalar(r.n8nStatus) },
+  // Train 3: a NULL status past the stuck threshold is not "pending" — no code
+  // path will ever fill it in. Must match STUCK_AFTER_MINUTES in
+  // api/internal/sweep.ts and STUCK_AFTER_MS in the console.
+  { header: "DrChrono Sync Status", get: (r) => syncStatusCell(r) },
   { header: "DrChrono Patient ID", get: (r) => (r.n8nPatientId == null ? "" : String(r.n8nPatientId)) },
   { header: "DrChrono Sync At (PT)", get: (r) => toPacific(r.n8nResponseAt) },
 ];

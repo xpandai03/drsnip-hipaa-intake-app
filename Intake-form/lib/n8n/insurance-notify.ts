@@ -118,6 +118,14 @@ function audit(event: string, fields: Record<string, unknown>): void {
   );
 }
 
+/** Train 3 — optional outcome reporter; mirrors SendReporter in
+ *  lib/email/patientmail.ts. Reporting never affects the send. */
+export interface NotifySendResult {
+  outcome: "sent" | "skipped" | "error";
+  detail: string | null;
+}
+export type NotifyReporter = (r: NotifySendResult) => void;
+
 /** Transport seam — injectable for tests. Default posts to the n8n webhook. */
 export type NotifyTransport = (
   env: NotifyEnv,
@@ -156,11 +164,20 @@ function httpTransport(): NotifyTransport {
 export async function notifyInsuranceSubmission(
   input: InsuranceNotifyInput,
   transport?: NotifyTransport,
+  report?: NotifyReporter,
 ): Promise<boolean> {
+  const tell = (r: NotifySendResult): void => {
+    try {
+      report?.(r);
+    } catch {
+      /* reporting must never affect the send */
+    }
+  };
   try {
     const env = readEnv();
     if (!env.url) {
       audit("skipped", { submission_id: input.submissionId, reason: "no_url" });
+      tell({ outcome: "skipped", detail: "no_url" });
       return false;
     }
     const msg = buildInsuranceNotification(input);
@@ -171,12 +188,12 @@ export async function notifyInsuranceSubmission(
       body: msg.body,
     });
     audit("sent", { submission_id: input.submissionId, channel: "n8n_gmail" });
+    tell({ outcome: "sent", detail: null });
     return true;
   } catch (err) {
-    audit("error", {
-      submission_id: input.submissionId,
-      error: err instanceof Error ? err.name : "UnknownError",
-    });
+    const name = err instanceof Error ? err.name : "UnknownError";
+    audit("error", { submission_id: input.submissionId, error: name });
+    tell({ outcome: "error", detail: name });
     return false;
   }
 }

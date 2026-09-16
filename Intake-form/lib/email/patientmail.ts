@@ -37,6 +37,17 @@ export interface MailMessage {
  *  default implementation is SMTP via nodemailer (see smtpTransport). */
 export type MailTransport = (msg: MailMessage) => Promise<void>;
 
+/** Train 3 — optional outcome reporter so the CALLER can ledger the attempt.
+ *  A callback rather than a DB write in here: this module stays unit-testable
+ *  with no database, and the caller already owns the submission id and the
+ *  post-response track() wrapper. Reporting never affects the send. */
+export interface SendResult {
+  outcome: "sent" | "skipped" | "error";
+  /** Short machine reason — never a rendered message or an address. */
+  detail: string | null;
+}
+export type SendReporter = (r: SendResult) => void;
+
 interface PatientmailConfig {
   enabled: boolean;
   to: string;
@@ -124,11 +135,20 @@ function audit(event: string, fields: Record<string, unknown>): void {
 export async function notifyPatientSubmission(
   n: PatientNotification,
   transport?: MailTransport,
+  report?: SendReporter,
 ): Promise<boolean> {
+  const tell = (r: SendResult): void => {
+    try {
+      report?.(r);
+    } catch {
+      /* reporting must never affect the send */
+    }
+  };
   try {
     const cfg = readConfig();
     if (!cfg.enabled) {
       audit("skipped", { submission_id: n.submissionId, reason: "disabled" });
+      tell({ outcome: "skipped", detail: "disabled" });
       return false;
     }
     if (!cfg.to) {
@@ -136,6 +156,7 @@ export async function notifyPatientSubmission(
         submission_id: n.submissionId,
         reason: "no_recipient",
       });
+      tell({ outcome: "skipped", detail: "no_recipient" });
       return false;
     }
 
@@ -144,13 +165,13 @@ export async function notifyPatientSubmission(
 
     // Audit on success — recipient + submission id only, no PHI values.
     audit("sent", { submission_id: n.submissionId, recipient: cfg.to });
+    tell({ outcome: "sent", detail: null });
     return true;
   } catch (err) {
     // Best-effort: swallow + log the error TYPE only (no PHI, no message body).
-    audit("error", {
-      submission_id: n.submissionId,
-      error: err instanceof Error ? err.name : "UnknownError",
-    });
+    const name = err instanceof Error ? err.name : "UnknownError";
+    audit("error", { submission_id: n.submissionId, error: name });
+    tell({ outcome: "error", detail: name });
     return false;
   }
 }
