@@ -26,6 +26,7 @@ import adminRole from "../lib/db/migrations/0007_admin_role.sql";
 import attribution from "../lib/db/migrations/0008_attribution.sql";
 import registrationPartials from "../lib/db/migrations/0009_registration_partials.sql";
 import submissionFiles from "../lib/db/migrations/0010_submission_files.sql";
+import notificationEvents from "../lib/db/migrations/0011_notification_events.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -40,6 +41,7 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0008_attribution", sql: attribution },
   { name: "0009_registration_partials", sql: registrationPartials },
   { name: "0010_submission_files", sql: submissionFiles },
+  { name: "0011_notification_events", sql: notificationEvents },
   { name: "seed-admin", sql: seedAdmin },
 ];
 

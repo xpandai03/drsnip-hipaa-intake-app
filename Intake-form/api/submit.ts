@@ -20,6 +20,7 @@ import { extractAttribution, validateSource } from "./_lib/attribution";
 import { storeSubmissionFiles } from "./_lib/card-files";
 import { fireConversion } from "../lib/conversion/track";
 import { track } from "../lib/lifecycle/inflight";
+import { record as recordNotification } from "../lib/notifications/ledger";
 import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -280,7 +281,20 @@ export default async function handler(
     } else {
       // Bridge off => no workflow runs => the app is the ONLY possible sender.
       void track(markBridgeSkipped(submissionId));
-      void track(notifyInsuranceSubmission(notification));
+      void track(
+        notifyInsuranceSubmission(notification, undefined, (r) => {
+          void track(
+            recordNotification({
+              submissionId,
+              channel: "insurance_notify",
+              kind: "insurance_arrived",
+              recipientClass: "staff",
+              outcome: r.outcome,
+              detail: r.detail,
+            }),
+          );
+        }),
+      );
     }
   } else {
     void track(runN8nBridge(submissionId, body)).catch((err) => {
@@ -388,13 +402,28 @@ async function runN8nBridge(
   // submission. The DrChrono Patient ID does not exist yet and is omitted.
   if (shouldNotify(outcome.status)) {
     const officeRaw = (body as Record<string, unknown>).officeLocation;
-    await notifyPatientSubmission({
-      submissionId,
-      office: typeof officeRaw === "string" ? officeRaw : "",
-      name: `${body.firstName} ${body.lastName}`.trim(),
-      dob: body.dateOfBirth ?? "",
-      phone: body.phone,
-    });
+    await notifyPatientSubmission(
+      {
+        submissionId,
+        office: typeof officeRaw === "string" ? officeRaw : "",
+        name: `${body.firstName} ${body.lastName}`.trim(),
+        dob: body.dateOfBirth ?? "",
+        phone: body.phone,
+      },
+      undefined,
+      (r) => {
+        void track(
+          recordNotification({
+            submissionId,
+            channel: "patientmail",
+            kind: "chart_created",
+            recipientClass: "staff",
+            outcome: r.outcome,
+            detail: r.detail,
+          }),
+        );
+      },
+    );
   }
 }
 
@@ -442,7 +471,18 @@ async function runInsuranceBridge(
   // chart-linked email, so sending here too would duplicate it. On anything
   // else nothing has emailed yet, and staff must still be told.
   if (shouldSendFallback(outcome.status)) {
-    await notifyInsuranceSubmission(notification);
+    await notifyInsuranceSubmission(notification, undefined, (r) => {
+      void track(
+        recordNotification({
+          submissionId,
+          channel: "fallback_doorbell",
+          kind: `bridge_${outcome.status}`,
+          recipientClass: "staff",
+          outcome: r.outcome,
+          detail: r.detail,
+        }),
+      );
+    });
   }
 }
 

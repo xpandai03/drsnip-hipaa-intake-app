@@ -37,6 +37,7 @@ import {
   formTypeLabel,
   n8nStatusBadgeClass,
   n8nStatusLabel,
+  n8nStatusTitle,
 } from "./Submissions";
 
 // ---------------------------------------------------------------------------
@@ -441,8 +442,11 @@ function N8nOutcomeSection({ submission }: { submission: DetailSubmission }) {
     <Section title="n8n / DrChrono">
       <div className="py-2 flex items-center justify-between gap-3">
         <span className="text-sm text-slate-500 shrink-0">Status</span>
-        <Chip className={n8nStatusBadgeClass(s.n8nStatus)}>
-          {n8nStatusLabel(s.n8nStatus)}
+        <Chip
+          className={n8nStatusBadgeClass(s.n8nStatus, s.createdAt)}
+          title={n8nStatusTitle(s.n8nStatus, s.createdAt)}
+        >
+          {n8nStatusLabel(s.n8nStatus, s.createdAt)}
         </Chip>
       </div>
       <div className="py-2 flex items-start justify-between gap-6 border-t border-slate-100">

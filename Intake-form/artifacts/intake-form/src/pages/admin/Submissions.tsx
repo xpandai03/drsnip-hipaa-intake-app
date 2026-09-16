@@ -121,18 +121,47 @@ function formTypeBadgeClass(formType: string): string {
   }
 }
 
+// Train 3 — a NULL status is only "pending" for the first few minutes. After
+// that the bridge result is never coming: the write-back was lost and nothing
+// will ever fill it in, because no code path revisits a row. Rendering that as
+// "pending" forever is exactly how 8faf35fc sat unnoticed for two days
+// (FINDINGS-submission-health.md §4.1 item 2). Must match STUCK_AFTER_MINUTES
+// in api/internal/sweep.ts.
+export const STUCK_AFTER_MS = 10 * 60 * 1000;
+
+/** True when a row has no bridge result and has waited longer than any
+ *  plausible run. Observed n8n stalls have reached 269 s, so a row a few
+ *  minutes old is legitimately in flight. Pure, so the boundary is testable. */
+export function isStuck(
+  n8nStatus: SubmissionRow["n8nStatus"],
+  createdAt: string,
+  now: number = Date.now(),
+): boolean {
+  if (n8nStatus !== null && n8nStatus !== undefined) return false;
+  const t = Date.parse(createdAt);
+  if (Number.isNaN(t)) return false;
+  return now - t > STUCK_AFTER_MS;
+}
+
 // Phase 3 n8n bridge — outcome badge styling + human label.
-function n8nStatusLabel(s: SubmissionRow["n8nStatus"]): string {
+function n8nStatusLabel(
+  s: SubmissionRow["n8nStatus"],
+  createdAt?: string,
+): string {
   if (s === "success") return "n8n: success";
   if (s === "manual_review") return "n8n: manual review";
   if (s === "failed") return "n8n: failed";
   // Insurance submissions intentionally skip the bridge (no n8n workflow), so
   // their status is 'not_applicable' — show "n/a", not the misleading "pending".
   if ((s as unknown as string) === "not_applicable") return "n8n: n/a";
+  if (createdAt !== undefined && isStuck(s, createdAt)) return "n8n: stuck";
   return "n8n: pending";
 }
 
-function n8nStatusBadgeClass(s: SubmissionRow["n8nStatus"]): string {
+function n8nStatusBadgeClass(
+  s: SubmissionRow["n8nStatus"],
+  createdAt?: string,
+): string {
   switch (s) {
     case "success":
       return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -141,8 +170,22 @@ function n8nStatusBadgeClass(s: SubmissionRow["n8nStatus"]): string {
     case "failed":
       return "bg-rose-100 text-rose-800 border-rose-200";
     default:
+      if (createdAt !== undefined && isStuck(s, createdAt)) {
+        return "bg-rose-100 text-rose-800 border-rose-300";
+      }
       return "bg-slate-100 text-slate-600 border-slate-200";
   }
+}
+
+/** Tooltip for the chip; only the stuck state needs explaining. */
+function n8nStatusTitle(
+  s: SubmissionRow["n8nStatus"],
+  createdAt?: string,
+): string | undefined {
+  if (createdAt !== undefined && isStuck(s, createdAt)) {
+    return "no bridge result recorded";
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -793,8 +836,11 @@ function ResultsTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    <Chip className={n8nStatusBadgeClass(row.n8nStatus)}>
-                      {n8nStatusLabel(row.n8nStatus)}
+                    <Chip
+                      className={n8nStatusBadgeClass(row.n8nStatus, row.createdAt)}
+                      title={n8nStatusTitle(row.n8nStatus, row.createdAt)}
+                    >
+                      {n8nStatusLabel(row.n8nStatus, row.createdAt)}
                     </Chip>
                   </TableCell>
                   <TableCell>
@@ -900,8 +946,11 @@ function ResultsTable({
                       <Chip className={formTypeBadgeClass(row.formType)}>
                         {formTypeLabel(row.formType)}
                       </Chip>
-                      <Chip className={n8nStatusBadgeClass(row.n8nStatus)}>
-                        {n8nStatusLabel(row.n8nStatus)}
+                      <Chip
+                        className={n8nStatusBadgeClass(row.n8nStatus, row.createdAt)}
+                        title={n8nStatusTitle(row.n8nStatus, row.createdAt)}
+                      >
+                        {n8nStatusLabel(row.n8nStatus, row.createdAt)}
                       </Chip>
                     </div>
                     <div className="mt-1.5 truncate text-sm text-slate-600">
@@ -988,12 +1037,17 @@ function ResultsTable({
 function Chip({
   children,
   className,
+  title,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Native tooltip. Train 3 uses it to explain the "stuck" state; it must
+   *  never carry PHI, only a state description. */
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={
         "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border " +
         (className ?? "")
@@ -1085,5 +1139,6 @@ export {
   formTypeBadgeClass,
   n8nStatusLabel,
   n8nStatusBadgeClass,
+  n8nStatusTitle,
 };
 export type { SubmissionRow };

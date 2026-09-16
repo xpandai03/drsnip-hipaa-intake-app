@@ -26,6 +26,7 @@ import * as settingsSchema from "./schema/settings.js";
 import * as submissionsSchema from "./schema/submissions.js";
 import * as registrationPartialsSchema from "./schema/registration-partials.js";
 import * as submissionFilesSchema from "./schema/submission-files.js";
+import * as notificationEventsSchema from "./schema/notification-events.js";
 
 // ---------------------------------------------------------------------------
 // INLINED: auth schema lives here directly rather than in ./schema/auth
@@ -131,6 +132,7 @@ const schema = {
   ...submissionsSchema,
   ...registrationPartialsSchema,
   ...submissionFilesSchema,
+  ...notificationEventsSchema,
 };
 
 const { Pool } = pg;
@@ -157,6 +159,7 @@ export * from "./schema/settings.js";
 export * from "./schema/submissions.js";
 export * from "./schema/registration-partials.js";
 export * from "./schema/submission-files.js";
+export * from "./schema/notification-events.js";
 
 // Re-export the drizzle query-builder helpers we use across the app.
 // API code (Intake-form/api/*) imports these from @workspace/db so there's
