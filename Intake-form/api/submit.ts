@@ -19,6 +19,7 @@ import {
 import { extractAttribution, validateSource } from "./_lib/attribution";
 import { storeSubmissionFiles } from "./_lib/card-files";
 import { fireConversion } from "../lib/conversion/track";
+import { track } from "../lib/lifecycle/inflight";
 import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -206,7 +207,7 @@ export default async function handler(
   // Persist uploaded card bytes into submission_files. Runs after the response
   // and never throws — a file failure must never fail intake. Consultation has
   // no card fields, so this is a no-op there.
-  void storeSubmissionFiles(submissionId, body);
+  void track(storeSubmissionFiles(submissionId, body));
 
   // ---- Dormant conversion signal (Phase 2) -----------------------------
   // Fires on SUBMISSION success (the row above committed), independent of the
@@ -269,7 +270,7 @@ export default async function handler(
       submittedAt: new Date(),
     };
     if (insuranceBridgeEnabled()) {
-      void runInsuranceBridge(submissionId, body, notification).catch((err) => {
+      void track(runInsuranceBridge(submissionId, body, notification)).catch((err) => {
         // Defensive: should never hit. Bridge code catches internally.
         console.error(
           "submit: unexpected insurance bridge error",
@@ -278,11 +279,11 @@ export default async function handler(
       });
     } else {
       // Bridge off => no workflow runs => the app is the ONLY possible sender.
-      void markBridgeSkipped(submissionId);
-      void notifyInsuranceSubmission(notification);
+      void track(markBridgeSkipped(submissionId));
+      void track(notifyInsuranceSubmission(notification));
     }
   } else {
-    void runN8nBridge(submissionId, body).catch((err) => {
+    void track(runN8nBridge(submissionId, body)).catch((err) => {
       // Defensive: should never hit. Bridge code catches internally.
       console.error(
         "submit: unexpected bridge error",

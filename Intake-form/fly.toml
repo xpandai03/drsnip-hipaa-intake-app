@@ -22,6 +22,12 @@
 app = "drsnip-intake-demo"
 primary_region = "lax"
 
+# Train 2: give the shutdown drain room to finish. The bridge's own abort is
+# 30 s and lib/lifecycle/inflight.ts caps the drain at 40 s, so Fly must not
+# SIGKILL before then. Fly's default is 5 s, which cut every drain short.
+# MUST stay above any table header — a bare key after one binds to that table.
+kill_timeout = "45s"
+
 [build]
   dockerfile = "Dockerfile"
 
@@ -48,7 +54,12 @@ primary_region = "lax"
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 0
+  # Train 2 (Class G). Was 0. api/submit.ts answers the caller and THEN runs the
+  # n8n bridge; scaling the last machine to zero mid-bridge took the status
+  # write-back with it and left the row's n8n_status NULL forever. One machine
+  # now always stays up; the SECOND machine still autostops, so the cost delta
+  # is one always-on shared-cpu-1x/512MB.
+  min_machines_running = 1
   processes = ["app"]
 
   [[http_service.checks]]

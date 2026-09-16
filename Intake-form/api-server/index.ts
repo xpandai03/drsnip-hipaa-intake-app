@@ -13,6 +13,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { adapt } from "./vercel-adapter";
+import { gracefulShutdown } from "../lib/lifecycle/inflight";
 import {
   frameAncestorsFor,
   xFrameOptionsFor,
@@ -187,6 +188,29 @@ app.use("/*", serveStatic({ root: STATIC_ROOT }));
 app.get("/*", serveStatic({ path: `${STATIC_ROOT}/index.html` }));
 
 const port = Number(process.env.PORT ?? 8080);
-serve({ fetch: app.fetch, port }, (info) => {
+const server = serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[api-server] listening on port ${info.port}`);
 });
+
+// ---- Graceful shutdown (Train 2) --------------------------------------
+// api/submit.ts answers the caller and THEN runs the n8n bridge, which only
+// writes the outcome back onto the row once n8n replies. Fly autostops this
+// machine (auto_stop_machines, min_machines_running was 0) and previously sent
+// SIGINT into a process with no handler — it died with exit_code 130 and any
+// in-flight write-back died with it, leaving the row's n8n_status NULL.
+//
+// Now: stop accepting connections, wait for the tracked bridge promises, exit.
+// fly.toml's kill_timeout (45 s) must stay above DRAIN_CAP_MS (40 s), which in
+// turn is above the bridge's own 30 s abort.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    void gracefulShutdown({
+      signal,
+      closeServer: () =>
+        new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        }),
+      exit: (code) => process.exit(code),
+    });
+  });
+}
