@@ -19,6 +19,7 @@ import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
+import AdminInsuranceDemo from "@/pages/admin/insurance-demo/InsuranceDemo";
 import { AuthProvider } from "@/lib/auth-context";
 
 const queryClient = new QueryClient();
@@ -118,6 +119,16 @@ function Router() {
       <Route path="/admin/sources">
         <WithAuth>
           <AdminSources />
+        </WithAuth>
+      </Route>
+      {/* Insurance follow-up DEMONSTRATION. Synthetic data only — the page
+          reads a static fixture module and nothing else (see
+          pages/admin/insurance-demo/demo-fixtures.ts). Auth-gated like every
+          other admin route. Views are selected by ?view=, so each one has its
+          own shareable link. */}
+      <Route path="/admin/insurance-demo">
+        <WithAuth>
+          <AdminInsuranceDemo />
         </WithAuth>
       </Route>
       <Route component={NotFound} />

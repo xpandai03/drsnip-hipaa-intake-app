@@ -1,47 +1,58 @@
-// GET /api/submissions/activity — aggregated daily counts for the heatmap.
+// GET /api/submissions/activity — aggregated daily counts for the volume chart.
 //
 // Auth-guarded. Returns daily totals plus a per-form-type breakdown inside the
-// requested date window. Defaults to the last 90 days.
+// requested window. Defaults to the last 90 clinic days.
 //
-// Phase 2 (DrSnip): aggregates by `form_type` (registration | consultation)
-// instead of the removed CJC `source`; the per-rank breakdown and the
-// sent/errored summary tiles were dropped with the scoring + Salesforce
-// subsystems.
+// Query params (all optional):
+//   start_date / from   YYYY-MM-DD inclusive (clinic day)
+//   end_date   / to     YYYY-MM-DD inclusive (clinic day)
+//   location            one of the canonical clinic locations
+//
+// TWO CORRECTIONS vs the previous version:
+//
+//   1. Buckets are CLINIC days (Pacific), not UTC days. This endpoint used
+//      `DATE_TRUNC('day', created_at AT TIME ZONE 'UTC')`, so a 10 PM Pacific
+//      submission was charted on the following day while every CSV column and
+//      the submissions list showed the Pacific day. See api/_lib/clinic-time.ts.
+//
+//   2. INSURANCE is in the breakdown. `by_form_type` carried only
+//      `registration` and `consultation` while `total` summed every form type,
+//      so insurance submissions were counted in the total and dropped from the
+//      series — the stacked bars could not add up to their own total, and
+//      insurance volume was invisible. `by_form_type` is now keyed by the
+//      actual form_type values present, and `series` names them explicitly.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { db, sql } from "@workspace/db";
 import { requireAuth } from "../_lib/auth";
+import { isAllowedLocation } from "../_lib/location";
+import { buildWhere, firstOf, ALLOWED_FORM_TYPES } from "../_lib/reporting";
+import {
+  CLINIC_TZ,
+  CLINIC_TZ_LABEL,
+  addClinicDays,
+  clinicDayRange,
+  clinicDayStart,
+  clinicDayEndExclusive,
+  isClinicDay,
+  todayClinicDay,
+} from "../_lib/clinic-time";
 
-function firstOf(value: unknown): string | undefined {
-  if (Array.isArray(value)) return value[0] as string | undefined;
-  if (typeof value === "string") return value;
-  return undefined;
-}
+const DEFAULT_WINDOW_DAYS = 90;
+const MAX_WINDOW_DAYS = 400;
 
-function parseDateUtc(value: unknown): Date | undefined {
-  const v = firstOf(value);
-  if (!v) return undefined;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-  if (!m) return undefined;
-  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0));
-}
-
-function toIsoDay(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function addDaysUtc(d: Date, n: number): Date {
-  return new Date(d.getTime() + n * 24 * 60 * 60 * 1000);
-}
-
+type FormCounts = Record<string, number>;
 type DayBucket = {
   date: string;
   total: number;
-  by_form_type: { registration: number; consultation: number };
+  by_form_type: FormCounts;
 };
+
+function zeroCounts(): FormCounts {
+  const out: FormCounts = {};
+  for (const ft of ALLOWED_FORM_TYPES) out[ft] = 0;
+  return out;
+}
 
 export default async function handler(
   req: VercelRequest,
@@ -54,95 +65,89 @@ export default async function handler(
   const auth = await requireAuth(req, res);
   if (!auth) return;
 
-  const todayUtc = new Date(
-    Date.UTC(
-      new Date().getUTCFullYear(),
-      new Date().getUTCMonth(),
-      new Date().getUTCDate(),
-      0, 0, 0, 0,
-    ),
-  );
+  // Accept both the original start_date/end_date and the from/to used by
+  // /api/reports/*, so the dashboard can drive one window across every tile.
+  const endRaw = firstOf(req.query.end_date) ?? firstOf(req.query.to);
+  const startRaw = firstOf(req.query.start_date) ?? firstOf(req.query.from);
 
-  const endDate = parseDateUtc(req.query.end_date) ?? todayUtc;
-  const defaultStart = addDaysUtc(endDate, -89); // 90-day window inclusive
-  const startDate = parseDateUtc(req.query.start_date) ?? defaultStart;
+  const endDay = isClinicDay(endRaw) ? endRaw : todayClinicDay();
+  const startDay = isClinicDay(startRaw)
+    ? startRaw
+    : addClinicDays(endDay, -(DEFAULT_WINDOW_DAYS - 1));
 
-  if (startDate.getTime() > endDate.getTime()) {
-    return res
-      .status(400)
-      .json({ error: "start_date must be <= end_date" });
+  if (startDay > endDay) {
+    return res.status(400).json({ error: "start_date must be <= end_date" });
   }
 
-  const endExclusive = addDaysUtc(endDate, 1);
+  const days = clinicDayRange(startDay, endDay);
+  if (days.length === 0 || days.length > MAX_WINDOW_DAYS) {
+    return res
+      .status(400)
+      .json({ error: `window must be between 1 and ${MAX_WINDOW_DAYS} days` });
+  }
 
-  // One row per (day, form_type) tuple.
-  const dailyResult = await db.execute<{
+  const locationParam = firstOf(req.query.location);
+  const location = isAllowedLocation(locationParam) ? locationParam : undefined;
+
+  const where = buildWhere({
+    from: clinicDayStart(startDay),
+    toExclusive: clinicDayEndExclusive(endDay),
+    location,
+  });
+
+  // One row per (clinic day, form_type).
+  const daily = await db.execute<{
     day: string;
     form_type: string;
-    total: string;
+    total: number;
   }>(sql`
     SELECT
-      TO_CHAR(DATE_TRUNC('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+      to_char(date_trunc('day', created_at AT TIME ZONE ${CLINIC_TZ}), 'YYYY-MM-DD') AS day,
       form_type,
-      COUNT(*)::text AS total
+      count(*)::int AS total
     FROM submissions
-    WHERE created_at >= ${startDate}
-      AND created_at < ${endExclusive}
+    ${where}
     GROUP BY 1, 2
     ORDER BY 1
   `);
 
-  // Seed every day in the range so empty days return explicit zeros.
+  // Seed every day so empty days return explicit zeros (a measured zero, not a
+  // gap) and the series is dense for the chart.
   const buckets = new Map<string, DayBucket>();
-  for (
-    let d = new Date(startDate.getTime());
-    d.getTime() <= endDate.getTime();
-    d = addDaysUtc(d, 1)
-  ) {
-    const key = toIsoDay(d);
-    buckets.set(key, {
-      date: key,
-      total: 0,
-      by_form_type: { registration: 0, consultation: 0 },
-    });
+  for (const day of days) {
+    buckets.set(day, { date: day, total: 0, by_form_type: zeroCounts() });
   }
 
-  for (const row of dailyResult.rows) {
+  const summary: FormCounts = zeroCounts();
+  let total = 0;
+  // Any form_type the DB returns that is not in the allow-list still has to be
+  // counted somewhere visible, or the totals stop reconciling again.
+  const seen = new Set<string>(ALLOWED_FORM_TYPES);
+
+  for (const row of daily.rows) {
     const bucket = buckets.get(row.day);
-    if (!bucket) continue;
     const n = Number(row.total) || 0;
-    bucket.total += n;
-    if (row.form_type === "registration") {
-      bucket.by_form_type.registration += n;
-    } else if (row.form_type === "consultation") {
-      bucket.by_form_type.consultation += n;
+    const ft = row.form_type ?? "unknown";
+    seen.add(ft);
+    if (bucket) {
+      bucket.total += n;
+      bucket.by_form_type[ft] = (bucket.by_form_type[ft] ?? 0) + n;
     }
+    summary[ft] = (summary[ft] ?? 0) + n;
+    total += n;
   }
 
-  // Window summary — total + per-form-type.
-  const summaryResult = await db.execute<{
-    total: string;
-    registration: string;
-    consultation: string;
-  }>(sql`
-    SELECT
-      COUNT(*)::text AS total,
-      SUM(CASE WHEN form_type = 'registration' THEN 1 ELSE 0 END)::text AS registration,
-      SUM(CASE WHEN form_type = 'consultation' THEN 1 ELSE 0 END)::text AS consultation
-    FROM submissions
-    WHERE created_at >= ${startDate}
-      AND created_at < ${endExclusive}
-  `);
-  const sRow = summaryResult.rows[0];
+  const series = [...seen].sort();
 
   return res.status(200).json({
-    start_date: toIsoDay(startDate),
-    end_date: toIsoDay(endDate),
-    daily_counts: Array.from(buckets.values()),
-    summary: {
-      total: Number(sRow?.total ?? 0),
-      registration: Number(sRow?.registration ?? 0),
-      consultation: Number(sRow?.consultation ?? 0),
-    },
+    start_date: startDay,
+    end_date: endDay,
+    timezone: CLINIC_TZ,
+    timezone_label: CLINIC_TZ_LABEL,
+    location: location ?? null,
+    /** The form types present in this response, in a stable order. */
+    series,
+    daily_counts: [...buckets.values()],
+    summary: { total, ...summary },
   });
 }

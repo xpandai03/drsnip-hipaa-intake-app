@@ -1,0 +1,102 @@
+/* Admin shell tokens, SCOPED to [data-admin-shell].
+ *
+ * The scoping is the point, and a clinic has a stronger reason for it than the
+ * console this pattern came from: the public intake forms at /, /consultation
+ * and /insurance keep their own DrSnip brand tokens from index.css, and nothing
+ * here may reach them. Every value below is a --sh-* custom property declared
+ * on the shell root, so a form page never resolves one.
+ *
+ * The look: near-white canvas, white cards, 1px hairline borders, SHARP corners
+ * (radius 0), no resting shadow, one accent, tight tracking, tabular numbers in
+ * every column. The accent is DrSnip's deep clinical blue #0F4C81 — the same
+ * --primary the forms use (index.css: 208 79% 28%) — not the red of the console
+ * this was adapted from.
+ */
+
+[data-admin-shell] {
+  --sh-bg: #fafafa;
+  --sh-card: #ffffff;
+  --sh-fg: #0f172a;
+  --sh-muted: #64748b;
+  --sh-border: rgba(15, 23, 42, 0.1);
+  --sh-border-strong: rgba(15, 23, 42, 0.16);
+  --sh-surface: rgba(15, 23, 42, 0.02);
+  --sh-surface-hover: rgba(15, 76, 129, 0.06);
+  --sh-sidebar: #ffffff;
+
+  /* DrSnip deep clinical blue. Mirrors --primary in index.css. */
+  --sh-accent: #0f4c81;
+  --sh-accent-active: #0c3c67; /* hsl(208 79% 22%) — pressed / active nav */
+  --sh-accent-fg: #ffffff;
+  --sh-accent-glow: rgba(15, 76, 129, 0.35);
+
+  /* Demo surfaces. Amber throughout, never blue, so a synthetic panel can
+     never be mistaken for live reporting at a glance. */
+  --sh-demo-bg: #fffbeb;
+  --sh-demo-border: #fde68a;
+  --sh-demo-fg: #78350f;
+
+  letter-spacing: -0.03em;
+}
+
+/* Active-nav left bar. */
+.admin-nav-active-bar {
+  box-shadow: 0 0 8px var(--sh-accent-glow);
+}
+
+/* ---------------------------------------------------------------------------
+ * Focus visibility.
+ *
+ * The console this was adapted from has NO focus-visible styling anywhere — its
+ * own handoff records that nav items, tiles and filters fall back to whatever
+ * the browser draws, and that its chart stages are not keyboard reachable at
+ * all. That is a gap to fix, not to copy. One rule, applied to every focusable
+ * thing inside the shell, so a keyboard user can always see where they are.
+ * ------------------------------------------------------------------------- */
+[data-admin-shell] :is(a, button, [role="button"], input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Skip link — visible only once focused. */
+.admin-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 60;
+}
+.admin-skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  background: var(--sh-accent);
+  color: var(--sh-accent-fg);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Numbers that sit in a column must not jitter between refreshes. */
+[data-admin-shell] .sh-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hide scrollbars on the horizontal filter/tab rails without losing scroll. */
+[data-admin-shell] .sh-no-scrollbar {
+  scrollbar-width: none;
+}
+[data-admin-shell] .sh-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Reduced motion: framer-motion also gates on useReducedMotion(), this is the
+   belt-and-braces for anything CSS-driven inside the shell. */
+@media (prefers-reduced-motion: reduce) {
+  [data-admin-shell] *,
+  [data-admin-shell] *::before,
+  [data-admin-shell] *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
