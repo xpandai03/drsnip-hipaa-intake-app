@@ -1,4 +1,5 @@
 import { AdminLayout } from "./AdminLayout";
+import { PageHeader } from "./PageHeader";
 import LinkGenerator from "@/pages/LinkGenerator";
 import { useAuth } from "@/lib/auth-context";
 
@@ -19,7 +20,12 @@ export default function AdminLinks() {
   const { user } = useAuth();
   return (
     <AdminLayout>
-      <LinkGenerator readOnly={user?.role === "viewer"} />
+      <PageHeader
+        eyebrow="Links"
+        title="Intake links"
+        subtitle="Generate a tagged link or embed snippet for a form, and see what was generated in the last 30 days."
+      />
+      <LinkGenerator readOnly={user?.role === "viewer"} embedded />
     </AdminLayout>
   );
 }

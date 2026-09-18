@@ -38,8 +38,13 @@ export function isAllowedLocation(value: unknown): value is string {
 // the correlation into a tautology (every consultation inheriting one location).
 // Explicit `submissions.` qualifiers keep the correlation correct. This relies
 // on every consumer querying the table UNALIASED via `.from(submissions)`.
-export function resolvedLocationSql() {
-  return sql<string | null>`
+// The expression text lives in a constant so the reporting layer can embed the
+// SAME definition (api/_lib/reporting.ts wraps it in the canonicaliser for the
+// office_location dimension). Before this, reporting used a bare
+// `raw_payload->>'officeLocation'` with no TRIM and no consultation join, so the
+// dashboard and the submissions list computed location differently and
+// disagreed. One definition, two consumers.
+export const RESOLVED_LOCATION_SQL = `
     CASE
       WHEN submissions.form_type IN ('registration','insurance')
         THEN NULLIF(TRIM(submissions.raw_payload ->> 'officeLocation'), '')
@@ -61,4 +66,8 @@ export function resolvedLocationSql() {
       ELSE NULL
     END
   `;
+
+export function resolvedLocationSql() {
+  return sql<string | null>`${sql.raw(RESOLVED_LOCATION_SQL)}`;
 }
+

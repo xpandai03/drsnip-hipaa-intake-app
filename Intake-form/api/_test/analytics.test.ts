@@ -40,6 +40,11 @@ const ADMIN_PATHS = [
   "/admin/submissions",
   "/admin/submissions/0a2c417f-1111-2222-3333-444455556666",
   "/admin/submissions/abc?tab=insurance",
+  // The insurance-follow-up demonstration, including its ?view= variants.
+  "/admin/insurance-demo",
+  "/admin/insurance-demo?view=waterfall",
+  "/admin/insurance-demo?view=queue",
+  "/admin/insurance-demo?view=scoreboard",
   "/ADMIN/links",
   "/admin/anything/added/later",
 ];
