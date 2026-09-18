@@ -310,12 +310,21 @@ const CHATGPT_CHAT_STEPS: Step[] = [
   },
 ];
 
+// Suggested prompts. These are the questions the connector can actually answer
+// from the aggregate view, phrased as what the data IS.
+//
+// "New vs returning patients this week" used to be on this list. It is off it
+// for the same reason the dashboard tile was renamed: the underlying
+// action_label records what the DrChrono write-back DID, and every consultation
+// is 'matched' by definition while 'create' only means no existing chart
+// matched the details given. Inviting someone to ask the connector for new vs
+// returning patients invites a confidently wrong answer.
 const EXAMPLES: string[] = [
   "Call drsnip_data_notes first, then: what's our manual-review rate this month?",
   "Show the how-heard breakdown for consultations.",
-  "New vs returning patients this week.",
+  "Break down the DrChrono record actions (create / update / matched) this week.",
   "Submission volume by office location.",
-  "Give me the outcome funnel: success / manual review / failed.",
+  "Give me the processing outcomes: success / manual review / failed.",
 ];
 
 export default function AskAI() {
