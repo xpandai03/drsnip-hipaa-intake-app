@@ -2,7 +2,9 @@
 
 **Date:** 20 September 2026 · **Branch:** `feat/console-redesign-insurance-demo`
 **Release commit:** `e0ded90` · **PR:** [#55](https://github.com/xpandai03/drsnip-hipaa-intake-app/pull/55)
-**Deployed:** Fly **v84**, image `drsnip-intake-demo:deployment-01M2ZV72HZVW0410HWD4C9GWNZ`, 20 Sep 2026 09:45 PT
+**Deployed:** Fly **v85**, image `drsnip-intake-demo:deployment-01M304DH39S5KEC32QZT453NG8`, 20 Sep 2026 12:25 PT
+(v84, `…01M2ZV72HZVW0410HWD4C9GWNZ`, 09:45 PT, carried everything below; v85 adds
+only the sidebar brand banner)
 
 Written for: whoever picks this system up next, and for the Monday meeting.
 
@@ -185,6 +187,12 @@ never activity.
 
 Entry period: all intake history. Follow-up window: 14 days. As at the
 appointment cursor.
+
+**These figures move.** They are a reading taken at the release instant, and
+both intake and the appointment cursor advance continuously — by early afternoon
+the same query returned 1,556 eligible and 990 recorded. A later number that
+differs from the table below is the system working, not a discrepancy. Re-derive
+rather than compare against this page.
 
 **Registration journey**
 
