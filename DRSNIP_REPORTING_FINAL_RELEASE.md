@@ -1,6 +1,8 @@
 # Dr. Snip reporting — final release
 
-**Date:** 20 September 2026 · **Branch:** `feat/console-redesign-insurance-demo` · **PR:** #55
+**Date:** 20 September 2026 · **Branch:** `feat/console-redesign-insurance-demo`
+**Release commit:** `e0ded90` · **PR:** [#55](https://github.com/xpandai03/drsnip-hipaa-intake-app/pull/55)
+**Deployed:** Fly **v84**, image `drsnip-intake-demo:deployment-01M2ZV72HZVW0410HWD4C9GWNZ`, 20 Sep 2026 09:45 PT
 
 Written for: whoever picks this system up next, and for the Monday meeting.
 
@@ -42,6 +44,16 @@ On a phone: Reports is one of five bottom-bar slots and opens a sheet listing
 Patient journeys first. Ten destinations, every one reachable in at most two
 taps, no horizontal scrolling anywhere (checked at 390 × 844).
 
+**The top-left is now the clinic's own wordmark**, in place of the typed
+"DrSnip Console / Intake & Reporting". One thing to know if you touch it:
+`drsnip-logo.png` is a *white* wordmark on transparency — the same asset the
+public forms and the sign-in page place on the deep clinical blue — and the
+sidebar is `#ffffff`. Dropped in unchanged it renders as nothing at all, which
+is exactly what the old 7 × 7 copy beside the text was doing, and why the text
+had to be there. So it sits on a brand-blue band: the clinic's artwork
+unretouched, legible in light mode and dark, in the sidebar and in the 56px
+mobile top bar alike.
+
 ---
 
 ## 2. What is deployed
@@ -54,6 +66,7 @@ taps, no horizontal scrolling anywhere (checked at 390 × 844).
 | `26ef5a5` | `feat(sync)` — recurring appointment sync, its budget, its monitoring |
 | `1bd4c23` | `feat(reporting)` — booking and attendance views reach production |
 | `4d354cd` | `feat(console)` — Reports index, findable journeys, honest loading |
+| `e0ded90` | `fix(console)` — the clinic's logo, and a shell-blanking bug it exposed |
 
 ### Applied to the production database
 
@@ -71,13 +84,22 @@ another file creates — so they are applied by hand, **in numeric order.**
 `0017` would silently drop the sync columns the console reads. Both files say so
 at the point where it matters.
 
-### Still to do — one step, and it needs your hand
+### Published and deployed
 
-`git push origin feat/console-redesign-insurance-demo` was **refused by this
-environment's permission policy**, so the four commits above are on the branch
-locally and not yet on the remote or in PR #55. Because this repo's rule is that
-deployed code must be in a PR *before* the deploy, not after, **the Fly deploy
-has not been run.** See §6.
+All six commits are pushed. The remote branch SHA is `e0ded90`, matching local `HEAD`
+exactly, and PR #55 (OPEN, MERGEABLE, base `main`) carries them. The repository
+has no required status checks and no required reviews configured, so there was
+no release gate left to wait on; the PR was **not** merged, because nothing in
+the documented process requires it.
+
+The deploy was made from a **pristine `git worktree` checked out at `e0ded90`**,
+not from the working tree, so no untracked or uncommitted file could reach the
+image. The `Dockerfile` builds everything from source inside the image, so the
+local `dist/` played no part.
+
+`release_command` ran `migrate.cjs`, which replays only the *registered*
+migrations. `0015`–`0019` are deliberately unregistered, so they were **not**
+re-run — they were already applied and verified.
 
 ### The load-time fix, measured
 
@@ -338,74 +360,142 @@ Until then the console says, in plain words:
 
 ## 5. Did the authenticated production checks pass?
 
-**Yes — against the build that is deployed right now**, signed in as the
-application's own provisioned viewer account. No session was fabricated, no auth
-bypassed, and no test patient was created.
+**Yes, against v84**, signed in as the application's own provisioned viewer
+account. No session was fabricated, no auth bypassed, and no test patient was
+created. A 401 or a string found in a bundle is not authenticated verification
+and neither was accepted here.
+
+### Release and health
+
+| Check | Result |
+| --- | --- |
+| Fly release running | **v84**, image `deployment-01M2ZV72HZVW0410HWD4C9GWNZ` |
+| Machines | 2, version 84, `lax`, health check passing |
+| `release_command` | completed successfully |
+| `/healthz`, `/`, `/admin/signin` | `200`, `200`, `200` |
+| Unauthenticated `/api/reports/{journey,booking,freshness}` | `401`, `401`, `401` |
+| JavaScript errors on any page visited | none |
+
+### Navigation and the new views
 
 | Check | Result |
 | --- | --- |
 | Sign-in with the real provisioned account | passed |
-| `/admin/journeys` renders authenticated | passed, networkidle in 781 ms |
-| `/api/reports/journey` × 3 metrics | `200` in 41–74 ms (was ~6,000 ms) |
-| Appointment-evidence branch works | 1,117 of 1,845 |
-| No patient identifier in any response body | passed |
-| JavaScript errors on the page | none |
+| Reports navigation opens the new overview | passed, 1,869 ms |
+| Clinic logo in the top-left, desktop and mobile | passed |
+| Patient journeys reachable without first entering the group | passed |
+| Demo labelled and separated | passed |
+| `?journey=insurance` selects the insurance tab | passed |
+| …survives a reload | passed |
+| `?journey=registration` selects the registration tab | passed |
+| …and Back returns to `?journey=insurance` | passed |
+| Figures resolve; no skeleton left behind | passed, 8 ms after networkidle |
+| The word "unknown" rendered anywhere | **no** |
+| Attendance unavailable, with the correct reason | passed |
+| Mobile horizontal overflow at 390 × 844 | **0 px** |
+| Mobile Reports sheet lists Patient journeys | passed |
 
-A 401 or a string found in a bundle is **not** authenticated verification, and
-neither was accepted here.
+The freshness badge in production reads, in green:
 
-Local verification, in addition:
+> **Appointment data complete to Sep 20, 2026, 9:05 AM · updates hourly**
 
-- Full test suite: **537 passing, 0 failing** (15 skipped without their optional
-  databases) across `pnpm run test`, including 26 new assertions that pin the
-  loading and freshness rules and 6 that pin "real reporting is easy to find".
+### The endpoints, authenticated
+
+```
+/api/reports/freshness                        200    36 ms
+/api/reports/booking  (registration)          200    45 ms
+/api/reports/booking  (insurance)             200    56 ms
+/api/reports/journey  (registration→cons)     200    70 ms
+/api/reports/journey  (appointment evidence)  200    57 ms
+```
+
+No response body contained a patient identifier, an appointment identifier, an
+email or a name.
+
+### Values cross-checked independently
+
+The figures the production API returned were re-derived directly from the
+database with **identical filters and the same observation instant**. Every one
+matches:
+
+| Measure | Production API | Independent DB check |
+| --- | --- | --- |
+| Booking eligible / recorded / advance | 1,554 / 989 / 975 | 1,554 / 989 / 975 |
+| Consultation observed to date | 674 / 1,845 | 674 / 1,845 |
+| Consultation within 14 days (mature) | 368 / 1,554 | 368 / 1,554 |
+| Appointment evidence observed | 1,117 / 1,845 | 1,117 / 1,845 |
+| Freshness `complete_as_of` | 2026-09-20 16:05:00Z | cursor 2026-09-20 16:05:00Z |
+
+Freshness reports `state: live`, `update_mode: scheduled`, last successful run
+2026-09-20 16:05:02Z, **0 failed runs in 24 hours** — and it says so because a
+run succeeded, not because a schedule row exists.
+
+### The synthetic demo is still isolated
+
+Renders with both waterfall charts, labelled synthetic, and **Approve / Edit /
+Skip issued zero `/api/` requests** — they remain simulations with no sending
+endpoint.
+
+### Local verification
+
+- **`pnpm run test`: 554 tests, 539 passing, 0 failing** (15 skipped without
+  their optional databases).
 - Typecheck and production build clean.
-- Screenshots at 1440 × 900, 820 × 1180 and 390 × 844: **no horizontal overflow
-  anywhere, and the word "unknown" rendered nowhere.** The transient states —
-  freshness in flight, freshness failed, a failed journey request, skeletons —
-  were forced and captured, since they cannot be reached by clicking.
+- Screenshots at 1440 × 900, 820 × 1180 and 390 × 844: no horizontal overflow,
+  no "unknown". Transient states — freshness in flight, freshness failed, a
+  failed journey request, skeletons — forced and captured, since they cannot be
+  reached by clicking.
 
-### Not yet verified, because it has not happened
+### A defect this release found in itself
 
-The four commits are **not on the remote and not in PR #55**, and the Fly deploy
-has **not** been run — see §6. So `/api/reports/booking` and
-`/api/reports/freshness` still return `404` in production, which the check above
-records honestly. The booking views and the new freshness badge are not live
-yet. Everything else in §2 — the speed, the sync, the cursor — **is** live,
-because it is in the database rather than in the bundle.
+Capturing the logo blanked the entire admin area — no nav, no sign-out, white
+screen:
+
+```
+TypeError: Cannot read properties of undefined (reading 'schedules')
+```
+
+`freshness.data?.sync.schedules` — the optional chain stops after `data` and
+then dereferences twice more, so any `200` whose body is not the expected shape
+throws. The shell's error boundary could not catch it either: pages in this app
+self-wrap in `<AdminLayout>`, so a page's own function body runs *before* the
+boundary exists. TypeScript could not object; the response is `unknown` at the
+network boundary and the annotation is taken on trust. Every hop is now
+optional, in the index, the badge and the page, with two assertions pinning it.
 
 ---
 
-## 6. The one remaining step
+## 6. Remaining limitations
+
+1. **Attendance is not reported**, and will not be until the clinic answers
+   which status values mean the patient physically arrived (§4).
+2. **Appointment types are not confirmed as vasectomy-specific.**
+   `/api/appointment_profiles` returns 403 for this credential, so every figure
+   covers all appointment types and all providers.
+3. **"Appointment record created" is a timestamp on a record** — not proof of
+   when a human booked, and not attendance.
+4. **The weekly reconciliation pass has not run yet.** First one is Sunday
+   27 September, 03:05 PT.
+5. **PR #55 is open, not merged.** Nothing in the documented release process
+   requires merging it, and merging was deliberately not done.
+6. The repository has **no CI status checks configured**, so "checks passed"
+   means the local suite above, not a pipeline.
+
+---
+
+## 7. Rollback
 
 ```sh
-git push origin feat/console-redesign-insurance-demo
-# then, from Intake-form/:
-fly deploy -a drsnip-intake-demo
+fly deploy -a drsnip-intake-demo --image drsnip-intake-demo:deployment-01M2YAAW90CQFGMDFWZC29N2BJ
+# or:  fly releases -a drsnip-intake-demo   →   fly deploy --image <v83 image>
 ```
 
-`git push` was **refused by this environment's permission policy**, not by the
-remote and not by a branch protection rule. Nothing was worked around. Because
-this repo's hard-won rule is that deployed code must be on a branch and in a PR
-*before* the deploy — Fly deploys from the working tree, so it is entirely
-possible to ship something that exists nowhere in git — the deploy was not run
-either.
-
-**Rollback point:** Fly `v83`, image
+**Previous release:** v83, image
 `drsnip-intake-demo:deployment-01M2YAAW90CQFGMDFWZC29N2BJ`.
 
-The database migrations are additive and are already live under v83, which is
-running normally and faster than before, so a rollback to v83 needs no database
-change. If recurring sync itself ever needs to stop, use either switch in §3;
-neither requires a deploy or a rollback.
+The database migrations are additive and were already live under v83, which ran
+normally under them, so rolling the application back needs **no database
+change** — and should not be given one. Do not roll back `0015`–`0019`.
 
-### After the deploy, check these four things
-
-1. `/api/reports/freshness` returns `200` (not `404` — that is how v82 shipped a
-   dead route, and the test suite now walks `api/reports/` to make it fail
-   locally instead).
-2. `/api/reports/booking?metric=booking_registration&…` returns `200` with
-   `recorded: 989`.
-3. `/admin/reports` renders and the sidebar shows Patient journeys without
-   clicking into it.
-4. The appointment badge reads **"complete to … · updates hourly"**, in green.
+If recurring sync itself needs to stop, use either switch in §3. Neither
+requires a deploy, and neither is affected by a rollback.
