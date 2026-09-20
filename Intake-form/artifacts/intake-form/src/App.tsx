@@ -16,6 +16,7 @@ import AdminLinks from "@/pages/admin/Links";
 import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
 import AdminDashboard from "@/pages/admin/Dashboard";
+import AdminJourneys from "@/pages/admin/Journeys";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -104,6 +105,12 @@ function Router() {
       <Route path="/admin/dashboard">
         <WithAuth>
           <AdminDashboard />
+        </WithAuth>
+      </Route>
+
+      <Route path="/admin/journeys">
+        <WithAuth>
+          <AdminJourneys />
         </WithAuth>
       </Route>
       <Route path="/admin/dropoffs">

@@ -77,6 +77,14 @@ export type WaterfallStage = {
   breakNote?: string;
 };
 
+/**
+ * Fraction of the width reserved for stage labels in VERTICAL mode.
+ *
+ * Must be at least the label column's own width (w-[34%]) plus its gap, or the
+ * silhouette runs under the text.
+ */
+const VERTICAL_LABEL_GUTTER = 0.37;
+
 const MARKER_NORM = 0.16; // outline height for a stage with no number
 const MIN_MEASURED_NORM = 0.08; // so a small measured stage stays visible
 
@@ -177,8 +185,17 @@ function taperPath(
   len: number,
   cross: number,
   horizontal: boolean,
+  /**
+   * Centre line of the drawing region.
+   *
+   * In VERTICAL mode the stage labels sit in a left gutter while the SVG spans
+   * the full width, so a silhouette centred on w/2 reaches back under them:
+   * the widest stage ran from 24% to 76% while the gutter ends at 34%, putting
+   * dark-slate label text on a dark navy band. Passing the centre in lets the
+   * vertical layout draw into the right-hand region only.
+   */
+  mid: number = cross / 2,
 ): string {
-  const mid = cross / 2;
   const amp = horizontal ? AMPLITUDE.horizontal : AMPLITUDE.vertical;
   const a = n0 * cross * amp;
   const b = n1 * cross * amp;
@@ -230,7 +247,9 @@ export function WaterfallChart({
 
   const totalGap = gap * Math.max(0, n - 1);
   const segLen = n > 0 ? ((horizontal ? w : h) - totalGap) / n : 0;
-  const cross = horizontal ? h : w;
+  // Vertical: keep the left label gutter clear of the silhouette.
+  const cross = horizontal ? h : w * (1 - VERTICAL_LABEL_GUTTER);
+  const crossMid = horizontal ? h / 2 : w * VERTICAL_LABEL_GUTTER + cross / 2;
   const ready = w > 0 && h > 0 && segLen > 0;
 
   return (
@@ -282,7 +301,7 @@ export function WaterfallChart({
                   />
                 )}
                 <motion.path
-                  d={taperPath(n0, n1, segLen, cross, horizontal)}
+                  d={taperPath(n0, n1, segLen, cross, horizontal, crossMid)}
                   fill={marker ? "none" : color}
                   stroke={marker ? color : "none"}
                   strokeWidth={marker ? 1.5 : 0}
@@ -379,7 +398,12 @@ export function WaterfallChart({
                     </div>
                     {marker && (
                       <div className="text-[9px] uppercase tracking-wide text-slate-400">
-                        {stage.state === "suppressed" ? "hidden (<5)" : "not measured"}
+                        {/* Was hard-coded "not measured", which contradicted the
+                            marker above for an `unavailable` stage — and those
+                            mean different things: "not measured" says nothing
+                            tracks this, "not available" says the source exists
+                            but cannot answer yet. */}
+                        {stage.state === "suppressed" ? "hidden (<5)" : markerText(stage.state)}
                       </div>
                     )}
                   </div>
@@ -392,7 +416,12 @@ export function WaterfallChart({
                     </div>
                     {marker && (
                       <div className="text-[9px] uppercase tracking-wide text-slate-400">
-                        {stage.state === "suppressed" ? "hidden (<5)" : "not measured"}
+                        {/* Was hard-coded "not measured", which contradicted the
+                            marker above for an `unavailable` stage — and those
+                            mean different things: "not measured" says nothing
+                            tracks this, "not available" says the source exists
+                            but cannot answer yet. */}
+                        {stage.state === "suppressed" ? "hidden (<5)" : markerText(stage.state)}
                       </div>
                     )}
                   </div>

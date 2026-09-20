@@ -60,11 +60,23 @@ describe("the mobile bottom bar fits", () => {
 describe("nothing is unreachable", () => {
   const routes = allNavRoutes();
 
-  it("reaches all eight destinations, with no duplicates", () => {
-    // Five slot routes + three children. More than the six the old
+  it("reaches all nine destinations, with no duplicates", () => {
+    // Five slot routes + four children. More than the six the old
     // horizontally-scrolling strip exposed.
-    assert.equal(routes.length, 8);
-    assert.equal(new Set(routes).size, 8);
+    assert.equal(routes.length, 9);
+    assert.equal(new Set(routes).size, 9);
+  });
+
+  it("exposes the real-data journeys page, separately from the synthetic demo", () => {
+    assert.ok(routes.includes("/admin/journeys"));
+    assert.ok(routes.includes("/admin/insurance-demo"));
+    // The demo is flagged; the real-data page is not. A viewer must be able to
+    // tell them apart from the nav alone.
+    const reports = PRIMARY_NAV.find((e) => e.id === "reports")!;
+    const journeys = reports.children!.find((c) => c.to === "/admin/journeys")!;
+    const demo = reports.children!.find((c) => c.to === "/admin/insurance-demo")!;
+    assert.notEqual(demo.demo, undefined);
+    assert.equal(journeys.demo, undefined);
   });
 
   it("preserves every section the console had before the redesign", () => {

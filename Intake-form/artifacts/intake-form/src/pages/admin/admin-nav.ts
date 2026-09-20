@@ -80,6 +80,7 @@ export const PRIMARY_NAV: NavEntry[] = [
     selfLabel: "Dashboard",
     icon: "chart",
     children: [
+      { to: "/admin/journeys", label: "Patient journeys" },
       { to: "/admin/insurance-demo", label: "Insurance follow-up", demo: true },
       { to: "/admin/activity", label: "Activity" },
     ],
@@ -120,7 +121,7 @@ export function hasActiveChild(path: string, entry: NavEntry): boolean {
 
 /**
  * Every destination the shell can reach — the "nothing unreachable" test.
- * Eight: five slot routes plus three children.
+ * Nine: five slot routes plus four children.
  */
 export function allNavRoutes(): string[] {
   const out: string[] = [];
