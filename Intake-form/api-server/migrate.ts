@@ -27,6 +27,13 @@ import attribution from "../lib/db/migrations/0008_attribution.sql";
 import registrationPartials from "../lib/db/migrations/0009_registration_partials.sql";
 import submissionFiles from "../lib/db/migrations/0010_submission_files.sql";
 import notificationEvents from "../lib/db/migrations/0011_notification_events.sql";
+// 0012 creates tables only. Its sibling 0012a (role + grants) is deliberately
+// NOT registered here: it needs CREATEROLE/superuser, and this runner has no
+// ledger, so every registered step re-runs on every deploy forever. Keeping
+// role provisioning out means the deploy path never depends on the app role
+// holding superuser (it does today — that is exactly the fragility).
+import appointmentSync from "../lib/db/migrations/0012_appointment_sync.sql";
+import appointmentBackfillWindows from "../lib/db/migrations/0013_appointment_backfill_windows.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -42,6 +49,8 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0009_registration_partials", sql: registrationPartials },
   { name: "0010_submission_files", sql: submissionFiles },
   { name: "0011_notification_events", sql: notificationEvents },
+  { name: "0012_appointment_sync", sql: appointmentSync },
+  { name: "0013_appointment_backfill_windows", sql: appointmentBackfillWindows },
   { name: "seed-admin", sql: seedAdmin },
 ];
 
