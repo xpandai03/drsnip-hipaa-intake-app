@@ -145,7 +145,7 @@ export function AppointmentFreshnessBadge({
 
   // The request failed. Keep whatever we last saw, say it is stale, offer retry.
   if (isError) {
-    const last = clinicTime(data?.appointments.complete_as_of);
+    const last = clinicTime(data?.appointments?.complete_as_of);
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
         <Badge tone="bad" icon={AlertTriangle} testId="freshness-unavailable">
@@ -165,10 +165,14 @@ export function AppointmentFreshnessBadge({
     );
   }
 
-  const a = data!.appointments;
-  const when = clinicTime(a.complete_as_of);
+  // A 200 is not a promise about shape. If the body is not what this component
+  // expects, say the state is unknown-because-nothing-answered rather than
+  // reading through undefined — this badge is rendered inside page bodies that
+  // run before their own error boundary, so a throw here blanks the console.
+  const a = data?.appointments;
+  const when = clinicTime(a?.complete_as_of);
 
-  if (a.state === "never" || !when) {
+  if (!a || a.state === "never" || !when) {
     return (
       <Badge tone="warn" icon={AlertTriangle} testId="freshness-never">
         Appointment data — no sync has completed yet
@@ -216,7 +220,7 @@ export function IntakeFreshnessBadge({ query }: { query: ReturnType<typeof useFr
       </Badge>
     );
   }
-  if (isError || !data?.intake.latest_submission_at) {
+  if (isError || !data?.intake?.latest_submission_at) {
     return (
       <Badge tone="neutral" icon={Clock} testId="intake-freshness-unknown">
         Intake — live as forms arrive
@@ -225,7 +229,7 @@ export function IntakeFreshnessBadge({ query }: { query: ReturnType<typeof useFr
   }
   return (
     <Badge tone="good" icon={CheckCircle2} testId="intake-freshness">
-      Intake live · newest submission {clinicTime(data.intake.latest_submission_at)}
+      Intake live · newest submission {clinicTime(data.intake?.latest_submission_at)}
     </Badge>
   );
 }
