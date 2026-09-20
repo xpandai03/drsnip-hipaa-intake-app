@@ -17,13 +17,13 @@
 // candidate list keeps ONE generated artifact — and one tested code path —
 // instead of two copies that drift.
 function readConfig() {
-  for (const name of ['Sync Config', 'Pilot Bounds', 'Backfill Config']) {
+  for (const name of ['Sync Config', 'Pilot Bounds', 'Backfill Config', 'Catchup Config']) {
     try {
       const n = $(name);
       if (n) return n.first().json;
     } catch (e) { /* not this one */ }
   }
-  throw new Error('no config node found (expected Sync Config / Pilot Bounds / Backfill Config)');
+  throw new Error('no config node found (expected Sync Config / Pilot Bounds / Backfill Config / Catchup Config)');
 }
 
 const bounds = readConfig();
