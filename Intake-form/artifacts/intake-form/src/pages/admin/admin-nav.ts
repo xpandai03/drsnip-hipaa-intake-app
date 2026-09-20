@@ -15,16 +15,24 @@
 // The fix is FIVE mobile slots, with grouping rather than scrolling:
 //
 //   Submissions   -> /admin/submissions   + Drop-offs
-//   Reports       -> /admin/dashboard     + Insurance follow-up, Activity
+//   Reports       -> /admin/reports        + Patient journeys, Intake dashboard,
+//                                            Activity, Demo: insurance follow-up
 //   Links         -> /admin/links
 //   Ask AI        -> /admin/ask-ai
 //   Settings      -> /admin/sources       + account / sign out
 //
-// Five slots, EIGHT destinations, every one reachable in at most two taps. A
+// Five slots, NINE destinations, every one reachable in at most two taps. A
 // slot with children opens a bottom sheet that lists the PARENT route first, so
 // grouping never hides the main page behind its own children — tapping
-// "Reports" then "Dashboard" always works, and on desktop the parent is a
-// direct link.
+// "Reports" then "Patient journeys" always works, and on desktop the parent is
+// a direct link.
+//
+// WHY /admin/reports IS THE REPORTS SLOT'S OWN ROUTE. It used to be
+// /admin/dashboard, so the only way to discover patient-journey reporting was
+// to already be inside the Reports subtree, where the sidebar would finally
+// expand and show it. Real reporting was, in the clinic's words, "difficult to
+// find". /admin/reports is an INDEX — it calculates nothing — and the intake
+// dashboard keeps its route, its link and its place in the group.
 //
 // ROUTES ARE UNCHANGED. Every path below already existed, so no redirect is
 // needed and every bookmark and deep link keeps working — including
@@ -75,14 +83,19 @@ export const PRIMARY_NAV: NavEntry[] = [
   },
   {
     id: "reports",
-    to: "/admin/dashboard",
+    to: "/admin/reports",
     label: "Reports",
-    selfLabel: "Dashboard",
+    selfLabel: "All reports",
     icon: "chart",
+    // ORDER IS THE FIX. "Patient journeys" is the real, live reporting people
+    // came for and it is first. The synthetic demonstration is last, carries
+    // the Demo chip, and says what it is in its own label — it used to sit
+    // second, above Activity, with nothing to mark it as invented.
     children: [
       { to: "/admin/journeys", label: "Patient journeys" },
-      { to: "/admin/insurance-demo", label: "Insurance follow-up", demo: true },
+      { to: "/admin/dashboard", label: "Intake dashboard" },
       { to: "/admin/activity", label: "Activity" },
+      { to: "/admin/insurance-demo", label: "Demo: insurance follow-up", demo: true },
     ],
   },
   { id: "links", to: "/admin/links", label: "Links", icon: "link" },
@@ -121,7 +134,7 @@ export function hasActiveChild(path: string, entry: NavEntry): boolean {
 
 /**
  * Every destination the shell can reach — the "nothing unreachable" test.
- * Nine: five slot routes plus four children.
+ * Ten: five slot routes plus five children.
  */
 export function allNavRoutes(): string[] {
   const out: string[] = [];

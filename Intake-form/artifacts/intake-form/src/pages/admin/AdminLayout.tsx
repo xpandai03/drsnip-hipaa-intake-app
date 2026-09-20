@@ -117,7 +117,11 @@ function NavRow({
       )}
       {Icon && <Icon className="h-4 w-4 shrink-0" />}
       <span className="truncate">{label}</span>
-      {demo && !active && <DemoChip />}
+      {/* The chip is redundant when the label already begins "Demo:" — and in a
+          256px sidebar the two together truncate the label, which is worse than
+          either alone. The words win: they are read aloud, they survive a
+          screenshot, and they cannot be mistaken for decoration. */}
+      {demo && !active && !/^demo\b/i.test(label) && <DemoChip />}
     </Link>
   );
 }
@@ -137,9 +141,14 @@ function SidebarNav({
       {PRIMARY_NAV.map((entry: NavEntry) => {
         const Icon = ICON[entry.icon];
         const children = entry.children ?? [];
-        // Children are shown when this entry's subtree is the active one. The
-        // parent is always a direct link, so grouping never buries the main page.
-        const expanded = isItemActive(location, entry);
+        // Children are ALWAYS shown on desktop, where there is room for them.
+        //
+        // They used to appear only once the group's subtree was active, which
+        // meant the only way to discover "Patient journeys" was to already be
+        // looking at it. A sidebar that hides its destinations until you have
+        // found them is not navigation. The mobile sheet is unchanged — there
+        // the group opens on tap, which is the same one-tap reveal.
+        const expanded = children.length > 0;
         return (
           <div key={entry.id}>
             <NavRow

@@ -52,7 +52,11 @@ describe("the mobile bottom bar fits", () => {
       for (const c of e.children ?? []) {
         assert.ok(c.to.startsWith("/admin/"), c.to);
       }
-      assert.ok((e.children ?? []).every((c) => c.label.length <= 24));
+      // Sheet rows are full-width list items, not bottom-bar captions (those
+      // are capped at 12 above), so they have more room — but not unlimited:
+      // past ~28 characters a child label wraps on a 390px phone.
+      assert.ok((e.children ?? []).every((c) => c.label.length <= 28),
+        (e.children ?? []).map((c) => c.label).join(", "));
     }
   });
 });
@@ -60,11 +64,11 @@ describe("the mobile bottom bar fits", () => {
 describe("nothing is unreachable", () => {
   const routes = allNavRoutes();
 
-  it("reaches all nine destinations, with no duplicates", () => {
-    // Five slot routes + four children. More than the six the old
+  it("reaches all ten destinations, with no duplicates", () => {
+    // Five slot routes + five children. More than the six the old
     // horizontally-scrolling strip exposed.
-    assert.equal(routes.length, 9);
-    assert.equal(new Set(routes).size, 9);
+    assert.equal(routes.length, 10);
+    assert.equal(new Set(routes).size, 10);
   });
 
   it("exposes the real-data journeys page, separately from the synthetic demo", () => {
@@ -163,8 +167,10 @@ describe("isItemActive / hasActiveChild", () => {
 
   it("hasActiveChild distinguishes the child from the parent", () => {
     // On the parent's own route no child is active, so the children list is
-    // shown without a second row highlighted.
-    assert.equal(hasActiveChild("/admin/dashboard", reports), false);
+    // shown without a second row highlighted. /admin/dashboard is now a CHILD
+    // of Reports, so the parent route to test with is /admin/reports.
+    assert.equal(hasActiveChild("/admin/reports", reports), false);
+    assert.equal(hasActiveChild("/admin/dashboard", reports), true);
     assert.equal(hasActiveChild("/admin/activity", reports), true);
   });
 
@@ -216,13 +222,14 @@ describe("opensSheet — which slots open the mobile bottom sheet", () => {
 
 describe("activeLabel — the mobile top-bar title", () => {
   it("names the child when a child is active, not the group", () => {
-    assert.equal(activeLabel("/admin/insurance-demo"), "Insurance follow-up");
+    assert.equal(activeLabel("/admin/insurance-demo"), "Demo: insurance follow-up");
     assert.equal(activeLabel("/admin/activity"), "Activity");
     assert.equal(activeLabel("/admin/dropoffs"), "Drop-offs");
   });
 
   it("names the slot's own page when the slot route is active", () => {
-    assert.equal(activeLabel("/admin/dashboard"), "Dashboard");
+    assert.equal(activeLabel("/admin/dashboard"), "Intake dashboard");
+    assert.equal(activeLabel("/admin/reports"), "All reports");
     assert.equal(activeLabel("/admin/submissions"), "All submissions");
     assert.equal(activeLabel("/admin/links"), "Links");
     assert.equal(activeLabel("/admin/sources"), "Marketing sources");
@@ -253,5 +260,66 @@ describe("the demonstration is labelled in the navigation itself", () => {
         assert.notEqual(c.demo, true, `${c.to} must not be labelled demo`);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The release this file is part of exists because a clinic said real reporting
+// was "difficult to find" and the synthetic demo had too much prominence. These
+// assertions are what stop either coming back.
+// ---------------------------------------------------------------------------
+describe("real reporting is easy to find", () => {
+  const reports = PRIMARY_NAV.find((e) => e.id === "reports")!;
+
+  it("the Reports slot lands on the reporting index, not on one report", () => {
+    // It used to be /admin/dashboard, so /admin/journeys was only visible once
+    // you were already somewhere inside the group.
+    assert.equal(reports.to, "/admin/reports");
+  });
+
+  it("Patient journeys is the FIRST thing under Reports", () => {
+    assert.equal(reports.children![0].to, "/admin/journeys");
+  });
+
+  it("the demo is LAST under Reports and says so in its own label", () => {
+    const kids = reports.children!;
+    const demo = kids[kids.length - 1];
+    assert.equal(demo.to, "/admin/insurance-demo");
+    assert.equal(demo.demo, true);
+    assert.match(
+      demo.label,
+      /^Demo[:\s]/i,
+      "the label itself must mark it, not only the chip — a chip is not read aloud in every context",
+    );
+  });
+
+  it("no real reporting destination sits below the demo", () => {
+    const kids = reports.children!;
+    const demoIndex = kids.findIndex((c) => c.demo === true);
+    assert.ok(demoIndex >= 0);
+    for (let i = demoIndex + 1; i < kids.length; i += 1) {
+      assert.equal(kids[i].demo, true, `${kids[i].to} is real data ranked below the demo`);
+    }
+  });
+
+  it("the intake dashboard is not hidden by the change", () => {
+    // Demoting it from the slot route to a child must not remove it: it is an
+    // operational page people use daily.
+    assert.ok(allNavRoutes().includes("/admin/dashboard"));
+  });
+
+  it("the desktop sidebar shows children without being inside them", () => {
+    // The layout used to expand a group only when its subtree was active, which
+    // is what made /admin/journeys undiscoverable. Asserted against the source
+    // because the rule lives in one expression.
+    const layout = read("../../artifacts/intake-form/src/pages/admin/AdminLayout.tsx");
+    assert.ok(
+      /const expanded = children\.length > 0;/.test(layout),
+      "sidebar children must render regardless of the active route",
+    );
+    assert.ok(
+      !/const expanded = isItemActive\(location, entry\);/.test(layout),
+      "the old activate-to-reveal behaviour is back",
+    );
   });
 });

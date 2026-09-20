@@ -70,13 +70,16 @@ describe("metric registry is a closed allow-list", () => {
     }
   });
 
-  it("attendance is blocked on transition coverage and mapping — NOT on procedure completion", () => {
-    // Procedure completion is a separate question with its own separate
-    // answer. Listing it as an attendance prerequisite overstates what is
-    // needed to unblock attendance, which an earlier draft did.
+  it("attendance is blocked ONLY on the mapping — not on coverage, not on procedure", () => {
+    // Updated after Phase B completed. This assertion used to expect TWO
+    // blockers: incomplete transition retrieval, and the missing mapping.
+    // Retrieval is now complete for every stored appointment, so that blocker
+    // is gone and keeping it would be a stale claim. Procedure completion was
+    // never a prerequisite and remains its own separate unavailable metric.
     const att = UNAVAILABLE_METRICS.find((m) => m.id === "appointment_attendance_rate")!;
-    assert.equal(att.blockers.length, 2);
+    assert.equal(att.blockers.length, 1);
     assert.ok(!att.blockers.join(" ").toLowerCase().includes("procedure"));
+    assert.ok(!/incomplete|not retrieved/i.test(att.blockers.join(" ")));
     const proc = UNAVAILABLE_METRICS.find((m) => m.id === "procedure_completed")!;
     assert.ok(proc, "procedure completion is listed as its own unavailable metric");
   });
@@ -85,9 +88,17 @@ describe("metric registry is a closed allow-list", () => {
     const blob = JSON.stringify(JOURNEY_METRICS) + JSON.stringify(UNAVAILABLE_METRICS);
     assert.ok(!/never booked/i.test(blob));
     assert.ok(!/no appointment on record at all/i.test(blob));
-    // and the bounded phrasing is present instead
+    // The bound has MOVED, not disappeared. Retrieval is complete, so "not
+    // found" is a real negative — but it is still bounded by an instant and by
+    // what this credential can see. That instant is no longer the fixed point
+    // the backfill left behind: recurring sync carries it forward hourly, and
+    // only on a run that read its whole window.
     assert.match(JOURNEY_METRICS.appointment_evidence_registration.coverageNote,
-      /bounded by what was retrieved/);
+      /read its whole window/);
+    assert.match(JOURNEY_METRICS.appointment_evidence_registration.coverageNote,
+      /bounded by what this credential can see/);
+    assert.match(JOURNEY_METRICS.appointment_evidence_registration.coverageNote,
+      /COMPLETE for every linked patient/);
   });
 });
 
@@ -246,12 +257,19 @@ describe("the database boundary, called as the restricted role (skipped without 
       SELECT (SELECT rolsuper FROM pg_roles WHERE rolname='drsnip_metrics_fn') AS is_super,
              has_table_privilege('drsnip_metrics_fn','public.users','SELECT') AS users,
              has_table_privilege('drsnip_metrics_fn','public.appointment_status_transitions','SELECT') AS trans,
+             has_table_privilege('drsnip_metrics_fn','public.sessions','SELECT') AS sessions,
              has_schema_privilege('drsnip_metrics_fn','public','CREATE') AS can_create,
              has_table_privilege('drsnip_metrics_fn','public.submissions','SELECT') AS subs`);
     const row = r.rows[0] as never as Record<string, boolean>;
     assert.equal(row.is_super, false, "SECURITY DEFINER owned by a superuser would hand callers superuser reach");
     assert.equal(row.users, false);
-    assert.equal(row.trans, false);
+    assert.equal(row.sessions, false);
+    // appointment_status_transitions IS readable, deliberately: migration 0015
+    // grants it so the aggregate status-evidence summary can count which
+    // status values actually occur — the input the clinic needs to decide what
+    // "arrived" means. It was revoked when 0014 was written because nothing
+    // needed it then; asserting the old state here would just be stale.
+    assert.equal(row.trans, true);
     assert.equal(row.can_create, false);
     assert.equal(row.subs, true, "it does need submissions");
   });
@@ -275,11 +293,28 @@ describe("the database boundary, called as the restricted role (skipped without 
     assert.equal((r.rows[0] as never as { pub: boolean }).pub, false);
   });
 
-  it("freshness reports the appointment snapshot as NOT live", { skip: !live }, async () => {
+  it("freshness claims 'live' only on evidence of a recent successful run",
+    { skip: !live }, async () => {
+    // This assertion used to be a flat `=== false`, which was right while no
+    // schedule existed and would have been wrong the moment one did. The
+    // durable rule is the one underneath it: the flag may be true ONLY when a
+    // run of the incremental scope actually succeeded inside twice its
+    // expected interval. Configuration alone must never set it — n8n can be
+    // down while the schedule row still says enabled.
     const r = await ro.query(`SELECT * FROM public.drsnip_journey_freshness()`);
     const row = r.rows[0] as never as Record<string, unknown>;
-    assert.equal(row.appointment_sync_active, false,
-      "recurring sync is disabled; the UI must not imply automatic updates");
+    const active = row.appointment_sync_active as boolean;
+
+    const ev = await ro.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM public.drsnip_sync_health() h
+         WHERE h.scope_key = 'practice_incremental'
+           AND h.enabled
+           AND h.last_success_at > now() - make_interval(mins => h.expected_interval_minutes * 2)
+      ) AS earned`);
+    const earned = (ev.rows[0] as never as { earned: boolean }).earned;
+    assert.equal(active, earned,
+      "the live flag must follow a completed run, not a configuration row");
   });
 
   it("a September cohort has mature entries — maturity is per entry, not per month",
@@ -322,14 +357,29 @@ describe("the journeys page keeps real and synthetic apart", () => {
   const page = readFileSync(
     new URL("../../artifacts/intake-form/src/pages/admin/Journeys.tsx", import.meta.url), "utf8");
 
-  it("never renders a 'Live' badge for appointments", () => {
-    // Recurring sync is disabled; "Live" would promise automatic updates.
+  it("never renders a bare 'Live' badge for appointments", () => {
+    // WHAT CHANGED, AND WHAT DID NOT. When these assertions were written there
+    // was no schedule at all, so any claim of automatic updates was false and
+    // the page had to say the data was a hand-refreshed snapshot.
+    //
+    // Recurring sync now runs hourly, so the page may say so — but only on
+    // EVIDENCE. The badge is rendered by <AppointmentFreshnessBadge>, which
+    // reads a server field that is true only when a scheduled run actually
+    // completed inside its cadence; the freshness endpoint's own tests pin that
+    // down. What stays banned is a decorative "Live" chip, which claims
+    // currency without being answerable to anything.
     assert.ok(!/>\s*Live\s*</.test(page));
-    assert.match(page, /Appointment snapshot — last refreshed/);
+    assert.match(page, /<AppointmentFreshnessBadge query=\{freshness\} \/>/);
   });
 
-  it("states plainly that appointment records do not auto-update", () => {
-    assert.match(page, /recurring sync is switched off/);
+  it("does not hard-code a claim about how appointment records update", () => {
+    // The old copy asserted "recurring sync is switched off" in the page body.
+    // A fact that can change must not be a string literal in a component: it
+    // was true then and is false now, and nothing would have failed.
+    assert.ok(!/recurring sync is switched off/.test(page));
+    assert.ok(!/refreshed by hand/.test(page.replace(/\/\/.*$/gm, "")));
+    // Instead the page explains what the timestamp MEANS, which does not change.
+    assert.match(page, /complete to/);
   });
 
   it("labels itself as actual data and pulls nothing from the demo", () => {
@@ -346,8 +396,12 @@ describe("the journeys page keeps real and synthetic apart", () => {
     assert.match(page, /from "\.\/AdminLayout"/);
   });
 
-  it("says appointment categories overlap rather than forming a funnel", () => {
-    assert.match(page, /overlapping categories, not a funnel/);
+  it("says the context measures overlap rather than forming a sequence", () => {
+    // The claim is what matters, not the exact prose: the overlapping
+    // appointment categories must never read as a descending funnel. After the
+    // restructure the wording is "Overlapping categories, not a sequence".
+    assert.match(page, /[Oo]verlapping categories/);
+    assert.match(page, /not<\/strong>\s*a sequence|not a funnel/);
   });
 
   it("a failed request is never rendered as a zero", () => {

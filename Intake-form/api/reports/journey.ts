@@ -123,6 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       appointment_sync_active: boolean;
       history_complete_patients: number;
       linked_patients: number;
+      sync_schedule_enabled: boolean;
     }>(sql`SELECT * FROM public.drsnip_journey_freshness()`);
     const f = fresh.rows[0];
 
@@ -188,9 +189,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       freshness: {
         intake_latest_at: f?.intake_latest_at ?? null,
         appointments_synced_at: f?.appointments_synced_at ?? null,
-        // Recurring sync is disabled. The UI must not imply live appointments.
+        // Earned, not declared: true only when a scheduled run of the
+        // incremental scope actually succeeded inside its cadence (0017). The
+        // UI must never imply automatic updates from configuration alone.
         appointment_sync_active: f?.appointment_sync_active ?? false,
-        appointment_update_mode: "manual",
+        appointment_update_mode: f?.sync_schedule_enabled ? "scheduled" : "manual",
         history_complete_patients: f?.history_complete_patients ?? null,
         linked_patients: f?.linked_patients ?? null,
       },

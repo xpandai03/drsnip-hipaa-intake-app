@@ -25,10 +25,17 @@
 // The synthetic insurance-follow-up demo stays at its own route. Nothing on
 // this page is synthetic and nothing from the demo is mixed in.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "wouter";
+import { RefreshCw } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { PageHeader } from "./PageHeader";
+import {
+  useFreshness,
+  AppointmentFreshnessBadge,
+  IntakeFreshnessBadge,
+} from "@/components/reporting/freshness";
 import {
   WaterfallChart,
   type WaterfallStage,
@@ -165,6 +172,85 @@ function UnavailableCard({ title, reason, testId }: { title: string; reason: str
   );
 }
 
+/**
+ * The shape of the answer, drawn while the answer is on its way.
+ *
+ * NOT a number and NOT a demo figure. A placeholder that looked like a result
+ * would be worse than a spinner: a reader who glanced away and back could not
+ * tell a stand-in from a measurement. These are empty grey blocks in exactly
+ * the positions the real cards occupy, so the page does not jump when they
+ * arrive, and they are announced to screen readers as busy.
+ */
+function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-muted ${className}`} aria-hidden="true" />;
+}
+
+function PanelSkeleton() {
+  return (
+    <div className="space-y-6" data-testid="journey-loading" role="status" aria-busy="true">
+      <span className="sr-only">Loading this journey&rsquo;s figures.</span>
+      <section className="rounded-lg border bg-muted/20 p-4">
+        <Skeleton className="h-4 w-20" />
+        <div className="mt-3 flex flex-wrap gap-4">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+      </section>
+      <section>
+        <Skeleton className="h-4 w-44" />
+        <div className="mt-3 space-y-2">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-4/5" />
+          <Skeleton className="h-9 w-3/5" />
+        </div>
+      </section>
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </section>
+      <section>
+        <Skeleton className="h-4 w-52" />
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * A failed request, said plainly, with the way out.
+ *
+ * Never a zero and never a dash that could read as "none": a request that did
+ * not answer is not a measurement of nothing.
+ */
+function PanelError({ onRetry, detail }: { onRetry: () => void; detail?: string }) {
+  return (
+    <div
+      className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
+      data-testid="journey-error"
+      role="alert"
+    >
+      <p className="font-medium">This journey could not be loaded.</p>
+      <p className="mt-1 text-muted-foreground">
+        Nothing is shown rather than a zero — a failed request is not a result. The figures
+        that were here before, if any, are not being updated.
+      </p>
+      {detail && <p className="mt-1 font-mono text-xs text-muted-foreground">{detail}</p>}
+      <button
+        type="button"
+        onClick={onRetry}
+        data-testid="journey-retry"
+        className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
+      </button>
+    </div>
+  );
+}
+
 /** Expandable "what exactly is this" block, so the main view stays readable. */
 function Explain({ children, label = "What is counted" }: { children: React.ReactNode; label?: string }) {
   return (
@@ -180,226 +266,307 @@ function Explain({ children, label = "What is counted" }: { children: React.Reac
 // ---------------------------------------------------------------------------
 // One journey panel.
 // ---------------------------------------------------------------------------
+type BookingResponse = {
+  metric: string; label: string; counts_what: string;
+  snapshot_cutoff: string | null;
+  cohort: { total: number | null; covered: number | null; not_covered: number | null;
+            eligible: number | null; immature: number | null; note: string };
+  recorded: { count: number | null; rate: number | null };
+  advance_booking: { count: number | null; rate: number | null; note: string };
+  at_or_after_scheduled: { count: number | null; note: string };
+  prior: { past_visit: number | null; future_booking: number | null; note: string };
+  changed_after_recording: { later_cancelled: number | null; later_deleted: number | null; note: string };
+  none_recorded: number | null;
+  timing: { matched: number | null; p50_days: number | null };
+  provider_scope: string; coverage_note: string;
+  attendance: { available: boolean; mapping_version: string; approval_state: string;
+                reason: string | null; outstanding_decision: string[] };
+  status: string;
+};
+
 function JourneyPanel({
-  formMetric, apptMetric, entryLabel, outcomeLabel, from, to, windowDays,
+  formMetric, bookingMetric, entryLabel, outcomeLabel, from, to, windowDays,
 }: {
-  formMetric: string; apptMetric: string;
+  formMetric: string; bookingMetric: string;
   entryLabel: string; outcomeLabel: string;
   from: string; to: string; windowDays: number;
 }) {
-  const q = (metric: string) =>
-    `/api/reports/journey?metric=${encodeURIComponent(metric)}` +
-    `&from=${from}&to=${to}&window=${windowDays}`;
+  const q = (base: string, metric: string) =>
+    `${base}?metric=${encodeURIComponent(metric)}&from=${from}&to=${to}&window=${windowDays}`;
+
   const form = useQuery({
     queryKey: ["journey", formMetric, from, to, windowDays],
-    queryFn: () => getJson<JourneyResponse>(q(formMetric)),
-    // A failed refetch must NOT blank a good number. Keep showing the last
-    // value with a staleness notice instead of dropping to zero.
-    placeholderData: (prev) => prev,
-    retry: 1,
+    queryFn: () => getJson<JourneyResponse>(q("/api/reports/journey", formMetric)),
+    placeholderData: (prev) => prev, retry: 1,
   });
-  const appt = useQuery({
-    queryKey: ["journey", apptMetric, from, to, windowDays],
-    queryFn: () => getJson<JourneyResponse>(q(apptMetric)),
-    placeholderData: (prev) => prev,
-    retry: 1,
+  const book = useQuery({
+    queryKey: ["booking", bookingMetric, from, to, windowDays],
+    queryFn: () => getJson<BookingResponse>(q("/api/reports/booking", bookingMetric)),
+    placeholderData: (prev) => prev, retry: 1,
   });
 
-  if (form.isLoading && !form.data) {
-    return <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground" data-testid="journey-loading">Loading…</div>;
+  // An error wins over stale data: if the newest request failed, say so rather
+  // than leaving an older answer on screen with nothing to mark it as old.
+  if (book.isError) {
+    return <PanelError onRetry={() => { void book.refetch(); }} />;
   }
-  if (form.isError && !form.data) {
-    return (
-      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" data-testid="journey-error">
-        <p className="font-medium">Could not load this journey.</p>
-        <p className="mt-1 text-muted-foreground">
-          Nothing is shown rather than a zero — a failed request is not a result.
-          <button className="ml-2 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => form.refetch()}>Retry</button>
-        </p>
-      </div>
-    );
+  if (!book.data) {
+    return <PanelSkeleton />;
   }
-  const f = form.data!;
-  const a = appt.data;
+  const b = book.data;
+  const f = form.data;
+  // The two queries are independent. The appointment journey can render while
+  // the consultation measure is still loading, and one failing must not blank
+  // the other.
+  const updating = book.isFetching || form.isFetching;
 
-  // The waterfall is used ONLY here, where each stage is a true subset of the
-  // one above: everyone who submitted the outcome form is in the entry cohort.
+  // THE APPOINTMENT JOURNEY. Genuinely nested: every advance booking is a
+  // recorded appointment, and every recorded appointment belongs to an
+  // eligible patient. MATURITY IS NOT A STAGE HERE — it is measurement
+  // eligibility, not something a patient did, so it lives in the cohort line
+  // above the chart.
+  //
+  // ATTENDANCE IS DELIBERATELY ABSENT from this silhouette. Its definition,
+  // once approved, may count arrivals at appointments that were NOT advance
+  // bookings, so nesting it under the narrowest stage would be wrong. It is an
+  // outcome card instead.
   const stages: WaterfallStage[] = [
     {
-      id: "entry", label: entryLabel,
-      state: f.cohort === null ? "suppressed" : "measured",
-      ...(f.cohort === null ? {} : { value: f.cohort }),
+      id: "eligible", label: `${entryLabel} cohort (eligible)`,
+      state: b.cohort.eligible === null ? "suppressed" : "measured",
+      ...(b.cohort.eligible === null ? {} : { value: b.cohort.eligible }),
       unit: "patients",
-      coverage: `Distinct linked patient IDs whose first ${entryLabel.toLowerCase()} falls in this period.`,
+      coverage: "Patients whose appointment history was retrieved and whose full follow-up window had elapsed before the snapshot.",
     },
     {
-      id: "mature-den", label: `Had ${windowDays} full days to respond`,
-      state: f.mature_window.denominator === null ? "suppressed"
-           : f.mature_window.denominator === 0 ? "not_yet" : "measured",
-      ...(f.mature_window.denominator ? { value: f.mature_window.denominator } : {}),
+      id: "recorded", label: "Appointment record created after entry",
+      state: b.recorded.count === null ? "suppressed" : "measured",
+      ...(b.recorded.count === null ? {} : { value: b.recorded.count }),
       unit: "patients",
-      coverage: `Entries too recent to have had ${windowDays} days are excluded here, not counted as failures.`,
+      conversion: b.recorded.rate === null ? null : pct(b.recorded.rate),
+      coverage: "The timestamp on the record. Not proof of when a human booked, and not attendance.",
     },
     {
-      id: "outcome", label: `${outcomeLabel} within ${windowDays} days`,
-      state: f.mature_window.numerator === null ? "suppressed"
-           : f.mature_window.denominator === 0 ? "not_yet" : "measured",
-      ...(f.mature_window.numerator !== null && f.mature_window.denominator ? { value: f.mature_window.numerator } : {}),
+      id: "advance", label: "Advance booking recorded",
+      state: b.advance_booking.count === null ? "suppressed" : "measured",
+      ...(b.advance_booking.count === null ? {} : { value: b.advance_booking.count }),
       unit: "patients",
-      conversion: f.mature_window.rate === null ? null : pct(f.mature_window.rate),
-      coverage: f.counts_what,
-    },
-    {
-      id: "attendance", label: "Attended the appointment",
-      state: "unavailable",
-      coverage:
-        "Most appointments have no status history retrieved, so an absent history means " +
-        "'not looked up', not 'did not arrive'. The clinic has also not confirmed which status " +
-        "values mean the patient arrived.",
+      conversion: b.advance_booking.rate === null ? null : pct(b.advance_booking.rate),
+      coverage: b.advance_booking.note,
     },
   ];
 
+  // The instant these appointment figures are as at. The server returns it with
+  // the figures, so it is never absent while they are on screen; if it ever is,
+  // say what is missing rather than the word "unknown", which reads as a
+  // property of the data instead of a gap in what we were told.
+  const snap = b.snapshot_cutoff
+    ? new Date(b.snapshot_cutoff).toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" })
+    : "an instant this response did not state";
+
   return (
-    <div className="space-y-6">
-      <section>
-        <h3 className="text-sm font-semibold">Form progression</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Each stage below is a subset of the one above it. {SCALE_NOTE}
+    <div className="space-y-6" aria-busy={updating || undefined}>
+      {updating && (
+        <p
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          data-testid="journey-updating"
+          role="status"
+        >
+          <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+          Updating these figures. The numbers below are the previous ones until it finishes.
         </p>
-        {/* Horizontal on desktop, VERTICAL on mobile. A four-stage horizontal
-            waterfall at 390px truncates every label ("Insurance inq…", "Had 14
-            full da…"), which defeats the point of naming the stages. Same
-            split the insurance demo already uses. */}
+      )}
+      {/* cohort + maturity context — NOT a funnel stage */}
+      <section className="rounded-lg border bg-muted/20 p-4" data-testid="cohort-context">
+        <h3 className="text-sm font-semibold">Cohort</h3>
+        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span><strong className="tabular-nums">{b.cohort.total ?? "—"}</strong> entered in this period</span>
+          <span><strong className="tabular-nums">{b.cohort.eligible ?? "—"}</strong> eligible to measure</span>
+          <span className="text-muted-foreground">
+            {b.cohort.immature ?? "—"} still inside their {windowDays}-day window at the snapshot
+          </span>
+          {(b.cohort.not_covered ?? 0) > 0 && (
+            <span className="text-muted-foreground">{b.cohort.not_covered} not covered by the snapshot</span>
+          )}
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{b.cohort.note}</p>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-semibold">Appointment journey</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Each stage is a subset of the one above it. {SCALE_NOTE}
+        </p>
         <div className="mt-3 hidden md:block">
-          <WaterfallChart
-            stages={stages}
-            colors={RAMP}
-            orientation="horizontal"
-            ariaLabel={`${entryLabel} to ${outcomeLabel} progression`}
-          />
+          <WaterfallChart stages={stages} colors={RAMP} orientation="horizontal"
+                          ariaLabel={`${entryLabel} to appointment record`} />
         </div>
         <div className="mt-3 md:hidden">
-          <WaterfallChart
-            stages={stages}
-            colors={RAMP}
-            orientation="vertical"
-            ariaLabel={`${entryLabel} to ${outcomeLabel} progression`}
-          />
+          <WaterfallChart stages={stages} colors={RAMP} orientation="vertical"
+                          ariaLabel={`${entryLabel} to appointment record`} />
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <ModeCard title="Observed to date" block={f.observed_to_date} testId="mode-observed" />
-          <ModeCard title={`Within ${windowDays} days (mature)`} block={f.mature_window} testId="mode-mature" />
-        </div>
-        <Explain>
-          <p>{f.counts_what}</p>
-          <p>
-            <strong>Observed to date</strong> counts every outcome seen so far, including for
-            patients who registered days ago. It only ever rises, so two periods of different ages
-            cannot be compared on it.
-          </p>
-          <p>
-            <strong>Within {windowDays} days</strong> keeps only entries that have already had the
-            full {windowDays} days available. Entries inside the period that are still too recent
-            are removed from the denominator — a September patient who registered on the 2nd IS
-            included; one who registered yesterday is not.
-          </p>
-          {f.durations.matched !== null && f.durations.p50_days !== null && (
-            <p>
-              Median time from {entryLabel.toLowerCase()} to {outcomeLabel.toLowerCase()}:{" "}
-              <strong>{f.durations.p50_days.toFixed(1)} days</strong> among the {f.durations.matched}{" "}
-              matched patients only — not across the whole cohort.
-            </p>
+        <Explain label="What is counted, and as at when">
+          <p>{b.counts_what}</p>
+          <p><strong>As at {snap}</strong> — the appointment snapshot. {b.coverage_note}</p>
+          <p><strong>Scope:</strong> {b.provider_scope}</p>
+          {b.timing.p50_days !== null && (
+            <p>Median time from {entryLabel.toLowerCase()} to an advance booking:{" "}
+              <strong>{b.timing.p50_days.toFixed(1)} days</strong>, among the {b.timing.matched} matched.</p>
           )}
         </Explain>
       </section>
 
+      {/* attendance: an OUTCOME, not a stage under advance booking */}
+      <section className="grid gap-3 sm:grid-cols-2">
+        <UnavailableCard
+          title="Attendance"
+          reason={b.attendance.reason ?? ""}
+          testId="attendance-card"
+        />
+        <div className="rounded-lg border bg-card p-4" data-testid="attendance-decision">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What is needed</div>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            The appointment history is loaded in full. What is missing is a decision: which of this
+            clinic&rsquo;s status values mean the patient physically arrived. Mapping version{" "}
+            <span className="tabular-nums">{b.attendance.mapping_version}</span>, state{" "}
+            <em>{b.attendance.approval_state.replace(/_/g, " ")}</em>.
+          </p>
+        </div>
+      </section>
+
+      {/* consultation: a SEPARATE progression measure, not a booking stage */}
       <section>
-        <h3 className="text-sm font-semibold">Appointment record evidence</h3>
+        <h3 className="text-sm font-semibold">{outcomeLabel}</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          These are <strong>overlapping categories, not a funnel</strong> — one patient can appear
-          in more than one. They are deliberately not drawn as descending stages.
+          A separate measure. It is <strong>not</strong> a step on the way to an appointment, and
+          attendance does not depend on it.
         </p>
-        {appt.isLoading && !a ? (
-          <div className="mt-3 rounded-lg border p-6 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : appt.isError && !a ? (
-          <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" data-testid="appt-error">
-            Could not load appointment evidence. No value is shown rather than a zero.
+        {f ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <ModeCard title="Observed to date" block={f.observed_to_date} testId="mode-observed" />
+            <ModeCard title={`Within ${windowDays} days (mature)`} block={f.mature_window} testId="mode-mature" />
           </div>
-        ) : a ? (
-          <>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <ModeCard
-                title="Appointment record found"
-                block={a.observed_to_date}
-                minimum={a.is_observed_minimum}
-                testId="appt-found"
-              />
-              <CountCard
-                title={a.secondary.labels.a ?? "Forward-scheduled"}
-                value={a.secondary.a}
-                help="Record created before the time it was scheduled for — the conservative subset that looks like a genuine forward booking."
-                testId="appt-forward"
-              />
-              <CountCard
-                title={a.secondary.labels.b ?? "Created at/after scheduled time"}
-                value={a.secondary.b}
-                help="Its own category. Not bad data, and not an advance booking."
-                testId="appt-after"
-              />
-              <CountCard
-                title={a.secondary.labels.c ?? "Record predating entry"}
-                value={a.secondary.c}
-                help="An earlier appointment record already existed. Having one does not disqualify a patient from the measures above."
-                testId="appt-prior"
-              />
-              <CountCard
-                title="Unresolved"
-                value={a.coverage.unresolved}
-                help="No record found AND no complete history retrieved for that patient. These are unknowns, not negatives."
-                testId="appt-unresolved"
-              />
-              <UnavailableCard
-                title="Attendance"
-                reason="Blocked on incomplete status-history retrieval and an unconfirmed arrival mapping."
-                testId="appt-attendance"
-              />
-            </div>
-            <Explain label="Why this is a minimum, and what it does not say">
-              <p>{a.counts_what}</p>
-              <p>
-                <strong>It is a proportion of the cohort, but not a complete booking-conversion
-                rate.</strong> A patient counted here definitely has an appointment record. A
-                patient not counted may still have one: {a.coverage.unresolved ?? "some"} patients
-                have neither a record found nor a complete history retrieved, so the true figure is
-                at least this and no more than this plus the unresolved group.
-              </p>
-              <p><strong>Scope:</strong> {a.provider_scope}</p>
-              <p>{a.coverage.note}</p>
-            </Explain>
-          </>
-        ) : null}
+        ) : form.isError ? (
+          <div
+            className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
+            data-testid="consultation-error"
+            role="alert"
+          >
+            <p className="font-medium">This measure could not be loaded.</p>
+            <p className="mt-1 text-muted-foreground">
+              The appointment figures above are unaffected — they come from a separate request.
+            </p>
+            <button
+              type="button"
+              onClick={() => { void form.refetch(); }}
+              data-testid="consultation-retry"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2" data-testid="consultation-loading" role="status" aria-busy="true">
+            <span className="sr-only">Loading the consultation measure.</span>
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        )}
+        {f && (
+          <Explain>
+            <p>{f.counts_what}</p>
+            <p>
+              Intake data is current to <strong>now</strong>; the appointment figures above are as
+              at the snapshot. The two have different as-of times on purpose.
+            </p>
+          </Explain>
+        )}
+      </section>
+
+      {/* contextual measures — overlapping, deliberately not a funnel */}
+      <section>
+        <h3 className="text-sm font-semibold">Context</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Overlapping categories, <strong>not</strong> a sequence — one patient can appear in several.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <CountCard title="Recorded at/after its scheduled time" value={b.at_or_after_scheduled.count}
+                     help={b.at_or_after_scheduled.note} testId="ctx-at-after" />
+          <CountCard title="Had a past visit before entry" value={b.prior.past_visit}
+                     help={b.prior.note} testId="ctx-prior-past" />
+          <CountCard title="Already scheduled at entry" value={b.prior.future_booking}
+                     help="Booked before entry, for a date after it." testId="ctx-prior-future" />
+          <CountCard title="Later cancelled" value={b.changed_after_recording.later_cancelled}
+                     help={b.changed_after_recording.note} testId="ctx-cancelled" />
+          <CountCard title="Record later deleted" value={b.changed_after_recording.later_deleted}
+                     help="Deleted at the source. The evidence that a record was created is kept."
+                     testId="ctx-deleted" />
+          <CountCard title="No appointment recorded" value={b.none_recorded}
+                     help="A real negative within the snapshot scope: their history was retrieved and their window had elapsed."
+                     testId="ctx-none" />
+        </div>
       </section>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
+type TabId = "registration" | "insurance";
+
+const TABS: ReadonlyArray<readonly [TabId, string]> = [
+  ["registration", "Registration journey"],
+  ["insurance", "Insurance inquiry journey"],
+] as const;
+
+function isTab(v: string | null): v is TabId {
+  return v === "registration" || v === "insurance";
+}
+function isPeriod(v: string | null): v is (typeof PERIODS)[number]["id"] {
+  return PERIODS.some((p) => p.id === v);
+}
+
 export default function Journeys() {
-  const [tab, setTab] = useState<"registration" | "insurance">("registration");
-  const [periodId, setPeriodId] = useState<(typeof PERIODS)[number]["id"]>("all");
-  const [windowDays, setWindowDays] = useState<number>(14);
+  // WHAT IS SELECTED LIVES IN THE URL.
+  //
+  // The tab, the entry period and the follow-up window are all part of the
+  // question being asked, so all three belong in the address. Before this, a
+  // link to "the insurance journey for August on a 30-day window" did not
+  // exist: every link landed on the registration tab, all history, 14 days, and
+  // the recipient had to be told which controls to set. Reload and Back now
+  // work too.
+  const search = useSearch();
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+
+  const tab: TabId = isTab(params.get("journey")) ? (params.get("journey") as TabId) : "registration";
+  const periodId = isPeriod(params.get("period"))
+    ? (params.get("period") as (typeof PERIODS)[number]["id"])
+    : "all";
+  const windowParam = Number(params.get("window"));
+  const windowDays = WINDOWS.includes(windowParam as (typeof WINDOWS)[number]) ? windowParam : 14;
+
+  // replaceState, not pushState: changing a filter is refining one question,
+  // not asking a new one, so Back should leave the page rather than walk every
+  // control the reader touched on the way.
+  const setParam = useCallback((key: string, value: string) => {
+    const next = new URLSearchParams(window.location.search);
+    next.set(key, value);
+    window.history.replaceState(
+      null, "",
+      `${window.location.pathname}?${next.toString()}`,
+    );
+    // wouter's useSearch subscribes to popstate, which replaceState does not
+    // fire. Dispatching it keeps the hook and the address bar in step.
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, []);
 
   const period = useMemo(() => PERIODS.find((p) => p.id === periodId)!, [periodId]);
   const from = period.from;
   const to = period.to();
 
-  const freshness = useQuery({
-    queryKey: ["journey-freshness"],
-    queryFn: () => getJson<JourneyResponse>(`/api/reports/journey?metric=registration_to_consultation&from=${from}&to=${to}&window=14`),
-    placeholderData: (prev) => prev,
-  });
-  const fr = freshness.data?.freshness;
+  // One cheap call (drsnip_journey_freshness() alone, single-digit ms) instead
+  // of reading freshness off the side of a six-second metric. That delay was
+  // the whole reason the badge used to say "last refreshed unknown".
+  const freshness = useFreshness();
 
   // Pages self-wrap in AdminLayout in this app — the route does not do it.
   // Without this the page renders with no navigation and no sign-out.
@@ -416,34 +583,30 @@ export default function Journeys() {
                 data-testid="badge-actual">
             Actual intake data
           </span>
-          <span className="inline-flex items-center rounded-full border border-amber-600/30 bg-amber-50 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-                data-testid="badge-snapshot">
-            {/* Never "Live": recurring appointment sync is disabled. */}
-            Appointment snapshot — last refreshed{" "}
-            {fr?.appointments_synced_at
-              ? new Date(fr.appointments_synced_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" })
-              : "unknown"}
-          </span>
+          {/* The badge decides live / late / paused / manual from EVIDENCE the
+              server returns — a completed run inside the cadence — never from
+              the fact that a schedule was configured. While the check is in
+              flight it says "checking", never "unknown". */}
+          <IntakeFreshnessBadge query={freshness} />
+          <AppointmentFreshnessBadge query={freshness} />
         </div>
         <p className="mt-2 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-          Intake submissions update as forms arrive. <strong>Appointment records do not</strong> —
-          recurring sync is switched off, so they are a stored snapshot refreshed by hand. Counted
-          in distinct linked patient IDs; where one person holds two charts this is a chart count.
-          Entry dates use clinic days (Pacific).
+          Intake submissions update as forms arrive. Appointment records are re-read on a
+          schedule; the badge above says the instant they are <em>complete to</em>, which is not
+          the same as the last time sync ran — a run that could not finish its window leaves that
+          instant where it was. Counted in distinct linked patient IDs; where one person holds two
+          charts this is a chart count. Entry dates use clinic days (Pacific).
         </p>
       </PageHeader>
 
       {/* tabs */}
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Journey">
-        {([
-          ["registration", "Registration journey"],
-          ["insurance", "Insurance inquiry journey"],
-        ] as const).map(([id, label]) => (
+        {TABS.map(([id, label]) => (
           <button
             key={id}
             role="tab"
             aria-selected={tab === id}
-            onClick={() => setTab(id)}
+            onClick={() => setParam("journey", id)}
             data-testid={`tab-${id}`}
             className={`rounded-md border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               tab === id ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:bg-muted"
@@ -462,7 +625,7 @@ export default function Journeys() {
             className="min-w-0 rounded-md border bg-card px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={periodId}
             data-testid="filter-period"
-            onChange={(e) => setPeriodId(e.target.value as typeof periodId)}
+            onChange={(e) => setParam("period", e.target.value)}
           >
             {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
@@ -473,7 +636,7 @@ export default function Journeys() {
             className="rounded-md border bg-card px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={windowDays}
             data-testid="filter-window"
-            onChange={(e) => setWindowDays(Number(e.target.value))}
+            onChange={(e) => setParam("window", e.target.value)}
           >
             {WINDOWS.map((w) => <option key={w} value={w}>{w} days</option>)}
           </select>
@@ -487,7 +650,7 @@ export default function Journeys() {
       {tab === "registration" ? (
         <JourneyPanel
           formMetric="registration_to_consultation"
-          apptMetric="appointment_evidence_registration"
+          bookingMetric="booking_registration"
           entryLabel="Registration"
           outcomeLabel="Consultation form submitted"
           from={from} to={to} windowDays={windowDays}
@@ -495,7 +658,7 @@ export default function Journeys() {
       ) : (
         <JourneyPanel
           formMetric="insurance_to_registration"
-          apptMetric="appointment_evidence_insurance"
+          bookingMetric="booking_insurance"
           entryLabel="Insurance inquiry"
           outcomeLabel="Registration submitted"
           from={from} to={to} windowDays={windowDays}
@@ -505,7 +668,8 @@ export default function Journeys() {
       <p className="mt-8 text-xs text-muted-foreground">
         Small groups are withheld, together with any total that would let them be recovered by
         subtraction. “Withheld” never means zero. The synthetic insurance follow-up demonstration
-        is a separate page and none of its figures appear here.
+        is a separate page, listed under “Demonstration” in Reports, and none of its figures
+        appear here.
       </p>
     </div>
     </AdminLayout>
