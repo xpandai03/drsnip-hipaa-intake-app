@@ -59,7 +59,10 @@ REVOKE ALL ON TABLE public.users                  FROM drsnip_metrics_fn;
 REVOKE ALL ON TABLE public.sessions               FROM drsnip_metrics_fn;
 REVOKE ALL ON TABLE public.submission_files       FROM drsnip_metrics_fn;
 REVOKE ALL ON TABLE public.registration_partials  FROM drsnip_metrics_fn;
-REVOKE ALL ON TABLE public.appointment_status_transitions FROM drsnip_metrics_fn;
+-- appointment_status_transitions is NOT revoked here any more. Migration 0015
+-- grants SELECT on it so the aggregate status-evidence summary can count which
+-- status values actually occur — the input the clinic needs to decide what
+-- "arrived" means. Revoking it here would fight 0015 on every replay.
 
 -- ---------------------------------------------------------------------------
 -- 2. The function.
@@ -397,8 +400,10 @@ AS $$
   SELECT
     (SELECT max(s.created_at) FROM public.submissions s),
     (SELECT max(w.completed_at) FROM public.appointment_sync_windows w WHERE w.state = 'complete'),
-    -- Recurring sync is disabled; appointment data is a manual snapshot. This
-    -- is returned so the UI cannot imply automatic updates.
+    -- SUPERSEDED BY 0017, which replaces this function so the flag is earned
+    -- from a completed scheduled run rather than hard-coded. This literal was
+    -- correct when written — no schedule existed — and is kept so re-reading
+    -- 0014 alone is not misleading. Apply these files in numeric order.
     false,
     (SELECT count(*)::int FROM public.appointment_sync_windows w
       WHERE w.strategy = 'patient_history' AND w.state = 'complete'),
@@ -423,9 +428,11 @@ END $$;
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
+  -- appointment_status_transitions is deliberately absent from this list: 0015
+  -- grants it for the aggregate status-evidence summary. users and
+  -- submission_files remain off limits.
   IF has_table_privilege('drsnip_metrics_fn', 'public.users', 'SELECT')
-     OR has_table_privilege('drsnip_metrics_fn', 'public.submission_files', 'SELECT')
-     OR has_table_privilege('drsnip_metrics_fn', 'public.appointment_status_transitions', 'SELECT') THEN
+     OR has_table_privilege('drsnip_metrics_fn', 'public.submission_files', 'SELECT') THEN
     RAISE EXCEPTION 'drsnip_metrics_fn reads more than it needs';
   END IF;
   IF has_schema_privilege('drsnip_metrics_fn', 'public', 'CREATE') THEN

@@ -1,0 +1,1065 @@
+{
+  "id": "9Wvd36XnnbDdypaf",
+  "name": "Appointment Sync — new-patient catch-up (every 10 min, scheduled)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "cron",
+      "name": "Every 10 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1060,
+        220
+      ],
+      "notes": "Ten minutes, not an hour, and that is a capacity decision rather than a\nlatency one. One execution reads ONE patient's whole history — the same\nsingle unit of work the backfill used, with the same ledger, the same\ntruncation handling and the same proof that a unit was read. At hourly\nthat is 24 patients a day against a clinic that registers roughly twenty;\none busy week and the queue never drains. Every ten minutes gives 144 a\nday for 6 requests an hour, which is nothing against the shared budget.\n\nMost ticks find nothing to do and record a no-op success in well under a\nsecond without touching DrChrono at all.",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "man",
+      "name": "Run Now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1060,
+        400
+      ],
+      "notes": "Same path as the schedule, including both gates.",
+      "parameters": {}
+    },
+    {
+      "id": "pre",
+      "name": "Preflight: schedule + shared budget",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -840,
+        300
+      ],
+      "notes": "The same two gates as the incremental workflow, reading the same budget\nfunction, which is the point: two schedules each obeying a private cap can\nstill exceed the practice's shared DrChrono allowance. One number, both\nschedules.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT sc.enabled, sc.cadence, sc.max_requests_per_run,\n       b.may_run, b.reason, b.hour_remaining, b.burst_remaining\n  FROM appointment_sync_schedules sc\n  CROSS JOIN LATERAL public.drsnip_sync_budget() b\n WHERE sc.schedule_key = 'patient_catchup_hourly';",
+        "options": {
+          "queryReplacement": "={{ [] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "g1",
+      "name": "Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -640,
+        300
+      ],
+      "notes": "False branch ends with nothing written — a schedule that is off should\nnot manufacture failures.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "g1",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "g2",
+      "name": "Within shared budget?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -440,
+        220
+      ],
+      "notes": "False branch records outcome 'budget_exhausted' with zero requests, so a\ndeliberate skip is visible and is never read as a failure.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "g2",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.may_run }}",
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "skip",
+      "name": "Record Budget Skip",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -240,
+        420
+      ],
+      "notes": "Counters and a reason string only.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_sync_runs\n  (mode, scope_key, scope_detail, run_cutoff, coverage, outcome, finished_at, error_summary)\nVALUES ('patient_catchup', 'patient_catchup',\n        'skipped before any DrChrono request: shared budget',\n        now(), 'patient_history', 'budget_exhausted', now(), $1)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.reason ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "cfgn",
+      "name": "Catchup Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        220
+      ],
+      "notes": "The whole bound, in one visible place. 'Catchup Config' is one of the\nnames the generated Project Page code resolves its config from, so the\nsame unit-tested code node serves this workflow unchanged.",
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"scope_key\": \"patient_catchup\",\n  \"mode\": \"patient_catchup\",\n  \"strategy\": \"patient_history\",\n  \"coverage\": \"patient_history\",\n  \"lease\": \"5 minutes\",\n  \"page_size\": 50,\n  \"historical_start\": \"2000-01-01\",\n  \"future_horizon\": \"2028-03-31\",\n  \"window_days\": 92,\n  \"practice_group_id\": null,\n  \"verbose\": true,\n  \"page_cap_note\": \"The cap that BINDS is $pageCount in Fetch Window's completeExpression. This n8n version ignores maxRequestCount.\",\n  \"strategy_note\": \"NEW PATIENTS ONLY, and by construction rather than by a date filter. Seed Patient Probes inserts one appointment_sync_windows row per linked patient ON CONFLICT DO NOTHING, so the 2,035 patients the backfill already completed keep their 'complete' rows and are never re-read. Claim Next Window only ever picks up pending/partial/failed units, which after the backfill means exactly the patients who registered since. This is NOT another historical sweep and must never become one: scope_key is patient_catchup, strategy is patient_history, and no scheduled_window unit is planned here.\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "run",
+      "name": "Open Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -40,
+        120
+      ],
+      "notes": "Opens a run row; run_cutoff comes from the database clock.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_sync_runs (mode, scope_key, scope_detail, run_cutoff, coverage)\nVALUES ($1, $2, $3, now(), $4)\nRETURNING id AS run_id, run_cutoff;",
+        "options": {
+          "queryReplacement": "={{ [ $json.mode, $json.scope_key, $json.strategy, $json.coverage ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "clm",
+      "name": "Claim Scope",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        160,
+        120
+      ],
+      "notes": "Scope lease. ZERO ROWS = another historical run holds it.\n\nNOTE: the lease is PER SCOPE, so it does NOT serialize this run against an\nincremental run — they use different scopes. What protects the shared\nevidence tables is the row-level staleness guard in the snapshot upsert,\nwhich is covered by a cross-scope test.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH claimed AS (\n  UPDATE appointment_sync_state\n     SET active_run_id    = $2::uuid,\n         lease_expires_at = now() + $3::interval,\n         updated_at       = now()\n   WHERE scope_key = $1\n     AND (active_run_id IS NULL\n          OR active_run_id = $2::uuid\n          OR lease_expires_at IS NULL\n          OR lease_expires_at < now())\n  RETURNING scope_key, watermark, watermark_meaning,\n            history_complete, last_committed_generation\n)\nUPDATE appointment_sync_runs r\n   SET watermark_before = c.watermark\n  FROM claimed c\n WHERE r.id = $2::uuid\nRETURNING r.id AS run_id,\n          r.run_cutoff,\n          c.watermark          AS watermark_before,\n          c.watermark_meaning,\n          c.history_complete,\n          c.last_committed_generation + 1 AS next_generation;",
+        "options": {
+          "queryReplacement": "={{ [ $('Catchup Config').first().json.scope_key, $json.run_id, $('Catchup Config').first().json.lease ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "gate",
+      "name": "Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        360,
+        120
+      ],
+      "notes": "False = lock_contended. Stop; do not report success, do not touch state.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.run_id }}",
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "lnk",
+      "name": "Linked Patient IDs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        120
+      ],
+      "notes": "The only intake data this workflow can see. Used to discard unlinked\npatients BEFORE anything is written.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT patient_source_id FROM drsnip_linked_patient_ids;",
+        "options": {
+          "queryReplacement": "={{ [] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "plan",
+      "name": "Build Window Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        120
+      ],
+      "notes": "Deterministic plan. Re-running is idempotent against the window ledger.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Build the scheduled-date window plan. Deterministic: identical inputs always\n// produce identical window_keys, so re-running is a no-op against the ledger\n// rather than a second, parallel plan.\n//\n// TWO MEASURED API CONSTRAINTS SHAPE THIS:\n//  1. date_range may not exceed 190 days unless the whole range is in the past.\n//  2. The response carries no `count`, so a window's size is only knowable by\n//     paging through it.\n//\n// WHY QUARTERS RATHER THAN ONE BIG PAST WINDOW: past ranges have no length\n// limit, but they still have a PAGE limit. A single 2000-to-today window would\n// be one unit of tens of thousands of appointments — it would hit the page cap,\n// and a capped unit is not coverage. Quarters keep every unit far under the cap\n// and make an interrupted sweep resume at a quarter boundary.\n//\n// Keys are zero-padded and sortable, so \"claim the lowest pending key\" is the\n// same thing as \"resume in chronological order\".\nconst cfg = $('Catchup Config').first().json;\nif (cfg.strategy !== 'scheduled_window') return [{ json: { window_key: null } }];\n\nconst iso = (d) => d.toISOString().slice(0, 10);\nconst out = [];\n\n// Everything before the dense era in one cheap unit: measured at 2 appointments\n// in total before 2022, and zero before 2018.\nout.push({ window_key: 'sched:0000_pre', range_start: cfg.historical_start, range_end: '2021-12-31' });\n\nlet cur = new Date('2022-01-01T00:00:00Z');\nconst end = new Date(cfg.future_horizon + 'T00:00:00Z');\nlet n = 1;\nwhile (cur <= end) {\n  const stop = new Date(Math.min(\n    Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 3, 0), // last day of the quarter\n    end.getTime(),\n  ));\n  out.push({ window_key: `sched:${String(n).padStart(4, '0')}_${iso(cur)}`,\n             range_start: iso(cur), range_end: iso(stop) });\n  cur = new Date(stop.getTime() + 86400000);\n  n += 1;\n}\nreturn out.map((w) => ({ json: w }));"
+      }
+    },
+    {
+      "id": "plw",
+      "name": "Plan Window",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        120
+      ],
+      "notes": "One row per planned window; ON CONFLICT DO NOTHING so progress survives\nre-planning. A null window_key is a no-op (patient_history strategy).",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_sync_windows (window_key, strategy, range_start, range_end)\nSELECT $1::text, 'scheduled_window', $2::date, $3::date\n WHERE $1::text IS NOT NULL\nON CONFLICT (window_key) DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ [ $json.window_key, $json.range_start, $json.range_end ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "seed",
+      "name": "Seed Patient Probes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1160,
+        120
+      ],
+      "notes": "Phase 2 only: queues a per-patient history probe for every linked patient\nthe sweep found nothing for. Guarded by strategy so it cannot fire during\nthe scheduled sweep, when most patients simply have not been reached yet.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_sync_windows (window_key, strategy, patient_source_id)\nSELECT 'patient:' || v.patient_source_id, 'patient_history', v.patient_source_id\n  FROM drsnip_linked_patient_ids v\n WHERE $1::text = 'patient_history'          -- guard: only when asked\nON CONFLICT (window_key) DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ [ $('Catchup Config').first().json.strategy ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "claim",
+      "name": "Claim Next Window",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1360,
+        120
+      ],
+      "notes": "Claims ONE unit. Zero rows = nothing left for this strategy.\nalwaysOutputData keeps the chain alive so the run still finishes and\nreleases its lease when there is no work.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointment_sync_windows w\n   SET state            = 'running',\n       attempts         = w.attempts + 1,\n       first_attempt_at = COALESCE(w.first_attempt_at, now()),\n       last_run_id      = $1::uuid,\n       updated_at       = now()\n  FROM (\n    SELECT window_key\n      FROM appointment_sync_windows\n     WHERE strategy = $2\n       AND (state IN ('pending', 'partial', 'failed')\n            OR (state = 'running' AND updated_at < now() - $3::interval))\n     ORDER BY window_key\n     LIMIT 1\n       FOR UPDATE SKIP LOCKED\n  ) s\n WHERE w.window_key = s.window_key\nRETURNING w.window_key, w.strategy, w.range_start, w.range_end, w.patient_source_id, w.attempts;",
+        "options": {
+          "queryReplacement": "={{ [ $('Open Run').first().json.run_id, $('Catchup Config').first().json.strategy, $('Catchup Config').first().json.lease ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "has",
+      "name": "Work Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1560,
+        120
+      ],
+      "notes": "Both branches converge on Run Summary, so the lease is released either way.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.window_key }}",
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "url",
+      "name": "Build Window URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        120
+      ],
+      "notes": "Builds the read-only GET for this unit.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// One unit of work per execution. Nothing here is interpolated into SQL; this\n// only builds a URL.\nconst cfg = $('Catchup Config').first().json;\nconst w = $('Claim Next Window').first().json;\nconst base = 'https://app.drchrono.com/api/appointments';\nconst d = (v) => (v ? String(v).slice(0, 10) : null);\n\nlet url;\nif (w.strategy === 'patient_history') {\n  // since=1970 matches every last-modified value, so combined with ?patient=\n  // this returns that patient's COMPLETE history — no date horizon at all.\n  // That is what makes \"no appointment found\" a defensible statement rather\n  // than \"none inside the window we happened to sweep\".\n  // Per-patient always uses verbose: it is the phase that collects transitions,\n  // and a patient's history fits one page even at the verbose cap of 50.\n  url = `${base}?since=1970-01-01T00:00:00&patient=${encodeURIComponent(w.patient_source_id)}`\n      + `&page_size=50&verbose=true&show_archived=true`;\n} else {\n  // verbose is OPTIONAL here and off for Phase A, because verbose=true caps\n  // page_size at 50 regardless of what is requested — a 5x cost for data this\n  // phase does not need.\n  url = `${base}?date_range=${d(w.range_start)}/${d(w.range_end)}`\n      + `&page_size=${cfg.page_size}&show_archived=true`\n      + (cfg.verbose ? '&verbose=true' : '');\n}\nreturn [{ json: { url, window_key: w.window_key, strategy: w.strategy } }];"
+      }
+    },
+    {
+      "id": "http",
+      "name": "Fetch Window",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        120
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "notes": "READ ONLY GET.\n\nTHE PAGE BUDGET LIVES IN completeExpression VIA $pageCount. This n8n version\nhas no maxRequestCount option — it is accepted and silently ignored — so a\ncap written there would not bind. 40 pages x 250 = 10,000 appointments per\nunit; anything larger marks the unit partial rather than pretending to\nhave read it.\n\nbatchInterval spaces requests so a unit cannot trip the 10/second throttle.",
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1200
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.next || $pageCount >= 40 }}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "proj",
+      "name": "Project Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        120
+      ],
+      "notes": "GENERATED — do not edit here. Built by lib/sync/build-code-node.mjs from the\nunit-tested logic module plus the n8n glue, and shared verbatim with the\nincremental workflow. Regenerate and re-paste after any change; a repo test\nfails if they drift.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// GENERATED FILE — do not edit.\n// Built by lib/sync/build-code-node.mjs from:\n//   lib/sync/n8n-appointment-sync.code.js  (logic, unit tested)\n//   lib/sync/n8n-code-node.glue.js         (n8n wiring)\n// Paste the whole file into the n8n workflow's \"Project Page\" Code node.\n\n// DrChrono appointment sync — the pure logic, and the SINGLE SOURCE OF TRUTH.\n//\n// This file is unit-tested directly (api/_test/appointment-sync.test.ts) and is\n// pasted VERBATIM into the n8n workflow's \"Sync Logic\" Code node, followed by a\n// short n8n-specific wrapper. Everything below is free of n8n globals and of\n// node built-ins on purpose, so the same bytes run in both places.\n//\n// It computes no metric and asserts no clinical outcome. It projects, it\n// de-duplicates, it budgets requests, and it decides when a cursor may move.\n// Classification (what counts as \"attended\", which providers or profiles count)\n// is deliberately NOT here — those mappings are unconfirmed and belong to the\n// later metric task.\n\n// ---------------------------------------------------------------------------\n// Field policy\n// ---------------------------------------------------------------------------\n\n// The ONLY appointment fields that may ever reach a database row.\nconst SNAPSHOT_FIELDS = [\n  \"id\",\n  \"patient\",\n  \"doctor\",\n  \"office\",\n  \"profile\",\n  \"created_at\",\n  \"scheduled_time\",\n  \"updated_at\",\n  \"status\",\n  \"deleted_flag\",\n];\n\n// `verbose=true` is required for status_transitions, but it also returns\n// clinical content. These must be dropped the moment a response is parsed and\n// must never be written, logged or returned.\nconst FORBIDDEN_FIELDS = [\n  \"clinical_note\",\n  \"vitals\",\n  \"custom_vitals\",\n  \"reminders\",\n  \"reason\", // free text a patient or staff member typed\n  \"notes\",\n  \"telehealth_url\",\n  \"custom_fields\",\n  \"icd10_codes\",\n  \"payment_profile\",\n  \"ins1_status\",\n  \"ins2_status\",\n];\n\n/** True if an object still carries anything we refuse to persist. */\nfunction hasForbiddenField(obj) {\n  if (!obj || typeof obj !== \"object\") return false;\n  return FORBIDDEN_FIELDS.some((f) => Object.prototype.hasOwnProperty.call(obj, f));\n}\n\n// ---------------------------------------------------------------------------\n// Timestamps\n// ---------------------------------------------------------------------------\n\n/**\n * DrChrono's documented `since` format: ISO 8601 with NO timezone\n * (\"2014-02-24T15:32:19\"). We hold watermarks in UTC and render them in this\n * shape. Because the parameter carries no zone, the server's interpretation is\n * not something we control — which is exactly why every incremental read also\n * applies an overlap window (see sinceWithOverlap).\n */\nfunction toDrChronoStamp(value) {\n  const d = value instanceof Date ? value : new Date(value);\n  if (Number.isNaN(d.getTime())) return null;\n  return d.toISOString().replace(/\\.\\d{3}Z$/, \"\");\n}\n\n/** Parse a source timestamp to an ISO string, or null. Never throws. */\nfunction toIsoOrNull(value) {\n  if (value === null || value === undefined || value === \"\") return null;\n  const d = new Date(value);\n  return Number.isNaN(d.getTime()) ? null : d.toISOString();\n}\n\n/**\n * The `since` value for the next incremental read.\n *\n * Always rewinds by an overlap so a boundary record cannot fall between two\n * runs — the API's zone handling for `since` is undocumented, ordering is not\n * guaranteed, and a record updated during the previous run may have been\n * missed. Overlap costs duplicate reads, which are free because upserts are\n * idempotent.\n */\nfunction sinceWithOverlap(watermark, overlapMinutes) {\n  if (!watermark) return null; // no completed run yet -> caller decides the floor\n  const d = new Date(watermark);\n  if (Number.isNaN(d.getTime())) return null;\n  const minutes = Number.isFinite(overlapMinutes) ? overlapMinutes : 120;\n  return new Date(d.getTime() - minutes * 60_000).toISOString();\n}\n\n// ---------------------------------------------------------------------------\n// Projection\n// ---------------------------------------------------------------------------\n\n/** Source ids are opaque. Keep them as strings; never coerce to a number. */\nfunction idToText(v) {\n  if (v === null || v === undefined) return null;\n  return String(v);\n}\n\n/**\n * Project one raw appointment into the snapshot column set.\n *\n * Returns null when the appointment has no patient — an appointment we cannot\n * attribute is discarded, never stored.\n *\n * `status` keeps the '' vs null distinction: null means the field was absent,\n * '' means it was present and empty (the majority of this practice's rows).\n * Do not coalesce them; the difference is load-bearing.\n */\nfunction projectAppointment(raw, ctx) {\n  if (!raw || typeof raw !== \"object\") return null;\n  const id = idToText(raw.id);\n  const patient = idToText(raw.patient);\n  if (!id || !patient) return null;\n\n  return {\n    source_appointment_id: id,\n    source: \"drchrono\",\n    practice_group_id: ctx && ctx.practiceGroupId ? String(ctx.practiceGroupId) : null,\n    patient_source_id: patient,\n    doctor_source_id: idToText(raw.doctor),\n    office_source_id: idToText(raw.office),\n    profile_source_id: idToText(raw.profile),\n    source_created_at: toIsoOrNull(raw.created_at),\n    scheduled_time: toIsoOrNull(raw.scheduled_time),\n    source_updated_at: toIsoOrNull(raw.updated_at),\n    status: Object.prototype.hasOwnProperty.call(raw, \"status\")\n      ? (raw.status === null ? null : String(raw.status))\n      : null,\n    deleted_flag: typeof raw.deleted_flag === \"boolean\" ? raw.deleted_flag : null,\n    archived: typeof raw.archived === \"boolean\" ? raw.archived : null,\n  };\n}\n\n/**\n * Deterministic identity for a transition when the source supplies no id.\n *\n * DrChrono transition objects are {appointment, datetime, from_status,\n * to_status} with no id of their own, so this composite is the key. It is a\n * delimited string rather than a hash: deterministic, collision-free by\n * construction, and readable when something needs debugging.\n */\nfunction transitionDedupeKey(appointmentId, transitionAt, fromStatus, toStatus) {\n  const at = toIsoOrNull(transitionAt) || \"\";\n  const from = fromStatus === null || fromStatus === undefined ? \"\" : String(fromStatus);\n  const to = toStatus === null || toStatus === undefined ? \"\" : String(toStatus);\n  return [String(appointmentId), at, from, to].join(\"|\");\n}\n\n/**\n * Extract status transitions, verbatim and de-duplicated within the response.\n *\n * Returns { present, rows }. `present: false` means the response carried no\n * transitions field at all — which is NOT the same as \"this appointment has\n * none\", and the caller must not delete stored history on that basis.\n */\nfunction extractTransitions(raw) {\n  if (!raw || typeof raw !== \"object\") return { present: false, rows: [] };\n  const id = idToText(raw.id);\n  if (!id) return { present: false, rows: [] };\n  if (!Object.prototype.hasOwnProperty.call(raw, \"status_transitions\")) {\n    return { present: false, rows: [] };\n  }\n  const list = raw.status_transitions;\n  if (!Array.isArray(list)) return { present: false, rows: [] };\n\n  const seen = new Set();\n  const rows = [];\n  for (const t of list) {\n    if (!t || typeof t !== \"object\") continue;\n    const at = toIsoOrNull(t.datetime);\n    const from = t.from_status === undefined ? null : t.from_status;\n    const to = t.to_status === undefined ? null : t.to_status;\n    const key = transitionDedupeKey(id, at, from, to);\n    if (seen.has(key)) continue; // the same array can repeat a transition\n    seen.add(key);\n    rows.push({\n      source_appointment_id: id,\n      source_transition_id: t.id === undefined || t.id === null ? null : String(t.id),\n      transition_at: at,\n      from_status: from === null ? null : String(from),\n      to_status: to === null ? null : String(to),\n      dedupe_key: key,\n    });\n  }\n  return { present: true, rows };\n}\n\n// ---------------------------------------------------------------------------\n// Ordering / staleness\n// ---------------------------------------------------------------------------\n\n/**\n * Should an incoming snapshot overwrite the stored one?\n *\n * Pagination ordering is not guaranteed and retries can replay an older page,\n * so a response is only allowed to win when it is at least as fresh as what is\n * already stored. Equal timestamps overwrite (same record, harmless) so\n * provenance columns still refresh.\n */\nfunction shouldOverwrite(storedUpdatedAt, incomingUpdatedAt) {\n  if (!incomingUpdatedAt) return !storedUpdatedAt; // no basis to claim freshness\n  if (!storedUpdatedAt) return true;\n  const a = new Date(storedUpdatedAt).getTime();\n  const b = new Date(incomingUpdatedAt).getTime();\n  if (Number.isNaN(b)) return false;\n  if (Number.isNaN(a)) return true;\n  return b >= a;\n}\n\n/** Keep only appointments whose patient is linked to intake. */\nfunction partitionByLinkage(appointments, linkedPatientIds) {\n  const linked = linkedPatientIds instanceof Set\n    ? linkedPatientIds\n    : new Set((linkedPatientIds || []).map(String));\n  const keep = [];\n  let discarded = 0;\n  for (const a of appointments) {\n    if (a && linked.has(String(a.patient_source_id))) keep.push(a);\n    else discarded += 1;\n  }\n  return { keep, discarded };\n}\n\n// ---------------------------------------------------------------------------\n// Rate budget\n// ---------------------------------------------------------------------------\n\n/**\n * Two limits at once, because spacing alone is not a budget.\n *\n * DrChrono allows 500 requests/hour, throttles at 10/second, and throttles\n * again above 290 requests in any rolling 10 minutes. Five active intake\n * workflows share this credential, so the sync reserves only a slice:\n * SUSTAINED_PER_HOUR well under 500, and a burst cap far under 290/10min.\n *\n * A 2-second delay yields 1,800 requests/hour — over the limit on its own.\n * That is why this is a counter, not a sleep.\n */\nfunction createRateBudget(opts) {\n  const o = opts || {};\n  const maxRequests = Number.isFinite(o.maxRequests) ? o.maxRequests : 120;\n  const burstWindowMs = Number.isFinite(o.burstWindowMs) ? o.burstWindowMs : 600_000;\n  const maxInBurstWindow = Number.isFinite(o.maxInBurstWindow) ? o.maxInBurstWindow : 60;\n  const minSpacingMs = Number.isFinite(o.minSpacingMs) ? o.minSpacingMs : 2000;\n\n  const stamps = [];\n  let used = 0;\n\n  return {\n    get used() { return used; },\n    get remaining() { return maxRequests - used; },\n    /** Can another request be made at time `now`? Returns a reason when not. */\n    check(now) {\n      if (used >= maxRequests) return { ok: false, reason: \"budget_exhausted\" };\n      const cutoff = now - burstWindowMs;\n      const recent = stamps.filter((s) => s > cutoff);\n      if (recent.length >= maxInBurstWindow) {\n        return { ok: false, reason: \"burst_window_full\", retryAfterMs: recent[0] + burstWindowMs - now };\n      }\n      const last = stamps.length ? stamps[stamps.length - 1] : -Infinity;\n      if (now - last < minSpacingMs) {\n        return { ok: false, reason: \"too_soon\", retryAfterMs: minSpacingMs - (now - last) };\n      }\n      return { ok: true };\n    },\n    record(now) {\n      used += 1;\n      stamps.push(now);\n      const cutoff = now - burstWindowMs;\n      while (stamps.length && stamps[0] <= cutoff) stamps.shift();\n    },\n  };\n}\n\n// ---------------------------------------------------------------------------\n// HTTP outcome handling\n// ---------------------------------------------------------------------------\n\n/** What a status code means for the run. */\nfunction classifyHttp(status) {\n  if (status === 200) return \"ok\";\n  if (status === 401) return \"auth_failure\";\n  if (status === 403) return \"permission_failure\";\n  if (status === 429) return \"rate_limited\";\n  if (status === 400) return \"bad_request\";\n  if (status === 404) return \"not_found\";\n  if (typeof status === \"number\" && status >= 500) return \"transient\";\n  return \"unclassified\";\n}\n\n/** Should the run retry, stop, or fail on this outcome? */\nfunction retryPolicy(kind, attempt, maxAttempts) {\n  const max = Number.isFinite(maxAttempts) ? maxAttempts : 4;\n  if (kind === \"ok\") return { action: \"continue\" };\n  // A persistent permission or auth failure will not fix itself. Stop and\n  // report rather than burning budget.\n  if (kind === \"auth_failure\" || kind === \"permission_failure\") {\n    return { action: \"stop\", outcome: \"failed\" };\n  }\n  if (kind === \"bad_request\" || kind === \"not_found\") {\n    return { action: \"stop\", outcome: \"failed\" };\n  }\n  if (kind === \"rate_limited\" || kind === \"transient\") {\n    if (attempt >= max) return { action: \"stop\", outcome: \"partial\" };\n    const backoffMs = Math.min(60_000, 1000 * Math.pow(2, attempt));\n    return { action: \"retry\", backoffMs };\n  }\n  return { action: \"stop\", outcome: \"failed\" };\n}\n\n/** Honour Retry-After (seconds, or an HTTP date). Falls back to the backoff. */\nfunction retryAfterMs(headerValue, fallbackMs) {\n  if (headerValue === null || headerValue === undefined || headerValue === \"\") return fallbackMs;\n  const asNum = Number(headerValue);\n  if (Number.isFinite(asNum)) return Math.max(0, asNum * 1000);\n  const asDate = new Date(headerValue).getTime();\n  if (!Number.isNaN(asDate)) return Math.max(0, asDate - Date.now());\n  return fallbackMs;\n}\n\n/**\n * Reduce an error to something safe to store.\n * Strips anything digit-like that could be an identifier, and any email.\n */\nfunction sanitizeError(input) {\n  if (input === null || input === undefined) return null;\n  const raw = typeof input === \"string\" ? input : (input.message || String(input));\n  return raw\n    .replace(/[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}/g, \"[email]\")\n    .replace(/\\d{4,}/g, \"[#]\")\n    .slice(0, 300);\n}\n\n// ---------------------------------------------------------------------------\n// Run outcome\n// ---------------------------------------------------------------------------\n\n/**\n * Decide the run's outcome and — critically — whether the watermark may move.\n *\n * The cursor advances ONLY when the run processed its entire authorized scope\n * without an unrecovered failure. A partial run keeps the old watermark, so the\n * next run re-reads the same ground rather than skipping it.\n */\nfunction finalizeRun(state) {\n  const s = state || {};\n  const complete = s.completedScope === true && !s.hadUnrecoveredFailure;\n  let outcome;\n  if (s.lockContended) outcome = \"lock_contended\";\n  else if (s.hadUnrecoveredFailure) outcome = \"failed\";\n  else if (s.budgetExhausted) outcome = \"budget_exhausted\";\n  else if (complete) outcome = \"success\";\n  else outcome = \"partial\";\n\n  return {\n    outcome,\n    complete,\n    // Only a complete run may publish a generation or advance the cursor.\n    watermark_after: complete ? (s.runCutoff || null) : null,\n    committed_generation: complete ? (s.generation || null) : null,\n    coverage: s.coverage || \"bounded_pilot\",\n  };\n}\n\n/**\n * A backfill must never inherit an incremental/pilot cursor: doing so would\n * silently declare all earlier history already covered.\n */\nfunction backfillStartFloor(scopeState, explicitFloorIso) {\n  const st = scopeState || {};\n  if (st.history_complete === true && st.watermark) {\n    return { floor: st.watermark, reason: \"history already complete for this scope\" };\n  }\n  if (!explicitFloorIso) {\n    return { floor: null, reason: \"REFUSED: a backfill needs an explicit floor; it may not inherit a watermark\" };\n  }\n  return { floor: explicitFloorIso, reason: \"explicit floor supplied\" };\n}\n\n// ---------------------------------------------------------------------------\n// Exports (stripped when pasted into the n8n Code node)\n// ---------------------------------------------------------------------------\n\n// ---------------------------------------------------------------------------\n// n8n glue — the part that talks to n8n, appended to the logic module above.\n//\n// Everything above this line is lib/sync/n8n-appointment-sync.code.js, copied\n// verbatim by lib/sync/build-code-node.mjs. Do not edit the combined file:\n// edit the module or this glue and regenerate. A unit test fails if the\n// committed generated file drifts from its inputs.\n//\n// Runs in the \"Project Page\" Code node, mode: Run Once for All Items.\n// Input : one item per DrChrono response page (the HTTP node paginates).\n// Output: one item per appointment we are keeping, plus ALWAYS at least one\n//         item, so n8n never skips the nodes that finish and release the run.\n// ---------------------------------------------------------------------------\n\n// The same generated node runs in both the incremental workflow and the\n// backfill workflow, which name their config node differently. Resolving by a\n// candidate list keeps ONE generated artifact — and one tested code path —\n// instead of two copies that drift.\nfunction readConfig() {\n  for (const name of ['Sync Config', 'Pilot Bounds', 'Backfill Config', 'Catchup Config']) {\n    try {\n      const n = $(name);\n      if (n) return n.first().json;\n    } catch (e) { /* not this one */ }\n  }\n  throw new Error('no config node found (expected Sync Config / Pilot Bounds / Backfill Config / Catchup Config)');\n}\n\nconst bounds = readConfig();\nconst run = $('Claim Scope').first().json;\n\n// The linked-id set is the only thing this workflow learns about intake.\nconst linkedIds = $('Linked Patient IDs').all().map((i) => String(i.json.patient_source_id));\n\n// Flatten the pages. DrChrono returns { results: [...], next, previous }.\nconst raw = [];\nfor (const item of $input.all()) {\n  const body = item.json && item.json.results ? item.json : (item.json && item.json.body) || {};\n  if (Array.isArray(body.results)) raw.push(...body.results);\n}\n\n// Project first, then filter by linkage — nothing unlinked is ever emitted.\nconst projected = [];\nlet noPatient = 0;\nfor (const r of raw) {\n  const p = projectAppointment(r, { practiceGroupId: bounds.practice_group_id || null });\n  if (!p) { noPatient += 1; continue; }\n  // Belt and braces: the projector whitelists columns, so this should never\n  // fire. If it ever does, fail loudly rather than write clinical text.\n  if (hasForbiddenField(p)) {\n    throw new Error('projection produced a forbidden field; refusing to write');\n  }\n  p._transitions = extractTransitions(r);\n  projected.push(p);\n}\n\nconst { keep, discarded } = partitionByLinkage(projected, linkedIds);\n\n// Did the page cap cut the fetch short? If the last response still carried a\n// `next` link, this run did NOT see its whole window, so it must report\n// itself incomplete. Otherwise a budget cap would quietly look like coverage.\nconst pages = $input.all();\nconst lastBody = pages.length\n  ? (pages[pages.length - 1].json && pages[pages.length - 1].json.results\n      ? pages[pages.length - 1].json\n      : (pages[pages.length - 1].json || {}).body || {})\n  : {};\nconst truncated = Boolean(lastBody && lastBody.next);\n\nconst meta = {\n  run_id: run.run_id,\n  run_cutoff: run.run_cutoff,\n  truncated,\n  pages_fetched: pages.length,\n  appointments_seen: raw.length,\n  appointments_persisted: keep.length,\n  appointments_discarded: discarded + noPatient,\n  transitions_persisted: keep.reduce((n, a) => n + a._transitions.rows.length, 0),\n};\n\nconst out = keep.map((a) => ({\n  json: {\n    ...a,\n    transitions_present: a._transitions.present,\n    transitions: a._transitions.rows,\n    transition_keys: a._transitions.rows.map((t) => t.dedupe_key),\n    run_id: run.run_id,\n    is_sentinel: false,\n    meta,\n  },\n}));\n\nif (out.length === 0) {\n  // The sentinel. Every id is null, which every write statement treats as a\n  // no-op (INSERT ... SELECT ... WHERE $1 IS NOT NULL), so the run still\n  // reaches \"Finish Run\" and \"Release Lease\" instead of hanging on to the\n  // scope lease until it expires.\n  out.push({\n    json: {\n      source_appointment_id: null, patient_source_id: null, doctor_source_id: null,\n      office_source_id: null, profile_source_id: null, source_created_at: null,\n      scheduled_time: null, source_updated_at: null, status: null,\n      deleted_flag: null, archived: null, practice_group_id: null,\n      transitions_present: false, transitions: [], transition_keys: [],\n      run_id: run.run_id, is_sentinel: true, meta,\n    },\n  });\n}\n\nreturn out;\n"
+      }
+    },
+    {
+      "id": "snap",
+      "name": "Upsert Snapshot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2360,
+        120
+      ],
+      "notes": "Idempotent. Refuses to be overwritten by an older revision, which is what\nstops a historical read rolling back newer incremental evidence.",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_snapshots\n  (source_appointment_id, patient_source_id, doctor_source_id, office_source_id,\n   profile_source_id, source_created_at, scheduled_time, source_updated_at,\n   current_status, deleted_flag, archived, last_sync_run_id, practice_group_id)\nSELECT $1::text, $2::text, $3::text, $4::text, $5::text,\n       $6::timestamptz, $7::timestamptz, $8::timestamptz,\n       $9::text, $10::boolean, $11::boolean, $12::uuid, $13::text\n WHERE $1::text IS NOT NULL\nON CONFLICT (source_appointment_id) DO UPDATE\n   SET patient_source_id = EXCLUDED.patient_source_id,\n       doctor_source_id  = EXCLUDED.doctor_source_id,\n       office_source_id  = EXCLUDED.office_source_id,\n       profile_source_id = EXCLUDED.profile_source_id,\n       source_created_at = EXCLUDED.source_created_at,\n       scheduled_time    = EXCLUDED.scheduled_time,\n       source_updated_at = EXCLUDED.source_updated_at,\n       current_status    = EXCLUDED.current_status,\n       deleted_flag      = EXCLUDED.deleted_flag,\n       archived          = EXCLUDED.archived,\n       practice_group_id = EXCLUDED.practice_group_id,\n       last_observed_at  = now(),\n       last_sync_run_id  = EXCLUDED.last_sync_run_id\n WHERE appointment_snapshots.source_updated_at IS NULL\n    OR (EXCLUDED.source_updated_at IS NOT NULL\n        AND EXCLUDED.source_updated_at >= appointment_snapshots.source_updated_at);",
+        "options": {
+          "queryReplacement": "={{ [ $json.source_appointment_id, $json.patient_source_id, $json.doctor_source_id, $json.office_source_id, $json.profile_source_id, $json.source_created_at, $json.scheduled_time, $json.source_updated_at, $json.status, $json.deleted_flag, $json.archived, $json.run_id, $json.practice_group_id ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "btr",
+      "name": "Build Transitions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        340
+      ],
+      "notes": "Written after snapshots because of the foreign key.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const out = [];\nfor (const item of $('Project Page').all()) {\n  const j = item.json;\n  if (j.is_sentinel) continue;\n  for (const t of (j.transitions || [])) out.push({ json: { ...t, run_id: j.run_id } });\n}\nif (out.length === 0) {\n  out.push({ json: { source_appointment_id: null, source_transition_id: null, transition_at: null,\n                     from_status: null, to_status: null, dedupe_key: null,\n                     run_id: $('Claim Scope').first().json.run_id } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "tr",
+      "name": "Upsert Transition",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        160,
+        340
+      ],
+      "notes": "Replay-safe on (appointment, dedupe_key). Statuses stored verbatim.",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_status_transitions\n  (source_appointment_id, source_transition_id, transition_at,\n   from_status, to_status, dedupe_key, observed_in_run_id)\nSELECT $1::text, $2::text, $3::timestamptz, $4::text, $5::text, $6::text, $7::uuid\n WHERE $1::text IS NOT NULL AND $6::text IS NOT NULL\nON CONFLICT (source_appointment_id, dedupe_key) DO UPDATE\n   SET last_observed_at   = now(),\n       observed_in_run_id = EXCLUDED.observed_in_run_id,\n       missing_since      = NULL;",
+        "options": {
+          "queryReplacement": "={{ [ $json.source_appointment_id, $json.source_transition_id, $json.transition_at, $json.from_status, $json.to_status, $json.dedupe_key, $json.run_id ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "mk",
+      "name": "Appointments With History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        340
+      ],
+      "notes": "Only responses that actually carried a transitions array may flag history\nas missing. An absent field is not evidence of removal.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const out = $('Project Page').all()\n  .filter((i) => !i.json.is_sentinel && i.json.transitions_present)\n  .map((i) => ({ json: { source_appointment_id: i.json.source_appointment_id,\n                         transition_keys: i.json.transition_keys } }));\nif (out.length === 0) out.push({ json: { source_appointment_id: null, transition_keys: [] } });\nreturn out;"
+      }
+    },
+    {
+      "id": "miss",
+      "name": "Flag Missing Transitions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        340
+      ],
+      "notes": "Flags, never deletes.",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointment_status_transitions\n   SET missing_since = now()\n WHERE source_appointment_id = $1::text\n   AND $1::text IS NOT NULL\n   AND missing_since IS NULL\n   AND NOT (dedupe_key = ANY ($2::text[]));",
+        "options": {
+          "queryReplacement": "={{ [ $json.source_appointment_id, $json.transition_keys ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "wsum",
+      "name": "Window Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        340
+      ],
+      "notes": "Per-unit outcome: complete, or partial when the page cap bound.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Per-unit outcome.\n//\n// TRUNCATION MUST NOT MEAN \"RETRY THE SAME THING\". A unit that hit the page cap\n// would be re-claimed, re-read from the beginning, and truncate again — no\n// progress, forever. So a truncated unit is marked 'split': a terminal state\n// that the claimer does not pick up, and its date range is re-planned as two\n// halves which ARE claimable. Coverage then comes from the children.\n//\n// 'split' is therefore not coverage either; only 'complete' is.\nconst meta = $('Project Page').first().json.meta;\nconst w = $('Claim Next Window').first().json;\nconst state = meta.truncated ? 'split' : 'complete';\nreturn [{ json: {\n  window_key: w.window_key,\n  state,\n  truncated: meta.truncated,\n  range_start: w.range_start ? String(w.range_start).slice(0, 10) : null,\n  range_end: w.range_end ? String(w.range_end).slice(0, 10) : null,\n  pages_fetched: meta.pages_fetched,\n  appointments_seen: meta.appointments_seen,\n  appointments_persisted: meta.appointments_persisted,\n  appointments_discarded: meta.appointments_discarded,\n  transitions_persisted: meta.transitions_persisted,\n  error_summary: meta.truncated ? 'page cap reached; split into two halves' : null,\n} }];"
+      }
+    },
+    {
+      "id": "fw",
+      "name": "Finish Window",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        340
+      ],
+      "notes": "Writes the durable checkpoint. completed_at is set only for 'complete'.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointment_sync_windows\n   SET state                  = $2,\n       truncated              = $3::boolean,\n       pages_fetched          = $4::int,\n       appointments_seen      = $5::int,\n       appointments_persisted = $6::int,\n       appointments_discarded = $7::int,\n       transitions_persisted  = $8::int,\n       completed_at           = CASE WHEN $2 = 'complete' THEN now() ELSE NULL END,\n       error_summary          = $9,\n       updated_at             = now()\n WHERE window_key = $1\nRETURNING window_key, state, truncated;",
+        "options": {
+          "queryReplacement": "={{ [ $json.window_key, $json.state, $json.truncated, $json.pages_fetched, $json.appointments_seen, $json.appointments_persisted, $json.appointments_discarded, $json.transitions_persisted, $json.error_summary ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "nowork",
+      "name": "No Work",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        340
+      ],
+      "notes": "Keeps the chain alive so the run still records an outcome and releases\nits scope lease.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Nothing claimable for this strategy: the sweep is finished, or every unit\n// is already running elsewhere. Reported as a successful no-op run.\nreturn [{ json: { no_work: true } }];"
+      }
+    },
+    {
+      "id": "rsum",
+      "name": "Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        340
+      ],
+      "notes": "Run-level counters. watermark_after is ALWAYS null here.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The run-level record. Counters only.\nconst cfg = $('Catchup Config').first().json;\nconst run = $('Claim Scope').first().json;\nlet w = null;\ntry { w = $('Window Summary').first().json; } catch (e) { w = null; }\n\nconst didWork = Boolean(w);\nconst complete = didWork ? w.state === 'complete' : true;\n// A split unit did real work but did NOT cover its window; report it partial.\n\nreturn [{ json: {\n  run_id: run.run_id,\n  outcome: didWork ? (complete ? 'success' : 'partial') : 'success',\n  complete,\n  coverage: cfg.coverage,\n  // A SCHEDULED-DATE SWEEP NEVER SEEDS AN INCREMENTAL CURSOR. It establishes\n  // which appointment DATES were read, which says nothing about which records\n  // were MODIFIED before a given instant. Advancing the watermark from here\n  // would make the first incremental run skip every edit made before it.\n  watermark_after: null,\n  committed_generation: complete ? run.next_generation : null,\n  requests_made: didWork ? w.pages_fetched : 0,\n  pages_fetched: didWork ? w.pages_fetched : 0,\n  appointments_seen: didWork ? w.appointments_seen : 0,\n  appointments_persisted: didWork ? w.appointments_persisted : 0,\n  appointments_discarded: didWork ? w.appointments_discarded : 0,\n  transitions_persisted: didWork ? w.transitions_persisted : 0,\n  error_summary: didWork ? w.error_summary : 'no unit of work available',\n  scope_key: cfg.scope_key,\n  did_work: didWork,\n  window_key: didWork ? w.window_key : null,\n} }];"
+      }
+    },
+    {
+      "id": "fin",
+      "name": "Finish Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1560,
+        340
+      ],
+      "notes": "Counters and a sanitized summary only.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointment_sync_runs\n   SET outcome                = $2,\n       finished_at            = now(),\n       complete               = $3::boolean,\n       coverage               = $4,\n       watermark_after        = $5::timestamptz,\n       committed_generation   = $6::bigint,\n       requests_made          = $7::int,\n       pages_fetched          = $8::int,\n       appointments_seen      = $9::int,\n       appointments_persisted = $10::int,\n       appointments_discarded = $11::int,\n       transitions_persisted  = $12::int,\n       error_summary          = $13\n WHERE id = $1::uuid;",
+        "options": {
+          "queryReplacement": "={{ [ $json.run_id, $json.outcome, $json.complete, $json.coverage, $json.watermark_after, $json.committed_generation, $json.requests_made, $json.pages_fetched, $json.appointments_seen, $json.appointments_persisted, $json.appointments_discarded, $json.transitions_persisted, $json.error_summary ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "rel",
+      "name": "Release Lease",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        340
+      ],
+      "notes": "Releases the scope lease. The watermark CASE cannot fire because\nwatermark_after is null for every historical run.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointment_sync_state s\n   SET watermark = CASE\n         WHEN r.complete AND r.outcome = 'success' AND r.watermark_after IS NOT NULL\n           THEN r.watermark_after\n         ELSE s.watermark\n       END,\n       last_run_id               = r.id,\n       last_committed_generation = GREATEST(s.last_committed_generation,\n                                            COALESCE(r.committed_generation, 0)),\n       active_run_id             = NULL,\n       lease_expires_at          = NULL,\n       updated_at                = now()\n  FROM appointment_sync_runs r\n WHERE s.scope_key     = $2\n   AND r.id            = $1::uuid\n   AND s.active_run_id = r.id\nRETURNING s.scope_key, s.watermark, s.last_committed_generation;",
+        "options": {
+          "queryReplacement": "={{ [ $('Run Summary').first().json.run_id, $('Catchup Config').first().json.scope_key ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "split",
+      "name": "Split If Truncated",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        340
+      ],
+      "notes": "Turns a capped unit into two claimable halves, so the sweep always makes\nprogress instead of retrying an oversized window.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// If the unit was split, emit its two halves so they can be planned. Otherwise\n// emit a sentinel, which the planning statement treats as a no-op.\nconst w = $('Window Summary').first().json;\nif (w.state !== 'split' || !w.range_start || !w.range_end) return [{ json: { window_key: null } }];\n\nconst a = new Date(w.range_start + 'T00:00:00Z');\nconst b = new Date(w.range_end + 'T00:00:00Z');\nconst iso = (d) => d.toISOString().slice(0, 10);\n\n// A single day cannot be split further. Leave it 'split' with its error_summary\n// so it is visible as a genuine gap rather than silently retried forever.\nif (a.getTime() >= b.getTime()) return [{ json: { window_key: null } }];\n\nconst mid = new Date(a.getTime() + Math.floor((b.getTime() - a.getTime()) / 2 / 86400000) * 86400000);\nreturn [\n  { json: { window_key: `${w.window_key}#a_${iso(a)}`, range_start: iso(a), range_end: iso(mid) } },\n  { json: { window_key: `${w.window_key}#b_${iso(new Date(mid.getTime() + 86400000))}`,\n            range_start: iso(new Date(mid.getTime() + 86400000)), range_end: iso(b) } },\n];"
+      }
+    },
+    {
+      "id": "planc",
+      "name": "Plan Split Children",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2160,
+        340
+      ],
+      "notes": "Inserts the halves of a split unit. A null window_key is a no-op.",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_sync_windows (window_key, strategy, range_start, range_end)\nSELECT $1::text, 'scheduled_window', $2::date, $3::date\n WHERE $1::text IS NOT NULL\nON CONFLICT (window_key) DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ [ $json.window_key, $json.range_start, $json.range_end ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    },
+    {
+      "id": "cont",
+      "name": "Record Contention",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        340
+      ],
+      "notes": "Closes the losing run's row. drsnip_sync_budget() reserves a full per-run\nallowance for anything still marked running, so an abandoned row would\nshrink the shared budget for ever.",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointment_sync_runs\n   SET outcome = 'lock_contended', finished_at = now(),\n       error_summary = 'another run held the scope lease'\n WHERE id = $1::uuid AND outcome = 'running';",
+        "options": {
+          "queryReplacement": "={{ [ $('Open Run').first().json.run_id ] }}",
+          "replaceEmptyStrings": false
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 10 minutes": {
+      "main": [
+        [
+          {
+            "node": "Preflight: schedule + shared budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Now (manual)": {
+      "main": [
+        [
+          {
+            "node": "Preflight: schedule + shared budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preflight: schedule + shared budget": {
+      "main": [
+        [
+          {
+            "node": "Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Within shared budget?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Within shared budget?": {
+      "main": [
+        [
+          {
+            "node": "Catchup Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Budget Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catchup Config": {
+      "main": [
+        [
+          {
+            "node": "Open Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open Run": {
+      "main": [
+        [
+          {
+            "node": "Claim Scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Scope": {
+      "main": [
+        [
+          {
+            "node": "Claimed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claimed?": {
+      "main": [
+        [
+          {
+            "node": "Linked Patient IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Contention",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linked Patient IDs": {
+      "main": [
+        [
+          {
+            "node": "Build Window Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Window Plan": {
+      "main": [
+        [
+          {
+            "node": "Plan Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Window": {
+      "main": [
+        [
+          {
+            "node": "Seed Patient Probes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Patient Probes": {
+      "main": [
+        [
+          {
+            "node": "Claim Next Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Next Window": {
+      "main": [
+        [
+          {
+            "node": "Work Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Work Available?": {
+      "main": [
+        [
+          {
+            "node": "Build Window URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Work",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Window URL": {
+      "main": [
+        [
+          {
+            "node": "Fetch Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Window": {
+      "main": [
+        [
+          {
+            "node": "Project Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Page": {
+      "main": [
+        [
+          {
+            "node": "Upsert Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Build Transitions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Transitions": {
+      "main": [
+        [
+          {
+            "node": "Upsert Transition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Transition": {
+      "main": [
+        [
+          {
+            "node": "Appointments With History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Appointments With History": {
+      "main": [
+        [
+          {
+            "node": "Flag Missing Transitions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag Missing Transitions": {
+      "main": [
+        [
+          {
+            "node": "Window Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Summary": {
+      "main": [
+        [
+          {
+            "node": "Finish Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finish Window": {
+      "main": [
+        [
+          {
+            "node": "Split If Truncated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split If Truncated": {
+      "main": [
+        [
+          {
+            "node": "Plan Split Children",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Split Children": {
+      "main": [
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Work": {
+      "main": [
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Finish Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finish Run": {
+      "main": [
+        [
+          {
+            "node": "Release Lease",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true
+  }
+}
