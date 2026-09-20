@@ -195,6 +195,41 @@ describe("the journeys page", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A page in this app self-wraps in <AdminLayout>, so its own function body runs
+// BEFORE the layout — and therefore before the layout's error boundary exists.
+// A throw there does not land in the boundary that keeps the navigation usable;
+// it blanks the entire console, sign-out included.
+//
+// `freshness.data?.sync.schedules` shipped that bug: the optional chain stopped
+// after `data`, so a 200 whose body was not the expected shape took the whole
+// admin area down. Caught by a screenshot run, not by a type — the response is
+// `unknown` at the network boundary and TypeScript believes the annotation.
+// ---------------------------------------------------------------------------
+describe("an unexpected response body cannot blank the console", () => {
+  it("every hop into the freshness response is optional", () => {
+    for (const rel of [REPORTS, JOURNEYS, FRESHNESS_UI]) {
+      const src = rendered(rel);
+      // data?.sync.schedules  — optional once, then not. The dangerous shape.
+      assert.ok(
+        !/\bdata\?\.[A-Za-z_$][\w$]*\.[A-Za-z_$]/.test(src),
+        `${rel}: an optional chain stops early and then dereferences again`,
+      );
+      // A non-null assertion on a response body is the same bug with a "!".
+      assert.ok(
+        !/\bdata!\./.test(src),
+        `${rel}: a response body is asserted non-null instead of being checked`,
+      );
+    }
+  });
+
+  it("the badge renders a state even when the body has no appointments block", () => {
+    const ui = rendered(FRESHNESS_UI);
+    assert.match(ui, /const a = data\?\.appointments;/);
+    assert.match(ui, /if \(!a \|\| a\.state === "never" \|\| !when\)/);
+  });
+});
+
 describe("the reports index", () => {
   const page = read(REPORTS);
 

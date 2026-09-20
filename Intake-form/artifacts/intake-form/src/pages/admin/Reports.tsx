@@ -129,8 +129,16 @@ function CardLink({ card }: { card: Card }) {
 
 export default function Reports() {
   const freshness = useFreshness();
+  // EVERY HOP IS OPTIONAL, and that is not defensive clutter.
+  //
+  // This page self-wraps in <AdminLayout>, so its own function body runs BEFORE
+  // the layout — and therefore before the layout's error boundary exists. A
+  // throw here does not land in the boundary that keeps the navigation usable;
+  // it blanks the whole console, sign-out included. `data?.sync.schedules` was
+  // exactly that: the optional chain stopped after `data`, so a 200 whose body
+  // was not the shape this page expected took the entire admin area down.
   const a = freshness.data?.appointments;
-  const inc = freshness.data?.sync.schedules.find((s) => s.scope === "practice_incremental");
+  const inc = freshness.data?.sync?.schedules?.find((s) => s.scope === "practice_incremental");
 
   return (
     <AdminLayout>

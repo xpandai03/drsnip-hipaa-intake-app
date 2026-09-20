@@ -180,23 +180,39 @@ function SidebarNav({
   );
 }
 
+/**
+ * The clinic's own wordmark, in place of the typed "DrSnip Console / Intake &
+ * Reporting" it replaces.
+ *
+ * TWO THINGS THAT ARE EASY TO GET WRONG HERE.
+ *
+ * 1. drsnip-logo.png is a WHITE wordmark on transparency — the same asset the
+ *    public forms and the sign-in page put on the deep clinical blue. The
+ *    sidebar is #ffffff, so dropping it in unchanged renders it invisible; that
+ *    is exactly what the old 7x7 version was doing next to the text, which is
+ *    why the text had to be there at all. So the logo sits on a brand-blue
+ *    band. Same asset, no recolouring of the clinic's artwork, legible in light
+ *    mode and dark.
+ *
+ * 2. It is the console's only identification, so it carries a real `alt`. It is
+ *    not decorative any more and must not be aria-hidden.
+ *
+ * The natural asset is 250x83 (3:1). `h-7 w-auto` gives roughly 84x28 in the
+ * sidebar and the mobile bar alike — wide enough to read the wordmark on a
+ * 390px screen, short enough to leave the 56px mobile bar room for the page
+ * title beside it.
+ */
 function Brand() {
   return (
-    <div className="flex items-center gap-2.5">
+    <div
+      className="inline-flex items-center rounded-md bg-[var(--sh-accent)] px-2.5 py-1.5"
+      data-testid="admin-brand"
+    >
       <img
         src="/images/drsnip-logo.png"
-        alt=""
-        aria-hidden="true"
-        className="h-7 w-7 shrink-0 object-contain"
+        alt="DrSnip intake and reporting console"
+        className="h-7 w-auto shrink-0 object-contain"
       />
-      <div className="leading-tight">
-        <div className="text-sm font-semibold tracking-tight text-[var(--sh-fg)]">
-          DrSnip Console
-        </div>
-        <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--sh-muted)]">
-          Intake &amp; Reporting
-        </div>
-      </div>
     </div>
   );
 }
