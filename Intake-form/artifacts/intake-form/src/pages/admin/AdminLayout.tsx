@@ -197,21 +197,36 @@ function SidebarNav({
  * 2. It is the console's only identification, so it carries a real `alt`. It is
  *    not decorative any more and must not be aria-hidden.
  *
- * The natural asset is 250x83 (3:1). `h-7 w-auto` gives roughly 84x28 in the
- * sidebar and the mobile bar alike — wide enough to read the wordmark on a
- * 390px screen, short enough to leave the 56px mobile bar room for the page
- * title beside it.
+ * The natural asset is 250x83 (3:1).
+ *
+ * TWO PLACEMENTS, because the two bars are not the same shape.
+ *
+ *   banner — the desktop sidebar header. The blue runs the full 256px width and
+ *            the whole height of the strip, with the logo centred in it at
+ *            h-9 (about 108x36). The sidebar header holds nothing else, so the
+ *            colour has nothing to fight with.
+ *
+ *   badge  — the mobile top bar, which shares its 56px row with the page title.
+ *            Flooding that bar with blue would drag the title's colours in
+ *            after it, so the logo keeps a self-contained blue chip at h-7 and
+ *            the bar stays the same surface as the sidebar below it.
  */
-function Brand() {
+function Brand({ variant = "badge" }: { variant?: "badge" | "banner" }) {
+  const banner = variant === "banner";
   return (
     <div
-      className="inline-flex items-center rounded-md bg-[var(--sh-accent)] px-2.5 py-1.5"
+      className={
+        banner
+          ? "flex w-full items-center justify-center bg-[var(--sh-accent)] px-4 py-3.5"
+          : "inline-flex items-center rounded-md bg-[var(--sh-accent)] px-2.5 py-1.5"
+      }
       data-testid="admin-brand"
+      data-variant={variant}
     >
       <img
         src="/images/drsnip-logo.png"
         alt="DrSnip intake and reporting console"
-        className="h-7 w-auto shrink-0 object-contain"
+        className={`w-auto shrink-0 object-contain ${banner ? "h-9" : "h-7"}`}
       />
     </div>
   );
@@ -359,9 +374,10 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         data-testid="admin-sidebar"
         className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-[var(--sh-border)] bg-[var(--sh-sidebar)] md:flex"
       >
-        <div className="border-b border-[var(--sh-border)] p-4">
-          <Brand />
-        </div>
+        {/* No padding and no bottom rule here: the blue must reach the edges
+            of the sidebar, and a border between a solid colour and the white
+            nav below it only muddies the join. */}
+        <Brand variant="banner" />
         <SidebarNav location={location} />
         <UserBlock
           name={user.name}
