@@ -42,6 +42,7 @@ import linksHandler from "../api/admin/links";
 import reportingConnectorHandler from "../api/admin/reporting-connector";
 import reportsSummaryHandler from "../api/reports/summary";
 import reportsCountsHandler from "../api/reports/counts";
+import reportsJourneyHandler from "../api/reports/journey";
 import registrationPartialHandler from "../api/registration-partial";
 import registrationPartialsListHandler from "../api/registration-partials/index";
 import registrationPartialsExportHandler from "../api/registration-partials/export";
@@ -105,6 +106,7 @@ app.all("/api/admin/links", adapt(linksHandler));
 app.all("/api/admin/reporting-connector", adapt(reportingConnectorHandler));
 app.all("/api/reports/summary", adapt(reportsSummaryHandler));
 app.all("/api/reports/counts", adapt(reportsCountsHandler));
+app.all("/api/reports/journey", adapt(reportsJourneyHandler));
 // Registration drop-off partials (Train 2). Specific paths before the :id route.
 app.all("/api/registration-partial", adapt(registrationPartialHandler));
 app.all("/api/registration-partials/export", adapt(registrationPartialsExportHandler));

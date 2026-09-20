@@ -355,3 +355,23 @@ describe("the journeys page keeps real and synthetic apart", () => {
     assert.match(page, /placeholderData/, "a refetch failure must keep the last good value");
   });
 });
+
+describe("every reports handler is actually wired into the server", () => {
+  // A handler file that exists but is never registered returns 404 in
+  // production while looking perfectly fine in the repo. That shipped once:
+  // /api/reports/journey 404'd on v82 because api-server/index.ts registers
+  // each route by hand and this one was missed.
+  it("registers a route for every file in api/reports/", () => {
+    const fs = require_("node:fs") as typeof import("node:fs");
+    const dir = new URL("../reports/", import.meta.url);
+    const server = readFileSync(new URL("../../api-server/index.ts", import.meta.url), "utf8");
+    const handlers = fs.readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => f.replace(/\.ts$/, ""));
+    assert.ok(handlers.length >= 3, "expected several report handlers");
+    for (const h of handlers) {
+      assert.ok(
+        server.includes(`"/api/reports/${h}"`),
+        `api/reports/${h}.ts has no app.all("/api/reports/${h}") in api-server/index.ts`,
+      );
+    }
+  });
+});
