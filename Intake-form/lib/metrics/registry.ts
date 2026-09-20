@@ -1,3 +1,5 @@
+import { ATTENDANCE_UNAVAILABLE_REASON } from "./attendance-mapping.js";
+
 // The metric registry — the allow-list, and the words shown to a person.
 //
 // Kept in one place so the API, the UI and the tests cannot disagree about what
@@ -11,7 +13,9 @@ export type JourneyMetricId =
   | "registration_to_consultation"
   | "insurance_to_registration"
   | "appointment_evidence_registration"
-  | "appointment_evidence_insurance";
+  | "appointment_evidence_insurance"
+  | "booking_registration"
+  | "booking_insurance";
 
 export type MetricSpec = {
   /** Name passed to the database function's allow-list. */
@@ -37,11 +41,18 @@ const ALL_PROVIDERS =
   "(/api/appointment_profiles returns 403), so these are NOT confirmed vasectomy bookings.";
 
 const APPT_COVERAGE =
-  "Appointment history is a stored snapshot, not continuously current. A patient with no " +
-  "record found may still have one: per-patient history retrieval is incomplete, so 'not " +
-  "found' is bounded by what was retrieved and by the swept date horizon.";
+  "Per-patient appointment history retrieval is COMPLETE for every linked patient as at the " +
+  "instant below, so 'no appointment recorded' is a real negative within that scope — not an " +
+  "unknown. That instant is carried forward hourly by an incremental last-modified sync, and it " +
+  "advances only on a run that read its whole window, so it always means 'complete to', never " +
+  "'last attempted'. It remains bounded by what this credential can see, and a patient linked " +
+  "after the last run is reported separately as not covered until their first history read.";
 
-export const JOURNEY_METRICS: Record<JourneyMetricId, MetricSpec> = {
+const FORM_AND_EVIDENCE_METRICS: Record<
+  "registration_to_consultation" | "insurance_to_registration"
+  | "appointment_evidence_registration" | "appointment_evidence_insurance",
+  MetricSpec
+> = {
   registration_to_consultation: {
     fnName: "registration_to_consultation",
     version: "1.0.0",
@@ -109,6 +120,52 @@ export const JOURNEY_METRICS: Record<JourneyMetricId, MetricSpec> = {
   },
 };
 
+/**
+ * Booking measures, keyed to the appointment snapshot.
+ *
+ * Reported as EXACT rates over an eligible denominator, because per-patient
+ * retrieval is complete. Their denominator is smaller than the cohort on
+ * purpose: patients whose follow-up window extends past the snapshot are
+ * immature and excluded, rather than being counted as people who did not book.
+ */
+const BOOKING_BASE = {
+  version: "2.0.0",
+  unit: "distinct_patient_ids" as const,
+  coverageNote: APPT_COVERAGE,
+  providerScope: ALL_PROVIDERS,
+  isObservedMinimum: false,
+  secondaryLabels: {
+    a: "Advance booking recorded (created before its scheduled time)",
+    b: "Recorded at or after its scheduled time",
+    c: "Had an appointment record predating entry",
+  },
+};
+
+export const BOOKING_METRICS: Record<"booking_registration" | "booking_insurance", MetricSpec> = {
+  booking_registration: {
+    ...BOOKING_BASE,
+    fnName: "booking_registration",
+    label: "Appointment recorded after registration",
+    countsWhat:
+      "Patients whose first registration falls in the period and for whom an appointment RECORD " +
+      "was created after that registration, within the follow-up window. This is the timestamp " +
+      "on the record — it is not proof of when a human booked, and it is not attendance.",
+  },
+  booking_insurance: {
+    ...BOOKING_BASE,
+    fnName: "booking_insurance",
+    label: "Appointment recorded after insurance inquiry",
+    countsWhat:
+      "Patients whose first insurance inquiry falls in the period and for whom an appointment " +
+      "RECORD was created after that inquiry, within the follow-up window.",
+  },
+};
+
+export const JOURNEY_METRICS: Record<JourneyMetricId, MetricSpec> = {
+  ...FORM_AND_EVIDENCE_METRICS,
+  ...BOOKING_METRICS,
+};
+
 export function isJourneyMetric(v: unknown): v is JourneyMetricId {
   return typeof v === "string" && Object.prototype.hasOwnProperty.call(JOURNEY_METRICS, v);
 }
@@ -129,13 +186,12 @@ export const UNAVAILABLE_METRICS = [
   {
     id: "appointment_attendance_rate",
     label: "Attendance",
-    reason:
-      "Not available yet. Most appointments have no status-transition history retrieved, so an " +
-      "absent history means 'not looked up', not 'did not arrive'. The clinic also has not yet " +
-      "confirmed which of its status values mean the patient arrived.",
+    // The data blocker is GONE: every stored appointment now has retrieved
+    // history. What remains is a decision, not a retrieval gap, and saying
+    // otherwise would be stale.
+    reason: ATTENDANCE_UNAVAILABLE_REASON,
     blockers: [
-      "Per-patient transition retrieval is incomplete.",
-      "No approved mapping from clinic status values to 'arrived'.",
+      "No approved mapping from this clinic's status values to 'the patient arrived'.",
     ],
   },
   {
