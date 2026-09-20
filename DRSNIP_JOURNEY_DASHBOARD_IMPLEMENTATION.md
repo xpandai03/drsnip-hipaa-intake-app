@@ -230,12 +230,13 @@ Inspected at **1440×900**, **820×1180** and **390×844**.
 Screenshots: [`journey-screenshots-2026-09-20/`](journey-screenshots-2026-09-20/)
 — six page captures plus before/after crops of the mobile label fix.
 
-**One thing I could not verify visually:** `/admin/insurance-demo` renders blank
-under my simplified API mock, throwing a `TypeError`. I checked whether I caused
-it by reverting the waterfall component to its committed version and rebuilding:
-**it fails identically**, so it is an artefact of the crude mock (the page needs
-richer fixtures than `{rows: []}`), not a regression. The demo's own source is
-unchanged. It should be re-checked with the full mock set before release.
+**Update — this gap is now closed.** `/admin/insurance-demo` rendered blank
+because my API mock was malformed, not because the page was broken:
+`/api/auth/me` returns `{email, name, role}` at the top level, and I had wrapped
+it as `{user: {...}}`, leaving `name` undefined and crashing the shared shell's
+user chip. With the correct shape the demo renders fully — all three views,
+Approve/Edit/Skip, Reset — on desktop and mobile, with **0 write requests** and
+0 page errors. See `DRSNIP_JOURNEY_DASHBOARD_RELEASE_NOTES.md`.
 
 ---
 
