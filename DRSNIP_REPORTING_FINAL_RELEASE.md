@@ -238,8 +238,17 @@ boundary or a brief outage. First one: **Sunday 27 September.**
           2,037 of 2,037 linked patients now have their history loaded
 ```
 
-That last sequence is the catch-up doing its job on a real new patient, three
-minutes after they arrived, without anybody touching it.
+```
+17:05:00  incremental      success  1 request  0 appointments  (nothing changed)
+          cursor advanced 16:05 → 17:05, in 0.8 seconds
+```
+
+That middle sequence is the catch-up doing its job on a real new patient, three
+minutes after they arrived, without anybody touching it. The 17:05 run is the
+second unattended tick, watched from outside the system: it fired on the minute,
+found nothing to do, said so, and still moved the cursor — which is what a quiet
+hour is supposed to look like. Cursor lag at that point was **23 seconds**, and
+the shared budget stood at 3 requests used of 150.
 
 The console's "updates hourly" badge is **earned, not declared**:
 `recurring_active` is true only when a run of that scope actually *succeeded*
