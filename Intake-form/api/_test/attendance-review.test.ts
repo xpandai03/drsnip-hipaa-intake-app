@@ -249,6 +249,27 @@ describe("routes are registered and guarded", () => {
 });
 
 // ===========================================================================
+describe("the review panel is operable by keyboard", () => {
+  const ui = read("../../artifacts/intake-form/src/components/reporting/attendance-review.tsx");
+
+  it("Escape closes the dialog", () => {
+    // A div with role="dialog" gets none of this from the browser. Caught in
+    // production verification, not by a type or a unit test.
+    assert.match(ui, /e\.key === "Escape"/);
+    assert.match(ui, /document\.addEventListener\("keydown", onKey\)/);
+  });
+
+  it("focus moves into the dialog and back to the opener", () => {
+    assert.match(ui, /openerRef\.current = document\.activeElement/);
+    assert.match(ui, /dialogRef\.current\?\.focus\(\)/);
+    assert.match(ui, /openerRef\.current as HTMLElement \| null\)\?\.focus\?\.\(\)/);
+  });
+
+  it("the listener is removed when the dialog closes", () => {
+    assert.match(ui, /document\.removeEventListener\("keydown", onKey\)/);
+  });
+});
+
 describe("the calculation (skipped without a disposable database)", () => {
   let pool: { query: (q: string, v?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>; end: () => Promise<void> };
 
