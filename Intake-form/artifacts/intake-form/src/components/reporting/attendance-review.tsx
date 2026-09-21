@@ -17,7 +17,7 @@
 //    of "not established"; a revision, or a correction at the source, can move
 //    them back.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, Loader2, RefreshCw, ShieldCheck, X,
@@ -256,6 +256,28 @@ export function AttendanceReviewPanel({
     },
   });
 
+  // Escape closes the dialog, and focus moves into it on open and back to the
+  // opener on close. A modal that traps a keyboard user is not usable, and the
+  // browser gives none of this for free on a div with role="dialog".
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const openerRef = useRef<Element | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    openerRef.current = document.activeElement;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener("keydown", onKey);
+    // Focus the dialog itself rather than a control: a reader lands on the
+    // heading and hears what this is before meeting a radio group.
+    dialogRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      (openerRef.current as HTMLElement | null)?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const visible = showAll ? rows : rows.slice(0, 8);
@@ -263,8 +285,10 @@ export function AttendanceReviewPanel({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
          role="dialog" aria-modal="true" aria-label="Attendance status review">
-      <div className="my-8 w-full max-w-3xl rounded-lg border bg-card p-5 shadow-xl"
-           data-testid="attendance-review-panel">
+      <div className="my-8 w-full max-w-3xl rounded-lg border bg-card p-5 shadow-xl focus:outline-none"
+           data-testid="attendance-review-panel"
+           ref={dialogRef}
+           tabIndex={-1}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Attendance status review</h2>
