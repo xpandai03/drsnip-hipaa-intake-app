@@ -362,8 +362,13 @@ application role instead.
 ## 6. Remaining limitations
 
 1. **Preview banding is a mitigation, not a proof.** Repeated previews could
-   still binary-search a band boundary. Admin-only, audited, small named
-   population.
+   still binary-search a band boundary, and comparing published exact figures
+   across two approved mappings can reveal what a single label contributed.
+   Admin-only, audited, small named population.
+1b. **The four attendance buckets are a partition** and were originally
+   suppressed per cell, which leaked: subtract the other three from the eligible
+   cohort. Corrected at release to the withhold-until-two rule. The status
+   inventory is the opposite case and correctly keeps per-cell suppression.
 2. **`remote_only` and `in_window_resting_on_deleted_record` overlap** the other
    buckets — they are annotations, not a fifth and sixth bucket. The API says
    so; a reader who sums everything will over-count.
@@ -392,8 +397,11 @@ answered by this work:
 4. Can `Checked In Online` be done from home?
 5. What happens on appointments that end with no status at all (~30% of past
    appointments, every office, every month)?
-6. **Is `No Show` reliably set?** This alone decides whether a rate is ever
-   publishable.
+6. **Is `No Show` reliably set?** Necessary for any rate — but **not
+   sufficient**, and the earlier wording here was wrong. A rate also needs an
+   agreed population, an observation window, coverage of unknown and
+   conflicting evidence, and a rule for patients holding several appointments.
+   A reliable absence marker unblocks the question; it does not answer it.
 7. Do arrivals followed by a cancellation count as attended?
 8. Is a practice-wide definition valid, or do offices differ?
 
