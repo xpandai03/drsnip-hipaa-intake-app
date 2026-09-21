@@ -720,6 +720,23 @@ $$;
 GRANT SELECT ON TABLE public.attendance_mappings        TO drsnip_metrics_fn;
 GRANT SELECT ON TABLE public.attendance_status_labels   TO drsnip_metrics_fn;
 
+-- OWNERSHIP. This file is applied as the operator (a superuser), so without
+-- this block the new tables would be owned by `postgres` while every table
+-- beside them is owned by the application role. Privileges alone are not
+-- enough: a later ALTER TABLE run as the app role would fail, and the
+-- inconsistency is invisible until it does. Idempotent.
+DO $own$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'drsnip_intake_demo') THEN
+    EXECUTE 'ALTER TABLE public.attendance_mappings      OWNER TO drsnip_intake_demo';
+    EXECUTE 'ALTER TABLE public.attendance_status_labels OWNER TO drsnip_intake_demo';
+    EXECUTE 'ALTER TABLE public.attendance_review_audit  OWNER TO drsnip_intake_demo';
+    -- The one writing function runs as its CALLER (it is not SECURITY DEFINER),
+    -- so its owner only governs who may alter it. Keep it with the app role.
+    EXECUTE 'ALTER FUNCTION public.drsnip_refresh_status_labels() OWNER TO drsnip_intake_demo';
+  END IF;
+END $own$;
+
 ALTER FUNCTION public.drsnip_attendance_evidence(jsonb, text, date, date, integer) OWNER TO drsnip_metrics_fn;
 ALTER FUNCTION public.drsnip_attendance_metric(text, date, date, integer)          OWNER TO drsnip_metrics_fn;
 ALTER FUNCTION public.drsnip_attendance_preview(jsonb, text, date, date, integer)  OWNER TO drsnip_metrics_fn;
