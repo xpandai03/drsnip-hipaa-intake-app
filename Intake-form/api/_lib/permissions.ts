@@ -46,3 +46,43 @@ export function canGenerateLinks(role: Role): boolean {
 export function canViewCardImageBytes(role: Role): boolean {
   return isAdmin(role);
 }
+
+// ---------------------------------------------------------------------------
+// Definition approval (attendance status review).
+//
+// NOT a third role, and NOT inherited from `admin`.
+//
+// `normalizeRole()` above resolves anything that is not literally 'viewer' to
+// 'admin' — a deliberate rollout choice in migration 0007, and the reason every
+// developer and operations account is an admin today. Approving what a clinic's
+// records MEAN is not the same privilege as exporting a CSV, and a role model
+// with two values cannot tell them apart.
+//
+// So approval hangs off an explicit per-user capability that defaults to false.
+// It is additive, it cannot widen access by accident, and — because the check
+// requires the flag to be exactly `true` — it fails closed for a malformed,
+// missing or unknown role rather than defaulting open the way the role does.
+// ---------------------------------------------------------------------------
+
+export type Approver = { role: unknown; canApproveDefinitions: unknown };
+
+/**
+ * True only for an admin carrying the explicit capability.
+ *
+ * Both halves are checked strictly. `role` is normalised (so a junk value
+ * resolves to 'admin' as it does everywhere else), but the capability must be
+ * the boolean `true` — a string "true", a 1, or an absent column all deny.
+ */
+export function canApproveDefinitions(u: Approver): boolean {
+  return isAdmin(normalizeRole(u.role)) && u.canApproveDefinitions === true;
+}
+
+/** Save or edit a draft classification. Admin, no capability required. */
+export function canEditDefinitionDraft(role: Role): boolean {
+  return isAdmin(role);
+}
+
+/** Run an impact preview over a draft. Admin — a preview is an unapproved number. */
+export function canPreviewDefinitions(role: Role): boolean {
+  return isAdmin(role);
+}

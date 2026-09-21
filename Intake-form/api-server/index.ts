@@ -45,6 +45,13 @@ import reportsCountsHandler from "../api/reports/counts";
 import reportsJourneyHandler from "../api/reports/journey";
 import reportsBookingHandler from "../api/reports/booking";
 import reportsFreshnessHandler from "../api/reports/freshness";
+import reportsStatusInventoryHandler from "../api/reports/status-inventory";
+import reportsAttendanceHandler from "../api/reports/attendance";
+import attendanceDraftHandler from "../api/attendance-mapping/draft";
+import attendancePreviewHandler from "../api/attendance-mapping/preview";
+import attendanceApproveHandler from "../api/attendance-mapping/approve";
+import attendanceWithdrawHandler from "../api/attendance-mapping/withdraw";
+import attendanceHistoryHandler from "../api/attendance-mapping/history";
 import registrationPartialHandler from "../api/registration-partial";
 import registrationPartialsListHandler from "../api/registration-partials/index";
 import registrationPartialsExportHandler from "../api/registration-partials/export";
@@ -111,6 +118,15 @@ app.all("/api/reports/counts", adapt(reportsCountsHandler));
 app.all("/api/reports/journey", adapt(reportsJourneyHandler));
 app.all("/api/reports/booking", adapt(reportsBookingHandler));
 app.all("/api/reports/freshness", adapt(reportsFreshnessHandler));
+app.all("/api/reports/status-inventory", adapt(reportsStatusInventoryHandler));
+app.all("/api/reports/attendance", adapt(reportsAttendanceHandler));
+// Attendance definition review. Draft/preview are admin-gated; approve/withdraw
+// need the explicit approval capability (api/_lib/auth.ts).
+app.all("/api/attendance-mapping/draft", adapt(attendanceDraftHandler));
+app.all("/api/attendance-mapping/preview", adapt(attendancePreviewHandler));
+app.all("/api/attendance-mapping/approve", adapt(attendanceApproveHandler));
+app.all("/api/attendance-mapping/withdraw", adapt(attendanceWithdrawHandler));
+app.all("/api/attendance-mapping/history", adapt(attendanceHistoryHandler));
 // Registration drop-off partials (Train 2). Specific paths before the :id route.
 app.all("/api/registration-partial", adapt(registrationPartialHandler));
 app.all("/api/registration-partials/export", adapt(registrationPartialsExportHandler));
