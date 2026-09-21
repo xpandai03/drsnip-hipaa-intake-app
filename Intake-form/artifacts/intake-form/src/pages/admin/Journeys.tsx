@@ -25,7 +25,7 @@
 // The synthetic insurance-follow-up demo stays at its own route. Nothing on
 // this page is synthetic and nothing from the demo is mixed in.
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearch } from "wouter";
 import { RefreshCw } from "lucide-react";
@@ -36,6 +36,11 @@ import {
   AppointmentFreshnessBadge,
   IntakeFreshnessBadge,
 } from "@/components/reporting/freshness";
+import {
+  AttendanceReviewCard,
+  AttendanceReviewPanel,
+} from "@/components/reporting/attendance-review";
+import { AttendanceOutcome } from "@/components/reporting/attendance-outcome";
 import {
   WaterfallChart,
   type WaterfallStage,
@@ -285,11 +290,13 @@ type BookingResponse = {
 };
 
 function JourneyPanel({
-  formMetric, bookingMetric, entryLabel, outcomeLabel, from, to, windowDays,
+  formMetric, bookingMetric, attendanceMetric, entryLabel, outcomeLabel,
+  from, to, windowDays, onOpenReview,
 }: {
-  formMetric: string; bookingMetric: string;
+  formMetric: string; bookingMetric: string; attendanceMetric: string;
   entryLabel: string; outcomeLabel: string;
   from: string; to: string; windowDays: number;
+  onOpenReview: () => void;
 }) {
   const q = (base: string, metric: string) =>
     `${base}?metric=${encodeURIComponent(metric)}&from=${from}&to=${to}&window=${windowDays}`;
@@ -417,21 +424,17 @@ function JourneyPanel({
       </section>
 
       {/* attendance: an OUTCOME, not a stage under advance booking */}
+      {/* ATTENDANCE — an OUTCOME, deliberately not a stage under advance booking.
+          Once approved, its definition may count arrivals at appointments that
+          were never advance bookings, so nesting it under the narrowest stage
+          would be wrong. It does not depend on the consultation form either.
+
+          The old pair of cards said attendance was unavailable and left the
+          reader nowhere to go. The blocker was never data; it was a decision
+          with no way to record it. */}
       <section className="grid gap-3 sm:grid-cols-2">
-        <UnavailableCard
-          title="Attendance"
-          reason={b.attendance.reason ?? ""}
-          testId="attendance-card"
-        />
-        <div className="rounded-lg border bg-card p-4" data-testid="attendance-decision">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What is needed</div>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            The appointment history is loaded in full. What is missing is a decision: which of this
-            clinic&rsquo;s status values mean the patient physically arrived. Mapping version{" "}
-            <span className="tabular-nums">{b.attendance.mapping_version}</span>, state{" "}
-            <em>{b.attendance.approval_state.replace(/_/g, " ")}</em>.
-          </p>
-        </div>
+        <AttendanceOutcome metric={attendanceMetric} from={from} to={to} windowDays={windowDays} />
+        <AttendanceReviewCard onOpen={onOpenReview} />
       </section>
 
       {/* consultation: a SEPARATE progression measure, not a booking stage */}
@@ -567,6 +570,7 @@ export default function Journeys() {
   // of reading freshness off the side of a six-second metric. That delay was
   // the whole reason the badge used to say "last refreshed unknown".
   const freshness = useFreshness();
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   // Pages self-wrap in AdminLayout in this app — the route does not do it.
   // Without this the page renders with no navigation and no sign-out.
@@ -651,19 +655,30 @@ export default function Journeys() {
         <JourneyPanel
           formMetric="registration_to_consultation"
           bookingMetric="booking_registration"
+          attendanceMetric="attendance_registration"
           entryLabel="Registration"
           outcomeLabel="Consultation form submitted"
           from={from} to={to} windowDays={windowDays}
+          onOpenReview={() => setReviewOpen(true)}
         />
       ) : (
         <JourneyPanel
           formMetric="insurance_to_registration"
           bookingMetric="booking_insurance"
+          attendanceMetric="attendance_insurance"
           entryLabel="Insurance inquiry"
           outcomeLabel="Registration submitted"
           from={from} to={to} windowDays={windowDays}
+          onOpenReview={() => setReviewOpen(true)}
         />
       )}
+
+      <AttendanceReviewPanel
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        metric={tab === "registration" ? "attendance_registration" : "attendance_insurance"}
+        from={from} to={to} windowDays={windowDays}
+      />
 
       <p className="mt-8 text-xs text-muted-foreground">
         Small groups are withheld, together with any total that would let them be recovered by
