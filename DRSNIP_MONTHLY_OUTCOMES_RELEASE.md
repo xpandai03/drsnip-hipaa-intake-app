@@ -225,11 +225,14 @@ from the local synthetic-data run are in `outcomes-screenshots-local/`.
   - Intake history starts 15 June 2026 (insurance 12 August 2026).
   - Recent months have been observed for less time, and each row says for how
     long.
-- **Two "complete to" times on the page.** The header badge (the existing
-  freshness component) reads the hourly cursor, 10:05. The table's cutoff also
-  counts the 10-minute per-patient catch-up reads, 10:10. Both are correct. If
-  it confuses anyone, the badge could adopt the table's rule; that was not done
-  in this release.
+- **Two "complete to" times on the page — corrected (2026-09-23).** This
+  report originally called both correct. They were not: the table's time was
+  the latest *single-patient* catch-up read applied to everyone, which
+  overstated practice-wide completeness and could hide a stalled hourly sync.
+  The badge's time (the hourly incremental watermark) was the valid one. See
+  `DRSNIP_REPORTING_MEANING_AND_ACCURACY_AUDIT.md` §3; fixed by migration 0022
+  (`DRSNIP_REPORTING_CLARITY_RELEASE.md`), which gives every calculation and
+  the badge one shared cutoff.
 
 ---
 
