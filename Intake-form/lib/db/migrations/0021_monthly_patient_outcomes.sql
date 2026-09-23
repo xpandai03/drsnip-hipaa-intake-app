@@ -105,7 +105,7 @@ VALUES ('1', 'provisional', jsonb_build_object(
     'completion_review_withheld', jsonb_build_array('Signed No Review'),
     'procedure_not_performed',    jsonb_build_array('Procedure Not Performed'),
     'active_if_future',           jsonb_build_array('Scheduled', 'Confirmed'),
-    'ended_not_active',           jsonb_build_array('Cancelled', 'Late Cancel within 48 hrs', 'No Show'),
+    'ended_not_active',           jsonb_build_array('Cancelled', 'Late Cancel within 48 hrs'),
     'replaced',                   jsonb_build_array('Rescheduled')),
   'Call with Jeff Cho, 2026-09-21 (jeff-meet-transcript.md): Complete = the appointment was '
   || 'completed, not proof of a procedure (T:55); Signed No Review = completed, review outreach '
@@ -114,8 +114,9 @@ VALUES ('1', 'provisional', jsonb_build_object(
   || 'already scheduled, being confirmed (T:59); Cancelled and Late Cancel within 48 hrs end that '
   || 'record (T:60-62, T:278-280); Rescheduled = that record was replaced, "almost always" '
   || '(T:276-287) — the remaining records are evaluated, a replacement is never assumed. '
-  || 'ENGINEERING INFERENCE, not the clinic''s words: No Show is placed in ended_not_active '
-  || '(Jeff named it without defining it, T:66).')
+  || 'No Show is DELIBERATELY UNCLASSIFIED: Jeff named it without defining it (T:66), so it '
+  || 'establishes nothing — a patient whose only relevant record is a No Show is Unknown, not '
+  || 'Neither — and it never outweighs a completion or an active booking elsewhere.')
 ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
