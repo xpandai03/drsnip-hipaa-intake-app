@@ -27,8 +27,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearch } from "wouter";
-import { RefreshCw } from "lucide-react";
+import { Link, useSearch } from "wouter";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { PageHeader } from "./PageHeader";
 import {
@@ -41,11 +41,6 @@ import {
   AttendanceReviewPanel,
 } from "@/components/reporting/attendance-review";
 import { AttendanceOutcome } from "@/components/reporting/attendance-outcome";
-import {
-  WaterfallChart,
-  type WaterfallStage,
-  SCALE_NOTE,
-} from "@/components/ui/waterfall-chart";
 
 // ---------------------------------------------------------------------------
 // Types mirroring /api/reports/journey.
@@ -94,8 +89,6 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 const WINDOWS = [7, 14, 30] as const;
-
-const RAMP = ["hsl(208 79% 22%)", "hsl(208 62% 34%)", "hsl(197 55% 45%)", "hsl(200 20% 70%)"];
 
 /** Pacific day string, without dragging a date library in. */
 function clinicDay(d: Date): string {
@@ -312,137 +305,26 @@ function JourneyPanel({
     placeholderData: (prev) => prev, retry: 1,
   });
 
-  // An error wins over stale data: if the newest request failed, say so rather
-  // than leaving an older answer on screen with nothing to mark it as old.
-  if (book.isError) {
-    return <PanelError onRetry={() => { void book.refetch(); }} />;
-  }
-  if (!book.data) {
-    return <PanelSkeleton />;
-  }
-  const b = book.data;
   const f = form.data;
-  // The two queries are independent. The appointment journey can render while
-  // the consultation measure is still loading, and one failing must not blank
-  // the other.
-  const updating = book.isFetching || form.isFetching;
-
-  // THE APPOINTMENT JOURNEY. Genuinely nested: every advance booking is a
-  // recorded appointment, and every recorded appointment belongs to an
-  // eligible patient. MATURITY IS NOT A STAGE HERE — it is measurement
-  // eligibility, not something a patient did, so it lives in the cohort line
-  // above the chart.
-  //
-  // ATTENDANCE IS DELIBERATELY ABSENT from this silhouette. Its definition,
-  // once approved, may count arrivals at appointments that were NOT advance
-  // bookings, so nesting it under the narrowest stage would be wrong. It is an
-  // outcome card instead.
-  const stages: WaterfallStage[] = [
-    {
-      id: "eligible", label: `${entryLabel} cohort (eligible)`,
-      state: b.cohort.eligible === null ? "suppressed" : "measured",
-      ...(b.cohort.eligible === null ? {} : { value: b.cohort.eligible }),
-      unit: "patients",
-      coverage: "Patients whose appointment history was retrieved and whose full follow-up window had elapsed before the snapshot.",
-    },
-    {
-      id: "recorded", label: "Appointment record created after entry",
-      state: b.recorded.count === null ? "suppressed" : "measured",
-      ...(b.recorded.count === null ? {} : { value: b.recorded.count }),
-      unit: "patients",
-      conversion: b.recorded.rate === null ? null : pct(b.recorded.rate),
-      coverage: "The timestamp on the record. Not proof of when a human booked, and not attendance.",
-    },
-    {
-      id: "advance", label: "Advance booking recorded",
-      state: b.advance_booking.count === null ? "suppressed" : "measured",
-      ...(b.advance_booking.count === null ? {} : { value: b.advance_booking.count }),
-      unit: "patients",
-      conversion: b.advance_booking.rate === null ? null : pct(b.advance_booking.rate),
-      coverage: b.advance_booking.note,
-    },
-  ];
-
-  // The instant these appointment figures are as at. The server returns it with
-  // the figures, so it is never absent while they are on screen; if it ever is,
-  // say what is missing rather than the word "unknown", which reads as a
-  // property of the data instead of a gap in what we were told.
-  const snap = b.snapshot_cutoff
-    ? new Date(b.snapshot_cutoff).toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" })
-    : "an instant this response did not state";
+  const b = book.data;
+  const updating = form.isFetching || book.isFetching;
 
   return (
     <div className="space-y-6" aria-busy={updating || undefined}>
-      {updating && (
-        <p
-          className="flex items-center gap-1.5 text-xs text-muted-foreground"
-          data-testid="journey-updating"
-          role="status"
-        >
+      {updating && (f || b) && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="journey-updating" role="status">
           <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
           Updating these figures. The numbers below are the previous ones until it finishes.
         </p>
       )}
-      {/* cohort + maturity context — NOT a funnel stage */}
-      <section className="rounded-lg border bg-muted/20 p-4" data-testid="cohort-context">
-        <h3 className="text-sm font-semibold">Cohort</h3>
-        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <span><strong className="tabular-nums">{b.cohort.total ?? "—"}</strong> entered in this period</span>
-          <span><strong className="tabular-nums">{b.cohort.eligible ?? "—"}</strong> eligible to measure</span>
-          <span className="text-muted-foreground">
-            {b.cohort.immature ?? "—"} still inside their {windowDays}-day window at the snapshot
-          </span>
-          {(b.cohort.not_covered ?? 0) > 0 && (
-            <span className="text-muted-foreground">{b.cohort.not_covered} not covered by the snapshot</span>
-          )}
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{b.cohort.note}</p>
-      </section>
 
-      <section>
-        <h3 className="text-sm font-semibold">Appointment journey</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Each stage is a subset of the one above it. {SCALE_NOTE}
-        </p>
-        <div className="mt-3 hidden md:block">
-          <WaterfallChart stages={stages} colors={RAMP} orientation="horizontal"
-                          ariaLabel={`${entryLabel} to appointment record`} />
-        </div>
-        <div className="mt-3 md:hidden">
-          <WaterfallChart stages={stages} colors={RAMP} orientation="vertical"
-                          ariaLabel={`${entryLabel} to appointment record`} />
-        </div>
-        <Explain label="What is counted, and as at when">
-          <p>{b.counts_what}</p>
-          <p><strong>As at {snap}</strong> — the appointment snapshot. {b.coverage_note}</p>
-          <p><strong>Scope:</strong> {b.provider_scope}</p>
-          {b.timing.p50_days !== null && (
-            <p>Median time from {entryLabel.toLowerCase()} to an advance booking:{" "}
-              <strong>{b.timing.p50_days.toFixed(1)} days</strong>, among the {b.timing.matched} matched.</p>
-          )}
-        </Explain>
-      </section>
-
-      {/* attendance: an OUTCOME, not a stage under advance booking */}
-      {/* ATTENDANCE — an OUTCOME, deliberately not a stage under advance booking.
-          Once approved, its definition may count arrivals at appointments that
-          were never advance bookings, so nesting it under the narrowest stage
-          would be wrong. It does not depend on the consultation form either.
-
-          The old pair of cards said attendance was unavailable and left the
-          reader nowhere to go. The blocker was never data; it was a decision
-          with no way to record it. */}
-      <section className="grid gap-3 sm:grid-cols-2">
-        <AttendanceOutcome metric={attendanceMetric} from={from} to={to} windowDays={windowDays} />
-        <AttendanceReviewCard onOpen={onOpenReview} />
-      </section>
-
-      {/* consultation: a SEPARATE progression measure, not a booking stage */}
-      <section>
+      {/* THE HEADLINE: form progression. Intake data only — a form the patient
+          filled in, not a booking and not an appointment. */}
+      <section data-testid="form-progression">
         <h3 className="text-sm font-semibold">{outcomeLabel}</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          A separate measure. It is <strong>not</strong> a step on the way to an appointment, and
-          attendance does not depend on it.
+          Measured from each patient&rsquo;s first {entryLabel.toLowerCase()} in the period. The period
+          and follow-up window above apply here.
         </p>
         {f ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -450,15 +332,9 @@ function JourneyPanel({
             <ModeCard title={`Within ${windowDays} days (mature)`} block={f.mature_window} testId="mode-mature" />
           </div>
         ) : form.isError ? (
-          <div
-            className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
-            data-testid="consultation-error"
-            role="alert"
-          >
+          <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" data-testid="consultation-error" role="alert">
             <p className="font-medium">This measure could not be loaded.</p>
-            <p className="mt-1 text-muted-foreground">
-              The appointment figures above are unaffected — they come from a separate request.
-            </p>
+            <p className="mt-1 text-muted-foreground">Nothing is shown rather than a zero — a failed request is not a result.</p>
             <button
               type="button"
               onClick={() => { void form.refetch(); }}
@@ -469,46 +345,112 @@ function JourneyPanel({
             </button>
           </div>
         ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2" data-testid="consultation-loading" role="status" aria-busy="true">
-            <span className="sr-only">Loading the consultation measure.</span>
-            <Skeleton className="h-28 w-full" />
-            <Skeleton className="h-28 w-full" />
-          </div>
+          <div className="mt-3" data-testid="consultation-loading"><PanelSkeleton /></div>
         )}
         {f && (
           <Explain>
             <p>{f.counts_what}</p>
             <p>
-              Intake data is current to <strong>now</strong>; the appointment figures above are as
-              at the snapshot. The two have different as-of times on purpose.
+              <strong>Observed to date</strong> counts every form seen so far, including for entries only
+              days old, so it rises as a period ages. <strong>Within {windowDays} days</strong> counts only
+              entries that have had the whole window, so periods can be compared.
             </p>
+            <p>Intake data is current to now. Small groups are withheld; a withheld value is never zero.</p>
           </Explain>
         )}
       </section>
 
-      {/* contextual measures — overlapping, deliberately not a funnel */}
-      <section>
-        <h3 className="text-sm font-semibold">Context</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Overlapping categories, <strong>not</strong> a sequence — one patient can appear in several.
-        </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <CountCard title="Recorded at/after its scheduled time" value={b.at_or_after_scheduled.count}
-                     help={b.at_or_after_scheduled.note} testId="ctx-at-after" />
-          <CountCard title="Had a past visit before entry" value={b.prior.past_visit}
-                     help={b.prior.note} testId="ctx-prior-past" />
-          <CountCard title="Already scheduled at entry" value={b.prior.future_booking}
-                     help="Booked before entry, for a date after it." testId="ctx-prior-future" />
-          <CountCard title="Later cancelled" value={b.changed_after_recording.later_cancelled}
-                     help={b.changed_after_recording.note} testId="ctx-cancelled" />
-          <CountCard title="Record later deleted" value={b.changed_after_recording.later_deleted}
-                     help="Deleted at the source. The evidence that a record was created is kept."
-                     testId="ctx-deleted" />
-          <CountCard title="No appointment recorded" value={b.none_recorded}
-                     help="A real negative within the snapshot scope: their history was retrieved and their window had elapsed."
-                     testId="ctx-none" />
+      {/* DIAGNOSTICS: when appointment RECORDS were created. Collapsed, because
+          it is record timing, not a patient milestone and not a booking. The
+          calculation is unchanged; only the presentation moved. */}
+      <details className="rounded-lg border bg-card px-4 py-3" data-testid="record-timing">
+        <summary className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Appointment-record timing (diagnostic)
+        </summary>
+        <div className="mt-3 space-y-4">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            When an appointment <strong>record</strong> of any type first appeared on the chart after
+            the {entryLabel.toLowerCase()} — including records later cancelled or deleted, and follow-up,
+            lab and consultation-only types. It measures record creation, not a booked procedure,
+            attendance, or a completed appointment. For where patients stand now, use Monthly outcomes.
+            Figures are as at the appointment-data time shown at the top of this page.
+          </p>
+          {book.isError ? (
+            <PanelError onRetry={() => { void book.refetch(); }} />
+          ) : !b ? (
+            <PanelSkeleton />
+          ) : b.status === "unavailable" ? (
+            <p className="text-sm text-muted-foreground" data-testid="record-timing-unavailable">
+              Appointment data freshness is unavailable, so record timing is not shown.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {b.cohort.eligible ?? "—"} patients had their history read and their whole {windowDays}-day
+                window observed; {b.cohort.immature ?? "—"} are still inside it.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <CountCard title={`Appointment record created within ${windowDays} days`} value={b.recorded.count}
+                           help="Any appointment type and status. The timestamp on the record, not proof of when a person booked."
+                           testId="rt-recorded" />
+                <CountCard title="…of those, created before its scheduled date" value={b.advance_booking.count}
+                           help="The same records filtered on timing: created ahead of the appointment date rather than on or after it. Not a further step."
+                           testId="rt-advance" />
+                <CountCard title="No appointment record within the window" value={b.none_recorded}
+                           help="History read and the whole window observed, and no record of any type was created in it."
+                           testId="ctx-none" />
+              </div>
+              {b.timing.p50_days !== null && (
+                <p className="text-xs text-muted-foreground" data-testid="rt-median">
+                  Median time from {entryLabel.toLowerCase()} to the first record created before its scheduled
+                  date: <strong>{b.timing.p50_days.toFixed(1)} days</strong> (all appointment types).
+                </p>
+              )}
+              <div>
+                <h4 className="text-xs font-semibold">Record details</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Overlapping categories, <strong>not</strong> a sequence — one patient can appear in several.
+                </p>
+                <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <CountCard title="Record created at/after its scheduled time" value={b.at_or_after_scheduled.count}
+                             help={b.at_or_after_scheduled.note} testId="ctx-at-after" />
+                  <CountCard title="Had a past visit before entry" value={b.prior.past_visit}
+                             help={b.prior.note} testId="ctx-prior-past" />
+                  <CountCard title="Already scheduled at entry" value={b.prior.future_booking}
+                             help="A record created before entry, for a date after it." testId="ctx-prior-future" />
+                  <CountCard title="Record later cancelled" value={b.changed_after_recording.later_cancelled}
+                             help={b.changed_after_recording.note} testId="ctx-cancelled" />
+                  <CountCard title="Record later deleted" value={b.changed_after_recording.later_deleted}
+                             help="Deleted at the source. The evidence that a record was created is kept."
+                             testId="ctx-deleted" />
+                </div>
+              </div>
+              <Explain label="Scope and coverage">
+                <p>{b.counts_what}</p>
+                <p><strong>Scope:</strong> {b.provider_scope}</p>
+                <p>{b.coverage_note}</p>
+                <p>{b.cohort.note}</p>
+              </Explain>
+            </>
+          )}
         </div>
-      </section>
+      </details>
+
+      {/* ATTENDANCE REVIEW: a definition tool, reachable but not a stage. */}
+      <details className="rounded-lg border bg-card px-4 py-3" data-testid="attendance-section">
+        <summary className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Attendance status review
+        </summary>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Which appointment statuses mean a patient physically arrived is a clinic decision that has
+          not been approved, so no attendance figure is published. The review below is where that
+          decision is drafted and, by an authorised person, approved.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <AttendanceOutcome metric={attendanceMetric} from={from} to={to} windowDays={windowDays} />
+          <AttendanceReviewCard onOpen={onOpenReview} />
+        </div>
+      </details>
     </div>
   );
 }
@@ -580,7 +522,7 @@ export default function Journeys() {
       <PageHeader
         eyebrow="Actual intake data"
         title="Patient journeys"
-        subtitle="Real submissions and stored appointment records. Nothing on this page is synthetic."
+        subtitle="Did patients go on to submit the next form? Real intake data; nothing on this page is synthetic."
       >
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center rounded-full border border-emerald-600/30 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
@@ -595,13 +537,21 @@ export default function Journeys() {
           <AppointmentFreshnessBadge query={freshness} />
         </div>
         <p className="mt-2 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-          Intake submissions update as forms arrive. Appointment records are re-read on a
-          schedule; the badge above says the instant they are <em>complete to</em>, which is not
-          the same as the last time sync ran — a run that could not finish its window leaves that
-          instant where it was. Counted in distinct linked patient IDs; where one person holds two
-          charts this is a chart count. Entry dates use clinic days (Pacific).
+          Intake submissions update as forms arrive. Appointment data is <em>complete to</em> the time
+          on the badge, for every patient. Counted in distinct linked patient IDs; where one person
+          holds two charts this is a chart count. Entry dates use clinic days (Pacific).
         </p>
       </PageHeader>
+
+      {/* Where patients stand now lives on its own page. Say so first. */}
+      <Link
+        href="/admin/outcomes"
+        data-testid="link-monthly-outcomes"
+        className="mb-5 flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm font-medium hover:border-[var(--sh-accent)] hover:bg-[var(--sh-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span>See completed appointments and current bookings by entry month</span>
+        <ArrowRight className="h-4 w-4 shrink-0 text-[var(--sh-muted)]" aria-hidden="true" />
+      </Link>
 
       {/* tabs */}
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Journey">
@@ -646,8 +596,9 @@ export default function Journeys() {
           </select>
         </label>
         <p className="max-w-md text-xs text-muted-foreground">
-          Periods are compared on <strong>equal windows only</strong>. A window is {windowDays} × 24
-          hours from each entry, so a daylight-saving change cannot give one period extra time.
+          These apply to the form measure below and to the record-timing diagnostic. Periods are
+          compared on <strong>equal windows only</strong>: a window is {windowDays} × 24 hours from
+          each entry, so a daylight-saving change cannot give one period extra time.
         </p>
       </div>
 
@@ -657,7 +608,7 @@ export default function Journeys() {
           bookingMetric="booking_registration"
           attendanceMetric="attendance_registration"
           entryLabel="Registration"
-          outcomeLabel="Consultation form submitted"
+          outcomeLabel="Consultation form submitted after registration"
           from={from} to={to} windowDays={windowDays}
           onOpenReview={() => setReviewOpen(true)}
         />
@@ -667,7 +618,7 @@ export default function Journeys() {
           bookingMetric="booking_insurance"
           attendanceMetric="attendance_insurance"
           entryLabel="Insurance inquiry"
-          outcomeLabel="Registration submitted"
+          outcomeLabel="Registration submitted after the insurance inquiry"
           from={from} to={to} windowDays={windowDays}
           onOpenReview={() => setReviewOpen(true)}
         />

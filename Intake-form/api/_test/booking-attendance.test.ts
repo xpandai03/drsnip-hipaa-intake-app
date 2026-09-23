@@ -388,16 +388,14 @@ describe("the journeys page presents the corrected structure", () => {
     }
   });
 
-  it("shows when the appointment figures are current to, and never a bare Live badge", () => {
-    // The badge moved into <AppointmentFreshnessBadge>, which derives live /
-    // behind / paused / by-hand from the server rather than hard-coding one of
-    // them. A decorative "Live" chip remains banned: it would claim currency
-    // without anything to answer for the claim.
+  it("shows when the appointment figures are current to, once, and never a bare Live badge", () => {
+    // The badge derives live / behind / paused / by-hand from the server. Since
+    // 0022 it is the SAME instant every appointment figure uses, so the page
+    // shows it once, in the header, instead of repeating it beside the figures.
     assert.match(page, /AppointmentFreshnessBadge/);
     assert.ok(!/>\s*Live\s*</.test(page));
-    // The per-panel line still states the instant the appointment figures are
-    // as at, next to the figures themselves.
-    assert.match(page, /As at \{snap\}/);
+    assert.ok(!/As at \{snap\}/.test(page), "a second copy of the appointment timestamp is back");
+    assert.match(page, /as at the appointment-data time shown at the top of this page/);
   });
 
   it("carries no stale 'history incomplete' explanation", () => {

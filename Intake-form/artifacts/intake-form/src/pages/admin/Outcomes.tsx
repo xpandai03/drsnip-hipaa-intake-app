@@ -20,11 +20,7 @@ import { useSearch } from "wouter";
 import { RefreshCw, AlertTriangle, Info } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { PageHeader } from "./PageHeader";
-import {
-  useFreshness,
-  AppointmentFreshnessBadge,
-  clinicTime,
-} from "@/components/reporting/freshness";
+import { clinicTime } from "@/components/reporting/freshness";
 import {
   COHORTS, BUCKET_KEYS, MAX_MONTHS,
   type OutcomesResponse, type MonthRow, type Count, type ViewState,
@@ -308,7 +304,6 @@ export default function Outcomes() {
     placeholderData: (prev) => prev,
     retry: 1,
   });
-  const freshness = useFreshness();
 
   const d = q.data;
   const rows = d ? newestFirst(d.months) : [];
@@ -324,11 +319,12 @@ export default function Outcomes() {
           title="Monthly outcomes"
           subtitle="For patients who registered or sent an insurance inquiry in each month: how many have completed an appointment, and how many still have one scheduled."
         >
+          {/* ONE appointment-data timestamp on this page: the line above the
+              table, taken from the same response as the figures (0022). */}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="inline-flex items-center rounded-full border border-emerald-600/30 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
               Actual intake data
             </span>
-            <AppointmentFreshnessBadge query={freshness} />
           </div>
         </PageHeader>
 
@@ -341,9 +337,8 @@ export default function Outcomes() {
           >
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <p>
-              <strong>{d.definition.label}.</strong> Which appointment types count is a provisional
-              engineering choice, not a definition the clinic has approved. Completed and Currently
-              scheduled are shown separately and are not added together.
+              <strong>Provisional reporting scope</strong> — counts include selected appointment
+              types. Review what is included below.
             </p>
           </div>
         )}
@@ -398,8 +393,15 @@ export default function Outcomes() {
         {/* As-of line: the instant every figure below is true at. */}
         {d && (
           <p className="mb-3 text-sm" data-testid="data-complete-to">
-            <strong>Data complete to {cutoff ?? "an instant this response did not state"}</strong>
-            <span className="text-muted-foreground"> (Pacific). “Scheduled” means booked for after this moment.</span>
+            <strong>
+              Appointment data complete to {cutoff ?? "— unavailable"}
+            </strong>
+            <span className="text-muted-foreground">
+              {cutoff ? " (Pacific) for every patient counted." : ""}
+              {d.as_of.basis === "history_baseline"
+                ? " The hourly sync has not completed yet; this is the earliest full history read."
+                : cutoff ? " Updated hourly. “Currently scheduled” means booked for after this time." : ""}
+            </span>
           </p>
         )}
         {stale && (
@@ -516,18 +518,31 @@ export default function Outcomes() {
               })}
             </ul>
 
-            {/* Glossary: what each column counts, from the server. Below the figures: the table comes first. */}
-            <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4" data-testid="bucket-glossary">
+            {/* Column key: one line each, from the server. The table comes first. */}
+            <dl className="mt-4 space-y-1 text-xs" data-testid="bucket-glossary">
               {BUCKET_KEYS.map((k) => (
-                <div key={k} className="rounded-md border bg-card p-2.5">
-                  <dt className="flex items-center gap-1.5 font-semibold">
+                <div key={k} className="flex gap-1.5">
+                  <dt className="flex shrink-0 items-center gap-1.5 font-semibold">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: BAR[k] }} aria-hidden="true" />
-                    {d.buckets[k].label}
+                    {d.buckets[k].label}:
                   </dt>
-                  <dd className="mt-1 leading-relaxed text-muted-foreground">{d.buckets[k].means}</dd>
+                  <dd className="text-muted-foreground">{d.buckets[k].means}</dd>
                 </div>
               ))}
             </dl>
+            <details className="mt-2 rounded-md border bg-card px-3 py-2" data-testid="bucket-detail">
+              <summary className="cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                More about each column
+              </summary>
+              <dl className="mt-2 space-y-2 text-xs">
+                {BUCKET_KEYS.map((k) => (
+                  <div key={k}>
+                    <dt className="font-semibold">{d.buckets[k].label}</dt>
+                    <dd className="leading-relaxed text-muted-foreground">{d.buckets[k].detail}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
 
             {/* Why anything was withheld, once per month that had something withheld. */}
             {rows.some((r) => r.withheld.length > 0) && (

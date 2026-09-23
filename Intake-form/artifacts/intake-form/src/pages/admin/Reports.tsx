@@ -55,25 +55,23 @@ const LIVE: Card[] = [
   },
   {
     to: "/admin/journeys?journey=registration",
-    title: "Registration journey",
+    title: "Registration form progression",
     blurb:
-      "What happens after someone registers: whether an appointment record appears, how quickly, and whether a consultation form follows.",
+      "Whether people who registered went on to submit the consultation form, with a collapsed diagnostic of when appointment records were created.",
     answers: [
-      "Did registrations turn into booked appointments?",
-      "How long did that take?",
       "How many sent the consultation form afterwards?",
+      "Within 14 days, compared across periods?",
     ],
     icon: LineChart,
     testId: "reports-card-registration",
   },
   {
     to: "/admin/journeys?journey=insurance",
-    title: "Insurance inquiry journey",
+    title: "Insurance inquiry progression",
     blurb:
-      "The same measures for people who arrive through the insurance inquiry form, counted as a separate cohort — it overlaps with registration and must never be added to it.",
+      "Whether people who sent an insurance inquiry went on to register — a separate cohort that overlaps with registration and must never be added to it.",
     answers: [
       "Did inquiries become registrations?",
-      "Did they reach an appointment?",
     ],
     icon: Users,
     testId: "reports-card-insurance",

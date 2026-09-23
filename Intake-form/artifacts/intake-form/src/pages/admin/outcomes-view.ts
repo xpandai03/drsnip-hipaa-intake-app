@@ -124,9 +124,9 @@ export type OutcomesResponse = {
     profiles: Profile[];
     profile_coverage: { stored_profile_ids: number; stored_with_verified_name: number; stored_unknown_meaning: number; note: string };
   };
-  as_of: { evidence_cutoff: string | null; evidence_age_minutes: number | null; note: string };
+  as_of: { evidence_cutoff: string | null; basis: string | null; evidence_age_minutes: number | null; note: string };
   period: { from_month: string; to_month: string; timezone_label: string };
-  buckets: Record<"completed" | "scheduled" | "unknown" | "neither", { label: string; means: string }>;
+  buckets: Record<"completed" | "scheduled" | "unknown" | "neither", { label: string; means: string; detail: string }>;
   role_labels: Record<string, { label: string; means: string }>;
   status_explanations: ReadonlyArray<{ key: string; means: string }>;
   unknown_reasons: Record<string, string>;
@@ -174,6 +174,7 @@ export function rowNotice(r: MonthRow): string | null {
     case "empty": return "No entries this month.";
     case "not_started": return "This month begins after the data cutoff — no appointment evidence yet.";
     case "suppressed": return "Too few patients to show without risking identifying someone.";
+    case "unavailable": return "Appointment data freshness is unavailable, so no outcomes are shown.";
     default: return "Figures are not available for this month.";
   }
 }
@@ -186,6 +187,7 @@ const WITHHELD_WHY: Record<string, string> = {
   covered_cohort_small: "The whole month is too small to publish.",
   neither_breakdown_small: "The split of “Neither established” is withheld because one part is a small group.",
   unlinked_submissions_small: "The number of unlinked submissions is a small group and is withheld.",
+  evidence_cutoff_unavailable: "There is no valid time appointment data is complete to, so nothing is classified.",
 };
 export function withheldReasons(r: MonthRow): string[] {
   return r.withheld.map((w) => WITHHELD_WHY[w] ?? "Some values are withheld to protect small groups.");
