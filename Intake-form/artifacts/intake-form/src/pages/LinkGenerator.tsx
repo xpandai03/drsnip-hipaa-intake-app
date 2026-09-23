@@ -77,10 +77,17 @@ async function fetchRecentLinks(): Promise<RecentLink[]> {
 
 export default function LinkGenerator({
   readOnly = false,
+  embedded = false,
 }: {
   /** D.3 — viewers can see link history but cannot generate (server enforces
    *  via requireAdmin on POST). When true, the generate control is disabled. */
   readOnly?: boolean;
+  /** True when rendered INSIDE the admin shell (pages/admin/Links.tsx). The
+   *  shell supplies the canvas, gutters and the brand mark, so the standalone
+   *  dark-blue full-page background and the hero logo are dropped — otherwise
+   *  this page paints a dark block in the middle of a light console. Still
+   *  false at /internal-tools-x9k2, which renders it standalone. */
+  embedded?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [formType, setFormType] = useState<FormType | "">("");
@@ -157,7 +164,8 @@ export default function LinkGenerator({
   const recent = recentQuery.data ?? [];
 
   return (
-    <div className="min-h-screen font-sans bg-primary">
+    <div className={embedded ? "font-sans" : "min-h-screen font-sans bg-primary"}>
+      {!embedded && (
       <header className="w-full pt-6 px-12 sm:px-6 flex justify-center">
         <img
           src={DRSNIP_LOGO}
@@ -166,7 +174,14 @@ export default function LinkGenerator({
         />
       </header>
 
-      <main className="w-full max-w-3xl mx-auto px-4 sm:px-6 pt-6 md:pt-24 pb-28 md:pb-16 space-y-6">
+      )}
+
+      <main
+        className={
+          "w-full max-w-3xl mx-auto space-y-6 " +
+          (embedded ? "" : "px-4 sm:px-6 pt-6 md:pt-24 pb-28 md:pb-16")
+        }
+      >
         {/* Generator */}
         <Card className="rounded-3xl shadow-2xl shadow-black/20 border-0">
           <CardHeader className="pb-2">

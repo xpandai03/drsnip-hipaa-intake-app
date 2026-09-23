@@ -13,7 +13,7 @@ import {
   type Session,
   type User,
 } from "@workspace/db";
-import { isAdmin, normalizeRole, type Role } from "./permissions";
+import { canApproveDefinitions, isAdmin, normalizeRole, type Role } from "./permissions";
 
 export const SESSION_COOKIE_NAME = "cjc_admin_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -74,7 +74,11 @@ function parseCookies(header: string | undefined): Record<string, string> {
 
 export type AuthedSession = {
   session: Session;
-  user: Pick<User, "id" | "email" | "name" | "isActive"> & { role: Role };
+  user: Pick<User, "id" | "email" | "name" | "isActive"> & {
+    role: Role;
+    /** Attendance-definition approval. Default false; see permissions.ts. */
+    canApproveDefinitions: boolean;
+  };
 };
 
 /**
@@ -105,6 +109,7 @@ export async function getSessionFromCookie(
       name: users.name,
       isActive: users.isActive,
       role: users.role,
+      canApproveDefinitions: users.canApproveDefinitions,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -151,6 +156,9 @@ export async function getSessionFromCookie(
       name: row.name,
       isActive: row.isActive,
       role: normalizeRole(row.role),
+      // Strictly boolean. A missing column, a string "true" or a 1 all deny —
+      // the capability fails closed, unlike the role, which defaults open.
+      canApproveDefinitions: row.canApproveDefinitions === true,
     },
   };
 }
@@ -276,6 +284,45 @@ export async function requireAdmin(
 ): Promise<AuthedSession | null> {
   const auth = await getSessionFromCookie(req);
   return enforceAdmin(auth, res) ? auth : null;
+}
+
+/**
+ * Pure gate for changing a clinic DEFINITION (attendance status approval).
+ *
+ *   no session                      -> 401
+ *   viewer, or admin without the
+ *   explicit capability             -> 403
+ *   admin WITH the capability       -> true
+ *
+ * Deliberately not `requireAdmin`. Every account in this system is an admin by
+ * the role default; the capability is the only thing that distinguishes someone
+ * authorised to state what the clinic's records mean.
+ */
+export function enforceDefinitionApprover(
+  auth: AuthedSession | null,
+  res: VercelResponse,
+): auth is AuthedSession {
+  if (!auth) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  if (!canApproveDefinitions(auth.user)) {
+    res.status(403).json({
+      error: "Forbidden",
+      reason: "This account is not authorised to approve clinic definitions.",
+    });
+    return false;
+  }
+  return true;
+}
+
+/** Guard for approve / withdraw. Returns the session, or writes 401/403. */
+export async function requireDefinitionApprover(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<AuthedSession | null> {
+  const auth = await getSessionFromCookie(req);
+  return enforceDefinitionApprover(auth, res) ? auth : null;
 }
 
 /** Find an active user by email, or null. Email is lowercased. */

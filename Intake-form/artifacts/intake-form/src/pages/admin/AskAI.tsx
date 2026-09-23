@@ -310,12 +310,21 @@ const CHATGPT_CHAT_STEPS: Step[] = [
   },
 ];
 
+// Suggested prompts. These are the questions the connector can actually answer
+// from the aggregate view, phrased as what the data IS.
+//
+// "New vs returning patients this week" used to be on this list. It is off it
+// for the same reason the dashboard tile was renamed: the underlying
+// action_label records what the DrChrono write-back DID, and every consultation
+// is 'matched' by definition while 'create' only means no existing chart
+// matched the details given. Inviting someone to ask the connector for new vs
+// returning patients invites a confidently wrong answer.
 const EXAMPLES: string[] = [
   "Call drsnip_data_notes first, then: what's our manual-review rate this month?",
   "Show the how-heard breakdown for consultations.",
-  "New vs returning patients this week.",
+  "Break down the DrChrono record actions (create / update / matched) this week.",
   "Submission volume by office location.",
-  "Give me the outcome funnel: success / manual review / failed.",
+  "Give me the processing outcomes: success / manual review / failed.",
 ];
 
 export default function AskAI() {
@@ -331,14 +340,14 @@ export default function AskAI() {
 
   return (
     <AdminLayout>
-      <div className="mx-auto max-w-3xl px-4 pt-20 md:pt-24 pb-28 md:pb-16 space-y-5">
+      <div className="mx-auto max-w-3xl space-y-5">
         {/* Hero */}
-        <header className="text-white px-1">
+        <header className="text-[var(--sh-fg)] px-1">
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <Sparkles className="w-6 h-6" />
             Ask AI
           </h1>
-          <p className="mt-1 text-white/80 text-sm">
+          <p className="mt-1 text-[var(--sh-muted)] text-sm">
             Connect the DrSnip reporting assistant to <strong>Claude</strong> or{" "}
             <strong>ChatGPT</strong> and ask questions about your intake data in plain English.
           </p>
@@ -364,18 +373,18 @@ export default function AskAI() {
 
         {/* Provider-specific setup */}
         <Tabs defaultValue="claude" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 h-auto gap-1 rounded-xl border border-white/20 bg-white/10 p-1 backdrop-blur">
+          <TabsList className="grid w-full grid-cols-2 h-auto gap-1 rounded-md border border-[var(--sh-border)] bg-white p-1">
             <TabsTrigger
               value="claude"
               data-testid="askai-tab-claude"
-              className="rounded-lg py-2.5 text-sm font-medium text-white/80 data-[state=active]:bg-white data-[state=active]:text-primary"
+              className="rounded-md py-2.5 text-sm font-medium text-[var(--sh-muted)] data-[state=active]:bg-[var(--sh-accent)] data-[state=active]:text-white"
             >
               Claude
             </TabsTrigger>
             <TabsTrigger
               value="chatgpt"
               data-testid="askai-tab-chatgpt"
-              className="rounded-lg py-2.5 text-sm font-medium text-white/80 data-[state=active]:bg-white data-[state=active]:text-primary"
+              className="rounded-md py-2.5 text-sm font-medium text-[var(--sh-muted)] data-[state=active]:bg-[var(--sh-accent)] data-[state=active]:text-white"
             >
               ChatGPT
             </TabsTrigger>
@@ -515,7 +524,7 @@ export default function AskAI() {
         </Card>
 
         {/* Cold-start note */}
-        <div className="flex items-center gap-2 text-white/70 text-xs px-1">
+        <div className="flex items-center gap-2 text-[var(--sh-muted)] text-xs px-1">
           <Clock className="w-4 h-4 shrink-0" />
           <span>
             The first question may take a few seconds — the connector sleeps when idle and wakes

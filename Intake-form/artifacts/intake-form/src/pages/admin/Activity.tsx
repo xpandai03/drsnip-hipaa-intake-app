@@ -24,19 +24,29 @@ import { Skeleton } from "@/components/ui/skeleton";
 type DayBucket = {
   date: string;
   total: number;
-  by_form_type: { registration: number; consultation: number };
+  by_form_type: { registration: number; consultation: number; insurance: number };
 };
 
 type ActivityResponse = {
   start_date: string;
   end_date: string;
+  timezone_label?: string;
+  series?: string[];
   daily_counts: DayBucket[];
-  summary: { total: number; registration: number; consultation: number };
+  summary: {
+    total: number;
+    registration: number;
+    consultation: number;
+    insurance: number;
+  };
 };
 
 // Brand colors for the form-type series.
 const COLOR_REGISTRATION = "#0F4C81";
-const COLOR_CONSULTATION = "#06B6D4";
+const COLOR_CONSULTATION = "#4E8ABE";
+// Insurance inquiries were counted in `total` but had no series, so the stacked
+// bars never added up to their own total and insurance volume was invisible.
+const COLOR_INSURANCE = "#A8C6E0";
 
 async function fetchActivity(): Promise<ActivityResponse> {
   const res = await fetch(`/api/submissions/activity`, {
@@ -67,13 +77,14 @@ function ActivityPage() {
   });
 
   return (
-    <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto">
+    <div>
+      <div>
         <header className="mb-6">
-          <h1 className="text-2xl font-semibold text-white">Activity</h1>
-          <p className="text-sm text-white/75 mt-1">
-            Submission volume over the last 90 days. Click any day on the
-            heatmap to filter the Submissions tab to that date.
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--sh-fg)]">Activity</h1>
+          <p className="text-sm text-[var(--sh-muted)] mt-1">
+            Submission volume over the last 90 clinic days (Pacific), by form.
+            Click any day on the heatmap to filter the Submissions tab to that
+            date.
           </p>
         </header>
 
@@ -121,13 +132,13 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
           value={data.summary.consultation.toLocaleString()}
         />
         <Tile
-          label="Avg per day (30d)"
-          value={summaryLast30.avgPerDay.toFixed(1)}
+          label="Insurance inquiries (90d)"
+          value={(data.summary.insurance ?? 0).toLocaleString()}
         />
       </div>
 
       {/* Heatmap */}
-      <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
+      <section className="border border-[var(--sh-border)] bg-[var(--sh-card)] p-4 sm:p-6">
         <div className="flex items-baseline justify-between mb-4">
           <h2 className="text-base font-semibold text-slate-900">
             Last 90 days
@@ -140,7 +151,7 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
       </section>
 
       {/* Stacked bar by form type — last 30 days */}
-      <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
+      <section className="border border-[var(--sh-border)] bg-[var(--sh-card)] p-4 sm:p-6">
         <h2 className="text-base font-semibold text-slate-900 mb-4">
           By form type (last 30 days)
         </h2>
@@ -156,6 +167,7 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
                   date: d.date.slice(5),
                   Registration: d.by_form_type.registration,
                   Consultation: d.by_form_type.consultation,
+                  Insurance: d.by_form_type.insurance ?? 0,
                 }))}
                 margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
               >
@@ -183,6 +195,11 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
                   fill={COLOR_REGISTRATION}
                 />
                 <Bar
+                  dataKey="Insurance"
+                  stackId="ft"
+                  fill={COLOR_INSURANCE}
+                />
+                <Bar
                   dataKey="Consultation"
                   stackId="ft"
                   fill={COLOR_CONSULTATION}
@@ -198,7 +215,7 @@ function ActivityBody({ data }: { data: ActivityResponse }) {
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4">
+    <div className="border border-[var(--sh-border)] bg-[var(--sh-card)] p-4">
       <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">
         {label}
       </div>
@@ -319,7 +336,7 @@ function Heatmap({ data }: { data: DayBucket[] }) {
                 {cell.date}: {cell.total} submission
                 {cell.total === 1 ? "" : "s"}
                 {cell.total > 0
-                  ? ` (registration ${cell.by_form_type.registration}, consultation ${cell.by_form_type.consultation})`
+                  ? ` (registration ${cell.by_form_type.registration}, consultation ${cell.by_form_type.consultation}, insurance ${cell.by_form_type.insurance ?? 0})`
                   : ""}
               </title>
             </rect>
@@ -338,6 +355,9 @@ function Heatmap({ data }: { data: DayBucket[] }) {
           </span>
           <span className="text-teal-700">
             consultation {hover.by_form_type.consultation}
+          </span>
+          <span className="text-slate-500">
+            insurance {hover.by_form_type.insurance ?? 0}
           </span>
         </div>
       )}
@@ -372,18 +392,18 @@ function ActivitySkeleton() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-3xl" />
+          <Skeleton key={i} className="h-24" />
         ))}
       </div>
-      <Skeleton className="h-48 rounded-3xl" />
-      <Skeleton className="h-72 rounded-3xl" />
+      <Skeleton className="h-48" />
+      <Skeleton className="h-72" />
     </div>
   );
 }
 
 function ActivityError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 py-16 text-center">
+    <div className="border border-[var(--sh-border)] bg-[var(--sh-card)] py-16 text-center">
       <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-3" />
       <p className="text-slate-700 font-medium">Couldn't load activity.</p>
       <p className="text-sm text-slate-500 mt-1">

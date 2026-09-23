@@ -16,9 +16,13 @@ import AdminLinks from "@/pages/admin/Links";
 import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
 import AdminDashboard from "@/pages/admin/Dashboard";
+import AdminReports from "@/pages/admin/Reports";
+import AdminJourneys from "@/pages/admin/Journeys";
+import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
+import AdminInsuranceDemo from "@/pages/admin/insurance-demo/InsuranceDemo";
 import { AuthProvider } from "@/lib/auth-context";
 
 const queryClient = new QueryClient();
@@ -105,6 +109,29 @@ function Router() {
           <AdminDashboard />
         </WithAuth>
       </Route>
+
+      {/* The reporting index. Links out; computes nothing. It is the Reports
+          nav slot's own route, so real patient-journey reporting is one click
+          from anywhere instead of hidden inside an unexpanded group. */}
+      <Route path="/admin/reports">
+        <WithAuth>
+          <AdminReports />
+        </WithAuth>
+      </Route>
+
+      {/* Where each entry month's patients stand now. Its own route: it answers
+          a different question from Patient journeys and has no follow-up window. */}
+      <Route path="/admin/outcomes">
+        <WithAuth>
+          <AdminOutcomes />
+        </WithAuth>
+      </Route>
+
+      <Route path="/admin/journeys">
+        <WithAuth>
+          <AdminJourneys />
+        </WithAuth>
+      </Route>
       <Route path="/admin/dropoffs">
         <WithAuth>
           <AdminDropOffs />
@@ -118,6 +145,16 @@ function Router() {
       <Route path="/admin/sources">
         <WithAuth>
           <AdminSources />
+        </WithAuth>
+      </Route>
+      {/* Insurance follow-up DEMONSTRATION. Synthetic data only — the page
+          reads a static fixture module and nothing else (see
+          pages/admin/insurance-demo/demo-fixtures.ts). Auth-gated like every
+          other admin route. Views are selected by ?view=, so each one has its
+          own shareable link. */}
+      <Route path="/admin/insurance-demo">
+        <WithAuth>
+          <AdminInsuranceDemo />
         </WithAuth>
       </Route>
       <Route component={NotFound} />

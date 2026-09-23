@@ -27,6 +27,20 @@ import attribution from "../lib/db/migrations/0008_attribution.sql";
 import registrationPartials from "../lib/db/migrations/0009_registration_partials.sql";
 import submissionFiles from "../lib/db/migrations/0010_submission_files.sql";
 import notificationEvents from "../lib/db/migrations/0011_notification_events.sql";
+// 0012 creates tables only. Its sibling 0012a (role + grants) is deliberately
+// NOT registered here: it needs CREATEROLE/superuser, and this runner has no
+// ledger, so every registered step re-runs on every deploy forever. Keeping
+// role provisioning out means the deploy path never depends on the app role
+// holding superuser (it does today — that is exactly the fragility).
+import appointmentSync from "../lib/db/migrations/0012_appointment_sync.sql";
+import appointmentBackfillWindows from "../lib/db/migrations/0013_appointment_backfill_windows.sql";
+// 0020a is the one statement from 0020 that the application cannot START
+// without: the session lookup selects users.can_approve_definitions by name on
+// every authenticated request. It needs no special role and is idempotent, so
+// it runs here — in the release_command, before new machines take traffic —
+// while the rest of 0020 (functions and grants to drsnip_metrics_fn) stays a
+// by-hand migration like 0012a and 0014-0019.
+import approvalCapabilityColumn from "../lib/db/migrations/0020a_approval_capability_column.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -42,6 +56,9 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0009_registration_partials", sql: registrationPartials },
   { name: "0010_submission_files", sql: submissionFiles },
   { name: "0011_notification_events", sql: notificationEvents },
+  { name: "0012_appointment_sync", sql: appointmentSync },
+  { name: "0013_appointment_backfill_windows", sql: appointmentBackfillWindows },
+  { name: "0020a_approval_capability_column", sql: approvalCapabilityColumn },
   { name: "seed-admin", sql: seedAdmin },
 ];
 

@@ -471,12 +471,12 @@ export default function Sources() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
+      <div>
         <div className="max-w-5xl mx-auto">
           <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold text-white">Sources</h1>
-              <p className="text-sm text-white/75 mt-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-[var(--sh-fg)]">Sources</h1>
+              <p className="text-sm text-[var(--sh-muted)] mt-1">
                 Marketing channels available in the Custom Link tool. Adding
                 a row here makes it available in the Source dropdown
                 immediately — no deploy needed.
@@ -485,7 +485,7 @@ export default function Sources() {
             <AddSourceDialog onCreated={invalidate} />
           </header>
 
-          <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 overflow-hidden">
+          <div className="border border-[var(--sh-border)] bg-[var(--sh-card)] overflow-hidden">
             {sourcesQuery.isLoading ? (
               <div className="p-6 space-y-3">
                 <Skeleton className="h-8 w-full" />
