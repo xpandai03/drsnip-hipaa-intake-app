@@ -138,8 +138,7 @@ export const STATUS_EXPLANATIONS = [
   {
     key: "ended_not_active",
     means:
-      "That appointment is no longer active. No Show is treated this way by engineering inference; " +
-      "the clinic has not defined it.",
+      "That appointment is no longer active.",
   },
   {
     key: "replaced",
@@ -149,13 +148,16 @@ export const STATUS_EXPLANATIONS = [
   },
   {
     key: "other",
-    means: "Blank, in-clinic or unrecognised statuses establish nothing and can make a patient Unknown.",
+    means:
+      "Blank, in-clinic or unrecognised statuses, and No Show (which the clinic has not yet defined), " +
+      "establish nothing and can make a patient Unknown. They never outweigh a completion or a " +
+      "current booking elsewhere in the patient's history.",
   },
 ] as const;
 
 export const UNKNOWN_REASONS = {
   past_dated_open: "A counted appointment's date has passed and it is still Scheduled or Confirmed",
-  status_unresolved: "A counted appointment has a blank, in-clinic or unrecognised status",
+  status_unresolved: "A counted appointment has a blank, in-clinic, unrecognised or not-yet-defined (No Show) status",
   rescheduled_no_replacement: "A counted appointment was Rescheduled and no later record is visible",
   conflicting_history: "A counted appointment once reached Complete, and its current status no longer says so",
   deleted_completion: "A completion is recorded only on an appointment deleted at the source",

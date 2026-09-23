@@ -96,8 +96,14 @@ describe("the definition is data, kept in three separate places", () => {
     }
   });
 
-  it("names No Show as an engineering inference, not the clinic's word", () => {
-    assert.match(MIGRATION, /ENGINEERING INFERENCE[\s\S]{0,80}No Show/);
+  it("leaves No Show unclassified — the clinic has not defined it", () => {
+    const ended = MIGRATION.match(/'ended_not_active',\s+jsonb_build_array\(([^)]*)\)/)![1];
+    assert.ok(!ended.includes("No Show"), "No Show must not be read as an ended appointment");
+    for (const k of ["completion", "procedure_not_performed", "active_if_future", "replaced"]) {
+      const list = MIGRATION.match(new RegExp(`'${k}',\\s+jsonb_build_array\\(([^)]*)\\)`))![1];
+      assert.ok(!list.includes("No Show"), `No Show classified as ${k}`);
+    }
+    assert.match(MIGRATION, /No Show is DELIBERATELY UNCLASSIFIED/);
   });
 
   it("does not redefine any existing metric", () => {
@@ -298,6 +304,10 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
         case "duplicate_submissions": await sub(p, form, "2026-03-20T17:00:00Z"); await appt(p, Q, "Scheduled", FUT); break;
         case "late_cancel":           await appt(p, Q, "Late Cancel within 48 hrs", "2026-03-20T17:00:00Z"); break;
         case "no_show":               await appt(p, Q, "No Show", "2026-03-20T17:00:00Z"); break;
+        case "no_show_then_completed":await appt(p, Q, "No Show", "2026-01-15T18:00:00Z", { created: "2026-01-11T18:00:00Z" });
+                                      await appt(p, Q, "Complete", "2026-01-25T18:00:00Z", { created: "2026-01-16T18:00:00Z" }); break;
+        case "no_show_then_scheduled":await appt(p, Q, "No Show", "2026-01-15T18:00:00Z", { created: "2026-01-11T18:00:00Z" });
+                                      await appt(p, Q, "Scheduled", FUT, { created: "2026-01-16T18:00:00Z" }); break;
         case "in_clinic":             await appt(p, Q, "Checked In", "2026-03-20T17:00:00Z"); break;
         case "excluded_lab_future":   await appt(p, LAB, "Scheduled", FUT); break;
         case "same_day_before_entry": await appt(p, Q, "Complete", "2026-03-02T16:00:00Z", { created: "2026-03-02T18:00:00Z" }); break;
@@ -346,6 +356,9 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
     await build("april_completed", "2026-04-02T17:00:00Z", "registration", 10);
     await build("april_scheduled", "2026-04-02T17:00:00Z", "registration", 3);
     await build("no_records", "2026-04-02T17:00:00Z", "registration", 8);
+    // January: No Show beside a completion, and beside a future booking.
+    await build("no_show_then_completed", "2026-01-10T18:00:00Z");
+    await build("no_show_then_scheduled", "2026-01-10T18:00:00Z");
     // Insurance, February: half already registered before inquiring.
     await build("insurance_registered_first", "2026-02-10T18:00:00Z", "insurance");
     await build("no_records", "2026-02-10T18:00:00Z", "insurance");
@@ -381,12 +394,13 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
     // scheduled: cancel_then_active, booked_before_entry, duplicate_submissions,
     //   auction_winner, resched_then_active                                     = 5 x 6
     // unknown: resched_no_replacement, past_open, blank_selected, deleted_completion,
-    //   conflicting_history, undecided_profile, unknown_profile, in_clinic, null_profile = 9 x 6
-    // neither: the other thirteen                                               = 13 x 6
+    //   conflicting_history, undecided_profile, unknown_profile, in_clinic, null_profile,
+    //   no_show (undefined by the clinic, so it establishes nothing)         = 10 x 6
+    // neither: the other twelve                                                 = 12 x 6
     assert.equal(n(mar, "completed"), 48);
     assert.equal(n(mar, "scheduled"), 30);
-    assert.equal(n(mar, "unknown"), 54);
-    assert.equal(n(mar, "neither"), 78);
+    assert.equal(n(mar, "unknown"), 60);
+    assert.equal(n(mar, "neither"), 72);
     assert.equal(mar.row_status, "ok");
     assert.deepEqual(mar.withheld, []);
   });
@@ -394,7 +408,7 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
   it("explains every Unknown, and never turns missing evidence into a negative", { skip: !live }, async () => {
     const mar = month(await metric("outcome_registration"), "2026-03");
     assert.equal(n(mar, "unknown_past_dated_open"), 6);
-    assert.equal(n(mar, "unknown_status_unresolved"), 12, "blank on a selected visit, and still Checked In");
+    assert.equal(n(mar, "unknown_status_unresolved"), 18, "blank on a selected visit, still Checked In, and No Show");
     assert.equal(n(mar, "unknown_rescheduled_no_replacement"), 6);
     assert.equal(n(mar, "unknown_conflicting_history"), 6);
     assert.equal(n(mar, "unknown_deleted_completion"), 6);
@@ -406,9 +420,9 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
     const mar = month(await metric("outcome_registration"), "2026-03");
     // no qualifying record: blank_pvst_only, deleted_future, consult_only, pre_entry_completion,
     //   no_records, excluded_lab_future, previous_day, comparison_scheduled  = 8 x 6
-    // had one: resched_chain_cancel, pnp, late_cancel, no_show, resched_then_cancelled = 5 x 6
+    // had one: resched_chain_cancel, pnp, late_cancel, resched_then_cancelled = 4 x 6
     assert.equal(n(mar, "neither_no_qualifying_record"), 48);
-    assert.equal(n(mar, "neither_had_qualifying_record"), 30);
+    assert.equal(n(mar, "neither_had_qualifying_record"), 24);
   });
 
   it("reports annotations beside the buckets, never inside them", { skip: !live }, async () => {
@@ -423,6 +437,17 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
     assert.equal(n(mar, "repeat_submitters"), 6, "counted once, at the first submission");
     assert.equal(n(mar, "unlinked_submissions"), 6, "submissions, not people, and outside the cohort");
     assert.equal(n(mar, "registered_before_inquiry"), 0);
+  });
+
+  it("a No Show never erases a completion or a current booking elsewhere", { skip: !live }, async () => {
+    const jan = month(await metric("outcome_registration", "2026-01-01", "2026-02-01"), "2026-01");
+    // 6 No Show + later Complete, 6 No Show + future Scheduled, plus the 6
+    // insurance patients who registered on 15 January and completed in March.
+    assert.equal(n(jan, "covered"), 18);
+    assert.equal(n(jan, "completed"), 12, "No Show then Complete stays Completed");
+    assert.equal(n(jan, "scheduled"), 6, "No Show then a future booking stays Scheduled");
+    assert.equal(n(jan, "unknown"), 0);
+    assert.equal(n(jan, "neither"), 0);
   });
 
   it("uses the clinic calendar for months and for 'on or after entry'", { skip: !live }, async () => {
@@ -485,7 +510,7 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
     try {
       const mar = month(await metric("outcome_registration"), "2026-03");
       assert.equal(n(mar, "scheduled"), 0);
-      assert.equal(n(mar, "unknown"), 84, "54 + the 30 whose booking date has now passed");
+      assert.equal(n(mar, "unknown"), 90, "60 + the 30 whose booking date has now passed");
       assert.equal(n(mar, "completed"), 48, "a completion does not move");
     } finally {
       await q(`DELETE FROM appointment_sync_windows WHERE window_key = 'patient:669999'`);
