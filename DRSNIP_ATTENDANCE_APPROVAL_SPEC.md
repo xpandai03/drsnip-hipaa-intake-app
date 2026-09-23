@@ -867,8 +867,11 @@ No change to nav or routing: the panel opens from the Patient journeys card.
 4. Can `Checked In Online` be done from home?
 5. What happens on appointments that end with no status at all? (627, ~30% of
    past appointments, every office, every month)
-6. Is `No Show` reliably set? **This alone decides whether any attendance
-   *rate* can be published, or only a count.**
+6. Is `No Show` reliably set? *(Corrected 2026-09-23.)* A reliable absence
+   marker is **necessary but not sufficient** for an attendance rate. A rate
+   also needs an agreed population, an observation window matured against the
+   evidence cutoff, a coverage rule, a rule for unknown or conflicting evidence,
+   and a rule for patients holding several appointments.
 7. Nine appointments show a patient who was here and whose appointment now reads
    cancelled or rescheduled. Counting them as attended — correct?
 8. Is a practice-wide definition valid, or do offices differ?

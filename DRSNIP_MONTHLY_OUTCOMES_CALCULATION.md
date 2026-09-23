@@ -135,7 +135,7 @@ for as long as the scope is not `approved`.
 | (annotation) review withheld | `Signed No Review` | Jeff, T:66–71 |
 | procedure not performed | `Procedure Not Performed` | Jeff, T:73. Its **own class, not counted as completion** |
 | active if future | `Scheduled`, `Confirmed` | Jeff, T:57–59 |
-| ended, not active | `Cancelled`, `Late Cancel within 48 hrs`, `No Show` | Jeff, T:60–62 and T:278–280. **`No Show` is engineering inference**, recorded as such in the row: Jeff named it without defining it |
+| ended, not active | `Cancelled`, `Late Cancel within 48 hrs` | Jeff, T:60–62 and T:278–280. *(Corrected before release, `bdab3bf`: `No Show` was first placed here by engineering inference; Jeff named it without defining it (T:66), so it is now **unclassified** — it establishes nothing, and a patient whose only relevant record is a No Show is Unknown.)* |
 | replaced | `Rescheduled` | Jeff, T:276–287. The remaining records are evaluated. A replacement is never assumed |
 | unresolved | anything else: blank, NULL, `Checked In`, `Ready in N`, `In Room`, labels never seen before | Establishes neither a positive nor a negative |
 
@@ -268,7 +268,8 @@ These are the test fixture's archetypes, six synthetic patients each. Entry is
 | Consultation Only Scheduled 1 May | Neither (+ comparison scheduled) | |
 | Q Procedure Not Performed | Neither (+ procedure not performed) | Not counted as completion |
 | Q Signed No Review | Completed (+ review withheld only) | |
-| Q Late Cancel / Q No Show | Neither (had record) | |
+| Q Late Cancel | Neither (had record) | |
+| Q No Show only | Unknown (status unresolved) | No Show is not yet defined by the clinic |
 | Q Complete in January (before entry) | Neither (+ prior completion) | |
 | Q Complete earlier the same clinic day | Completed | Relevance is by clinic day |
 | Q Complete the previous clinic day | Neither (+ prior completion) | |
@@ -382,7 +383,7 @@ The new suite has 34 tests, **all running live, none skipped**:
   - no profile ID and no status label inside the classifier;
   - one provisional scope, nothing approved, the attendance mapping untouched;
   - the four corrected hypotheses pinned;
-  - No Show recorded as inference;
+  - No Show left unclassified (corrected before release);
   - no existing function redefined.
 - **Wording:** no "conversion", "lost", "failed" or outreach language; Completed
   says it is not proof of a procedure; whole months only.
@@ -520,8 +521,8 @@ are still inside Jeff's 1–2-month window.
    small.
 5. **When an appointment date passes, do staff always update the status?** This
    decides whether past-dated Scheduled/Confirmed records stay Unknown.
-6. **No Show:** is it reliably "did not come"? It is currently treated as ended,
-   by inference.
+6. **No Show:** what does the clinic mean by it? Until it is defined it is
+   unclassified, and such patients are Unknown.
 7. **Returning patients** with a completion before this registration: keep them
    in the month's cohort? They are kept today, and flagged.
 8. **Insurance inquirers who were already registered:** keep them in the
