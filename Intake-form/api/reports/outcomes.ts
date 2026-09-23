@@ -76,8 +76,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       db.execute<Record<string, unknown>>(sql`
         -- entry_month as text: the driver turns a SQL date into a local-midnight
         -- JS Date, which is a month early anywhere east of UTC.
-        SELECT *, entry_month::text AS entry_month_text FROM public.drsnip_outcome_metric(
-          ${spec.fnName}::text, ${scope}::text, ${monthFrom}::date, ${monthToExclusive}::date)
+        SELECT m.*, m.entry_month::text AS entry_month_text, ec.basis AS cutoff_basis
+          FROM public.drsnip_outcome_metric(
+            ${spec.fnName}::text, ${scope}::text, ${monthFrom}::date, ${monthToExclusive}::date) m
+          CROSS JOIN public.drsnip_evidence_cutoff() ec
       `),
       db.execute<Record<string, unknown>>(sql`
         SELECT * FROM public.drsnip_outcome_definition(${scope}::text)
@@ -136,10 +138,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       as_of: {
         evidence_cutoff: cutoff,
+        // Same source as the freshness badge (0022): the practice-wide hourly
+        // sync's watermark, never one patient's catch-up read.
+        basis: (rows[0].cutoff_basis as string | null) ?? null,
         evidence_age_minutes: cutoffMs === null ? null : Math.round((Date.now() - cutoffMs) / 60000),
         note:
-          "Every figure is as at the evidence cutoff: the instant appointment data is complete to. " +
-          "'Future' means after the cutoff, not after now.",
+          "Appointment data is complete to at least this instant for every patient counted. Some " +
+          "records may already include later changes. 'Currently scheduled' means booked for after it.",
       },
       period: { from_month: from, to_month: to, timezone: CLINIC_TZ, timezone_label: CLINIC_TZ_LABEL },
       buckets: BUCKETS,

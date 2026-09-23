@@ -65,27 +65,33 @@ export const BUCKETS = {
   completed: {
     label: "Completed",
     means:
-      "Completion recorded for an included appointment type (Complete or Signed No Review). It " +
-      "records that an appointment was completed — it does not by itself show a procedure was performed.",
+      "An included appointment is recorded as completed. This does not by itself establish that a " +
+      "procedure was performed.",
+    detail:
+      "At least one included appointment since entry has the status Complete or Signed No Review " +
+      "(Signed No Review means the appointment was completed and a review request was withheld).",
   },
   scheduled: {
     label: "Currently scheduled",
-    means:
-      "An included appointment is booked (Scheduled or Confirmed) for a date after the data cutoff, " +
-      "and no qualifying completion is recorded.",
+    means: "An included future booking exists, without an established qualifying completion.",
+    detail:
+      "An included appointment is Scheduled or Confirmed for a date after the time appointment data " +
+      "is complete to, and no included appointment is recorded as completed.",
   },
   unknown: {
     label: "Unknown",
-    means:
-      "Missing or ambiguous evidence prevents classification — for example a past appointment still " +
-      "marked Scheduled, a blank status, a reschedule with no later appointment visible, or an " +
-      "appointment type whose inclusion is undecided. Missing evidence is never counted as a negative.",
+    means: "Relevant evidence is missing or ambiguous.",
+    detail:
+      "For example a past appointment still marked Scheduled, a blank or not-yet-defined status " +
+      "(including No Show), a reschedule with no later appointment visible, or an appointment type " +
+      "whose inclusion is undecided. Missing evidence is never counted as a negative.",
   },
   neither: {
     label: "Neither established",
-    means:
-      "Neither a qualifying completion nor a current booking is established from the available " +
-      "evidence. It does not mean the patient was lost, did not attend, or should be contacted.",
+    means: "No qualifying completion or current booking is established.",
+    detail:
+      "Every relevant record was read and none shows an included completion or a current booking. " +
+      "It does not mean the patient was lost, did not attend, or should be contacted.",
   },
 } as const;
 
@@ -159,7 +165,7 @@ export const UNKNOWN_REASONS = {
   past_dated_open: "A counted appointment's date has passed and it is still Scheduled or Confirmed",
   status_unresolved: "A counted appointment has a blank, in-clinic, unrecognised or not-yet-defined (No Show) status",
   rescheduled_no_replacement: "A counted appointment was Rescheduled and no later record is visible",
-  conflicting_history: "A counted appointment once reached Complete, and its current status no longer says so",
+  conflicting_history: "A counted appointment once reached a completion status, and its current status no longer says so",
   deleted_completion: "A completion is recorded only on an appointment deleted at the source",
   undecided_profile: "A completed or active appointment is of a type whose inclusion is not yet decided",
   unknown_profile: "A completed or active appointment is of a type with no known name",
