@@ -18,6 +18,7 @@ import AdminActivity from "@/pages/admin/Activity";
 import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminReports from "@/pages/admin/Reports";
 import AdminJourneys from "@/pages/admin/Journeys";
+import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -115,6 +116,14 @@ function Router() {
       <Route path="/admin/reports">
         <WithAuth>
           <AdminReports />
+        </WithAuth>
+      </Route>
+
+      {/* Where each entry month's patients stand now. Its own route: it answers
+          a different question from Patient journeys and has no follow-up window. */}
+      <Route path="/admin/outcomes">
+        <WithAuth>
+          <AdminOutcomes />
         </WithAuth>
       </Route>
 
