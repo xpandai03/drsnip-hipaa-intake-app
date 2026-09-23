@@ -19,6 +19,11 @@
 // ---------------------------------------------------------------------------
 
 import { formatPacific } from "./insurance-notify";
+import {
+  primaryPolicyOwner,
+  showsPartnerPolicy,
+  withApplicableInsurance,
+} from "../registration/insurance";
 
 export type SubmissionBody = Record<string, unknown> & {
   formType?: string;
@@ -74,7 +79,37 @@ export interface RegistrationN8nPayload {
     groupId: string;
     cardFront?: CardFile;
     cardBack?: CardFile;
+    /** Whose policy the fields above describe: "partner" for Partner's
+     *  Insurance, "patient" for Own / Both, "" when there is no policy. */
+    policyOwner: "patient" | "partner" | "";
+    /** Policyholder (insured / subscriber) of the policy above. */
+    insured: PolicyholderBlock;
+    /** The partner's policy — "Both" only, otherwise null. Never mixed into
+     *  the primary block above. */
+    partnerPolicy: PartnerPolicyBlock | null;
+    /** Contract marker. Present (=1) on every payload that carries the
+     *  policyholder blocks, so the workflow can tell an older payload (field
+     *  never sent) from a new one with an empty field. */
+    policyholderContract: 1;
   };
+}
+
+export interface PolicyholderBlock {
+  firstName: string;
+  lastName: string;
+  /** YYYY-MM-DD exactly as entered — never re-parsed through Date. */
+  dob: string;
+  employer: string;
+}
+
+export interface PartnerPolicyBlock {
+  provider: string;
+  memberId: string;
+  groupId: string;
+  insured: PolicyholderBlock;
+  /** Count only. Partner card images are stored in the intake console
+   *  (submission_files); they are not forwarded to DrChrono. */
+  cardsUploaded: number;
 }
 
 export interface ConsultationN8nPayload {
@@ -205,6 +240,20 @@ function bool(v: unknown): boolean {
   return false;
 }
 
+/** A policyholder block read from `<prefix>FirstName` / `LastName` / `Dob` /
+ *  `Employer`. Names are trimmed; the DOB string is passed through verbatim. */
+function policyholder(
+  body: Record<string, unknown>,
+  prefix: "insured" | "partnerInsured",
+): PolicyholderBlock {
+  return {
+    firstName: str(body[`${prefix}FirstName`]).trim(),
+    lastName: str(body[`${prefix}LastName`]).trim(),
+    dob: str(body[`${prefix}Dob`]).trim(),
+    employer: str(body[`${prefix}Employer`]).trim(),
+  };
+}
+
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
@@ -242,8 +291,12 @@ export function buildRegistrationPayload(
     };
   }
 
-  const cardFront = rec((body as Record<string, unknown>).insuranceCardFront);
-  const cardBack = rec((body as Record<string, unknown>).insuranceCardBack);
+  // Policy fields that do not apply to the chosen coverage are blanked first,
+  // so a value typed before switching options never travels under the wrong
+  // policy (the server already did this; repeated here as the last gate).
+  const ins = withApplicableInsurance(body as Record<string, unknown>);
+  const cardFront = rec(ins.insuranceCardFront);
+  const cardBack = rec(ins.insuranceCardBack);
   const hasFront = typeof cardFront.base64Data === "string" && cardFront.base64Data !== "";
   const hasBack = typeof cardBack.base64Data === "string" && cardBack.base64Data !== "";
 
@@ -284,10 +337,25 @@ export function buildRegistrationPayload(
     },
     medicalHistory,
     insurance: {
-      status: str((body as Record<string, unknown>).insuranceCoverage),
-      provider: str((body as Record<string, unknown>).insuranceCompany),
-      memberId: str((body as Record<string, unknown>).insuranceIdNo),
-      groupId: str((body as Record<string, unknown>).insuranceGroupNo),
+      status: str(ins.insuranceCoverage),
+      provider: str(ins.insuranceCompany),
+      memberId: str(ins.insuranceIdNo),
+      groupId: str(ins.insuranceGroupNo),
+      policyOwner: primaryPolicyOwner(str(ins.insuranceCoverage).trim()),
+      insured: policyholder(ins, "insured"),
+      partnerPolicy: showsPartnerPolicy(str(ins.insuranceCoverage).trim())
+        ? {
+            provider: str(ins.partnerInsuranceCompany),
+            memberId: str(ins.partnerInsuranceIdNo),
+            groupId: str(ins.partnerInsuranceGroupNo),
+            insured: policyholder(ins, "partnerInsured"),
+            cardsUploaded: [
+              ins.partnerInsuranceCardFront,
+              ins.partnerInsuranceCardBack,
+            ].filter((c) => c && typeof c === "object").length,
+          }
+        : null,
+      policyholderContract: 1,
     },
   };
 

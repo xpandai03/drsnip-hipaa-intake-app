@@ -15,6 +15,15 @@ import {
   Reveal,
 } from "@/components/ui/form-fields";
 import { DatePicker } from "@/components/ui/DatePicker";
+import {
+  COVERAGE_PARTNER,
+  coverageChangePatch,
+  policyholderErrors,
+  primaryPolicyOwner,
+  showsPartnerPolicy,
+  showsPrimaryPolicy,
+  withApplicableInsurance,
+} from "../../../../lib/registration/insurance";
 import { FieldShell } from "@/components/ui/form-fields";
 import {
   FileUploadStub,
@@ -236,6 +245,11 @@ export default function Home() {
   // earliest point at which name + email + phone all exist.
   const partialId = useMemo(getPartialId, []);
   const CONTACT_STEP_INDEX = 1;
+  // Whose details the primary (flat) insurance fields currently hold — kept
+  // across a detour through "No Insurance" (see coverageChangePatch).
+  const [primaryFieldsOwner, setPrimaryFieldsOwner] = useState<
+    "patient" | "partner" | ""
+  >("");
   const update = (patch: Partial<RegistrationData>) =>
     setData((d) => ({ ...d, ...patch }));
 
@@ -248,10 +262,11 @@ export default function Home() {
 
   // A primary policy is collected for every coverage except "No Insurance".
   // The partner's (secondary) policy is collected only for "Both" (B.4).
-  const showPrimaryInsurance =
-    data.insuranceCoverage !== "" &&
-    data.insuranceCoverage !== "No Insurance";
-  const showPartnerInsurance = data.insuranceCoverage === "Both";
+  const showPrimaryInsurance = showsPrimaryPolicy(data.insuranceCoverage);
+  const showPartnerInsurance = showsPartnerPolicy(data.insuranceCoverage);
+  // The policyholder's name + DOB are required wherever the policyholder is
+  // the partner (lib/registration/insurance.ts — shared with /api/submit).
+  const primaryHolderRequired = data.insuranceCoverage === COVERAGE_PARTNER;
   // Whose policy the primary set represents — partner's when "Partner's
   // Insurance" is the sole selection, otherwise the patient's own.
   const primaryInsuranceTitle =
@@ -466,7 +481,14 @@ export default function Home() {
           <SelectField
             label="Select your current insurance coverage"
             value={data.insuranceCoverage}
-            onChange={(v) => update({ insuranceCoverage: v })}
+            onChange={(v) => {
+              update({
+                insuranceCoverage: v,
+                ...coverageChangePatch(primaryFieldsOwner, v),
+              });
+              const owner = primaryPolicyOwner(v);
+              if (owner) setPrimaryFieldsOwner(owner);
+            }}
             options={INSURANCE_OPTIONS}
             required
           />
@@ -499,15 +521,25 @@ export default function Home() {
                   label="Insured's Legal First Name"
                   value={data.insuredFirstName}
                   onChange={(v) => update({ insuredFirstName: v })}
+                  required={primaryHolderRequired}
+                  hint={
+                    primaryHolderRequired
+                      ? "The partner who holds this policy."
+                      : undefined
+                  }
                 />
                 <TextField
                   label="Insured's Legal Last Name"
                   value={data.insuredLastName}
                   onChange={(v) => update({ insuredLastName: v })}
+                  required={primaryHolderRequired}
                 />
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
-                <FieldShell label="Insured's Date of Birth">
+                <FieldShell
+                  label="Insured's Date of Birth"
+                  required={primaryHolderRequired}
+                >
                   <DatePicker
                     value={data.insuredDob}
                     onChange={(v) => update({ insuredDob: v })}
@@ -562,15 +594,18 @@ export default function Home() {
                   label="Insured's Legal First Name"
                   value={data.partnerInsuredFirstName}
                   onChange={(v) => update({ partnerInsuredFirstName: v })}
+                  required
+                  hint="The partner who holds this policy."
                 />
                 <TextField
                   label="Insured's Legal Last Name"
                   value={data.partnerInsuredLastName}
                   onChange={(v) => update({ partnerInsuredLastName: v })}
+                  required
                 />
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
-                <FieldShell label="Insured's Date of Birth">
+                <FieldShell label="Insured's Date of Birth" required>
                   <DatePicker
                     value={data.partnerInsuredDob}
                     onChange={(v) => update({ partnerInsuredDob: v })}
@@ -605,7 +640,8 @@ export default function Home() {
             data.insuranceIdNo.trim() !== "")) &&
         (!showPartnerInsurance ||
           (data.partnerInsuranceCompany.trim() !== "" &&
-            data.partnerInsuranceIdNo.trim() !== "")),
+            data.partnerInsuranceIdNo.trim() !== "")) &&
+        Object.keys(policyholderErrors(data)).length === 0,
     },
     {
       id: "review",
@@ -659,9 +695,14 @@ export default function Home() {
     });
   };
 
-  const onSubmit = async (): Promise<boolean> => {
+  const onSubmit = async (): Promise<boolean | string> => {
+    // Only the policy fields that apply to the chosen coverage are sent —
+    // hidden fields keep their values while the patient navigates (so Back /
+    // re-selecting a coverage restores them) but never travel under the
+    // wrong policy.
+    const applicable = withApplicableInsurance(data);
     const payload = {
-      ...data,
+      ...applicable,
       formType: "registration" as const,
       firstName: data.legalFirstName,
       lastName: data.legalLastName,
@@ -669,8 +710,8 @@ export default function Home() {
       phone: data.mobileNumber,
       dateOfBirth: data.dateOfBirth,
       stateResidence: data.state,
-      insuranceCardFront: data.insuranceCardFront,
-      insuranceCardBack: data.insuranceCardBack,
+      insuranceCardFront: applicable.insuranceCardFront,
+      insuranceCardBack: applicable.insuranceCardBack,
       attribution,
       // Lets the server delete this session's drop-off partial on success.
       partialId,
@@ -690,6 +731,10 @@ export default function Home() {
       // ever runs here. Fires ONLY on a confirmed success, so a validation
       // failure or a network error can never report a conversion.
       if (ok) postConversion("registration");
+      // A server-side validation rejection carries an actionable message.
+      if (!ok && res.status === 400 && typeof json.error === "string" && json.fieldErrors) {
+        return json.error;
+      }
       return ok;
     } catch {
       // HIPAA: never log the submission body.

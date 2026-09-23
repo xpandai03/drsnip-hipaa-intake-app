@@ -20,6 +20,10 @@ import { extractAttribution, validateSource } from "./_lib/attribution";
 import { storeSubmissionFiles } from "./_lib/card-files";
 import { fireConversion } from "../lib/conversion/track";
 import { track } from "../lib/lifecycle/inflight";
+import {
+  policyholderErrors,
+  withApplicableInsurance,
+} from "../lib/registration/insurance";
 import { record as recordNotification } from "../lib/notifications/ledger";
 import { randomUUID } from "node:crypto";
 
@@ -96,7 +100,34 @@ export default async function handler(
     res.status(400).json({ success: false, error: "Invalid request body" });
     return;
   }
-  const body = parsed.data;
+  let body = parsed.data;
+
+  // ---- Registration insurance gate (subscriber incident) ----------------
+  // 1. Blank policy fields that do not apply to the chosen coverage, so a value
+  //    typed before switching options is neither stored nor forwarded under
+  //    the wrong policy.
+  // 2. Reject — BEFORE anything is stored or sent to n8n — a registration whose
+  //    partner-policyholder name/DOB is missing or not a real date. Same rules
+  //    as the form (lib/registration/insurance.ts). The response names the
+  //    fields; it never echoes their values.
+  if (body.formType === "registration") {
+    body = withApplicableInsurance(body);
+    const fieldErrors = policyholderErrors(body);
+    const invalid = Object.keys(fieldErrors);
+    if (invalid.length > 0) {
+      console.warn(
+        "[submit] registration rejected: policyholder details incomplete " +
+          JSON.stringify({ fields: invalid }),
+      );
+      res.status(400).json({
+        success: false,
+        error:
+          "Please complete the policyholder's legal name and date of birth for the partner's insurance.",
+        fieldErrors,
+      });
+      return;
+    }
+  }
 
   const front = body.insuranceCardFront ?? null;
   const back = body.insuranceCardBack ?? null;
