@@ -49,7 +49,9 @@ export function MultiStepForm({
   onStepChange,
 }: {
   screens: FormScreen[];
-  onSubmit: () => Promise<boolean>;
+  /** true = submitted; false = generic failure; a string = an actionable
+   *  message from the server to show instead of the generic one. */
+  onSubmit: () => Promise<boolean | string>;
   successTitle: string;
   successMessage: string;
   /** Optional: called with the new (0-based) step index when the user ADVANCES
@@ -74,11 +76,15 @@ export function MultiStepForm({
       setSubmitState("submitting");
       try {
         const ok = await onSubmit();
-        if (ok) {
+        if (ok === true) {
           setSubmitState("success");
         } else {
           setSubmitState("idle");
-          toast.error("We couldn't submit your form. Please try again.");
+          toast.error(
+            typeof ok === "string" && ok
+              ? ok
+              : "We couldn't submit your form. Please try again.",
+          );
         }
       } catch {
         setSubmitState("idle");
