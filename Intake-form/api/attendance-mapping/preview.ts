@@ -19,6 +19,7 @@ import { requireAuth } from "../_lib/auth";
 import { canPreviewDefinitions } from "../_lib/permissions";
 import { audit, getDraft } from "../_lib/attendance-store";
 import { validateLabelSet } from "../../lib/metrics/attendance-contract";
+import { sqlState } from "../_lib/reporting";
 
 const METRICS = ["attendance_registration", "attendance_insurance"];
 const WINDOWS = [7, 14, 30];
@@ -113,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       published_unchanged: true,
     });
   } catch (err) {
-    const code = (err as { code?: string })?.code;
+    const code = sqlState(err);
     if (code === "22023") return res.status(400).json({ error: "unsupported parameters" });
     console.error("[attendance-mapping/preview] failed", code ?? "unknown");
     return res.status(500).json({ error: "preview failed" });

@@ -192,6 +192,21 @@ export function firstOf(value: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * The SQLSTATE of a failed query, wherever the driver stack put it.
+ *
+ * Drizzle wraps node-pg's error, so the code is on `cause`, not on the error
+ * itself. Reading only `err.code` made every metric route answer a parameter
+ * the database refuses (22023) with a 500 instead of a 400 — confirmed over
+ * real HTTP on /booking and /journey.
+ */
+export function sqlState(err: unknown): string | undefined {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null | undefined;
+  if (typeof e?.code === "string") return e.code;
+  if (typeof e?.cause?.code === "string") return e.cause.code;
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // EHR write-back outcome (replaces the old "Success rate" tile)
 // ---------------------------------------------------------------------------
