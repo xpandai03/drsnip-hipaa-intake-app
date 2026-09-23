@@ -128,12 +128,12 @@ describe("registry and wording", () => {
     // The one permitted use is the disclaimer that says Neither does NOT mean lost.
     const rest = blob.replace("does not mean the patient was lost, did not attend, or should be contacted", "");
     assert.ok(!/\blost\b|\bfailed\b|eligible for outreach/.test(rest));
-    assert.match(BUCKETS.neither.means, /does not mean the patient was lost, did not attend, or should be contacted/);
+    assert.match(BUCKETS.neither.detail, /does not mean the patient was lost, did not attend, or should be contacted/);
     assert.match(NO_COMBINED_MEASURE, /No conversion rate/);
   });
 
   it("does not claim a completion is a procedure", () => {
-    assert.match(BUCKETS.completed.means, /does not by itself show a procedure was performed/);
+    assert.match(BUCKETS.completed.means, /does not by itself establish that a procedure was performed/);
   });
 
   it("accepts whole months only", () => {
@@ -503,17 +503,18 @@ describe("the calculation against Postgres (skipped without OUTCOMES_TEST_* URLs
 
   it("judges 'future' against the evidence cutoff, not the clock", { skip: !live }, async () => {
     // The wall clock is months past every fixture date, yet 1 May bookings are
-    // active because the evidence is only complete to 15 April. Move the cutoff
-    // past 1 May and the same records become past-dated and Unknown.
-    await q(`INSERT INTO appointment_sync_windows (window_key, strategy, patient_source_id, state, completed_at)
-             VALUES ('patient:669999','patient_history','669999','complete','2026-05-02T00:00:00Z')`);
+    // active because the evidence is only complete to 15 April. Advance the
+    // PRACTICE-WIDE watermark past 1 May and the same records become past-dated
+    // and Unknown. (A single patient's catch-up would not move it — 0022; see
+    // evidence-cutoff.test.ts.)
+    await q(`UPDATE appointment_sync_state SET watermark = '2026-05-02T00:00:00Z' WHERE scope_key = 'practice_incremental'`);
     try {
       const mar = month(await metric("outcome_registration"), "2026-03");
       assert.equal(n(mar, "scheduled"), 0);
       assert.equal(n(mar, "unknown"), 90, "60 + the 30 whose booking date has now passed");
       assert.equal(n(mar, "completed"), 48, "a completion does not move");
     } finally {
-      await q(`DELETE FROM appointment_sync_windows WHERE window_key = 'patient:669999'`);
+      await q(`UPDATE appointment_sync_state SET watermark = NULL WHERE scope_key = 'practice_incremental'`);
     }
   });
 

@@ -84,7 +84,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const [fresh, health] = await Promise.all([
-      db.execute<FreshRow>(sql`SELECT * FROM public.drsnip_journey_freshness()`),
+      // One statement, so the timestamp and the basis it came from agree (0022).
+      db.execute<FreshRow & { cutoff_basis: string | null }>(
+        sql`SELECT f.*, ec.basis AS cutoff_basis FROM public.drsnip_journey_freshness() f CROSS JOIN public.drsnip_evidence_cutoff() ec`),
       db.execute<HealthRow>(sql`SELECT * FROM public.drsnip_sync_health()`),
     ]);
     const f = fresh.rows[0];
@@ -103,6 +105,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // request was made: a run that read a window advances the cursor only
         // when it read the whole window.
         complete_as_of: f.appointments_synced_at,
+        // 'incremental_watermark' (normal), 'history_baseline' (no hourly sync
+        // has ever completed: the earliest full-history read) or 'unavailable'.
+        // The SAME source every appointment calculation uses (0022).
+        complete_basis: (f as { cutoff_basis?: string | null }).cutoff_basis ?? null,
         state: classify(f),
         update_mode: f.sync_run_state === "not_scheduled" ? "manual" : "scheduled",
         linked_patients: f.linked_patients,
