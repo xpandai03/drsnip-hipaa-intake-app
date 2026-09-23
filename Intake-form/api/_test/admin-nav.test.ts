@@ -64,11 +64,12 @@ describe("the mobile bottom bar fits", () => {
 describe("nothing is unreachable", () => {
   const routes = allNavRoutes();
 
-  it("reaches all ten destinations, with no duplicates", () => {
+  it("reaches all eleven destinations, with no duplicates", () => {
     // Five slot routes + five children. More than the six the old
     // horizontally-scrolling strip exposed.
-    assert.equal(routes.length, 10);
-    assert.equal(new Set(routes).size, 10);
+    // Monthly outcomes (2026-09) is the eleventh.
+    assert.equal(routes.length, 11);
+    assert.equal(new Set(routes).size, 11);
   });
 
   it("exposes the real-data journeys page, separately from the synthetic demo", () => {
@@ -277,8 +278,13 @@ describe("real reporting is easy to find", () => {
     assert.equal(reports.to, "/admin/reports");
   });
 
-  it("Patient journeys is the FIRST thing under Reports", () => {
-    assert.equal(reports.children![0].to, "/admin/journeys");
+  it("Monthly outcomes is FIRST under Reports, Patient journeys second", () => {
+    // The clinic's main question is where each month's patients stand now;
+    // "how fast within a window" is the second. Both are real data.
+    assert.equal(reports.children![0].to, "/admin/outcomes");
+    assert.equal(reports.children![0].demo, undefined);
+    assert.equal(reports.children![1].to, "/admin/journeys");
+    assert.equal(reports.children![1].demo, undefined);
   });
 
   it("the demo is LAST under Reports and says so in its own label", () => {

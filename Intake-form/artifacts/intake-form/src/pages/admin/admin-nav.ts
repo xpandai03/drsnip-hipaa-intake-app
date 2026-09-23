@@ -15,13 +15,13 @@
 // The fix is FIVE mobile slots, with grouping rather than scrolling:
 //
 //   Submissions   -> /admin/submissions   + Drop-offs
-//   Reports       -> /admin/reports        + Patient journeys, Intake dashboard,
+//   Reports       -> /admin/reports        + Monthly outcomes, Patient journeys, Intake dashboard,
 //                                            Activity, Demo: insurance follow-up
 //   Links         -> /admin/links
 //   Ask AI        -> /admin/ask-ai
 //   Settings      -> /admin/sources       + account / sign out
 //
-// Five slots, NINE destinations, every one reachable in at most two taps. A
+// Five slots, ELEVEN destinations, every one reachable in at most two taps. A
 // slot with children opens a bottom sheet that lists the PARENT route first, so
 // grouping never hides the main page behind its own children — tapping
 // "Reports" then "Patient journeys" always works, and on desktop the parent is
@@ -87,11 +87,14 @@ export const PRIMARY_NAV: NavEntry[] = [
     label: "Reports",
     selfLabel: "All reports",
     icon: "chart",
-    // ORDER IS THE FIX. "Patient journeys" is the real, live reporting people
-    // came for and it is first. The synthetic demonstration is last, carries
-    // the Demo chip, and says what it is in its own label — it used to sit
-    // second, above Activity, with nothing to mark it as invented.
+    // ORDER IS THE FIX. Real reporting first, in the order it is asked for:
+    // "Monthly outcomes" answers the clinic's main question (where each month's
+    // patients stand now), then "Patient journeys" (how fast, within a fixed
+    // window). The synthetic demonstration is last, carries the Demo chip, and
+    // says what it is in its own label — it used to sit second, above
+    // Activity, with nothing to mark it as invented.
     children: [
+      { to: "/admin/outcomes", label: "Monthly outcomes" },
       { to: "/admin/journeys", label: "Patient journeys" },
       { to: "/admin/dashboard", label: "Intake dashboard" },
       { to: "/admin/activity", label: "Activity" },
@@ -134,7 +137,7 @@ export function hasActiveChild(path: string, entry: NavEntry): boolean {
 
 /**
  * Every destination the shell can reach — the "nothing unreachable" test.
- * Ten: five slot routes plus five children.
+ * Eleven: five slot routes plus six children.
  */
 export function allNavRoutes(): string[] {
   const out: string[] = [];
