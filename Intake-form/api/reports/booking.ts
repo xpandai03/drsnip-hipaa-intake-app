@@ -15,7 +15,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { db, sql } from "@workspace/db";
 import { requireAuth } from "../_lib/auth";
-import { firstOf } from "../_lib/reporting";
+import { firstOf, sqlState } from "../_lib/reporting";
 import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
 import { BOOKING_METRICS, SUPPORTED_WINDOWS } from "../../lib/metrics/registry";
 import {
@@ -136,7 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
   } catch (err) {
-    const code = (err as { code?: string })?.code;
+    const code = sqlState(err);
     if (code === "22023") return res.status(400).json({ error: "unsupported metric parameters" });
     console.error("[reports/booking] query failed", code ?? "unknown");
     return res.status(500).json({ error: "metric query failed" });
