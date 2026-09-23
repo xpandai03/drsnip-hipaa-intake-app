@@ -83,6 +83,12 @@ describe("withheld stays withheld", () => {
     assert.equal(chartable(row({ status: "suppressed" })), false);
   });
 
+  it("says so when there is no valid appointment-data cutoff", () => {
+    assert.match(rowNotice(row({ status: "unavailable" }))!, /freshness is unavailable/);
+    const [t] = withheldReasons(row({ withheld: ["evidence_cutoff_unavailable"] }));
+    assert.match(t, /no valid time/);
+  });
+
   it("keeps 'no entries' and 'no evidence' apart", () => {
     const empty = rowNotice(row({ status: "empty" }))!;
     const notStarted = rowNotice(row({ status: "not_started" }))!;
@@ -178,8 +184,19 @@ describe("the page's source contract", () => {
   it("states the provisional definition and the data cutoff", () => {
     assert.match(c, /data-testid="provisional-banner"/);
     assert.match(c, /d\?\.definition\.engineering_preview/);
-    assert.match(c, /Data complete to/);
+    assert.match(c, /Appointment data complete to/);
     assert.match(c, /data-testid="stale-warning"/);
+  });
+
+  it("shows ONE appointment-data timestamp, from the same response as the figures", () => {
+    assert.ok(!/AppointmentFreshnessBadge|useFreshness/.test(c), "a second, separately fetched timestamp is back");
+    assert.match(c, /d\.as_of\.basis/);
+  });
+
+  it("uses the short provisional banner and keeps the long definitions expandable", () => {
+    assert.match(c, /Provisional reporting scope/);
+    assert.match(c, /data-testid="bucket-detail"/);
+    assert.match(c, /d\.buckets\[k\]\.detail/);
   });
 
   it("never describes Neither as lost, non-attendance or outreach", () => {
@@ -189,5 +206,44 @@ describe("the page's source contract", () => {
   it("offers a retry on error and a skeleton while loading", () => {
     assert.match(c, /data-testid="outcomes-retry"/);
     assert.match(c, /data-testid="outcomes-loading"/);
+  });
+});
+
+describe("the patient journeys page (after the audit)", () => {
+  const J = read("../../artifacts/intake-form/src/pages/admin/Journeys.tsx");
+  const cj = code(J);
+
+  it("no longer draws the record-created → advance-booking waterfall", () => {
+    assert.ok(!/WaterfallChart|waterfall-chart/.test(cj), "the waterfall is back");
+    assert.ok(!/Advance booking recorded/.test(cj), "a record filter is presented as a patient stage");
+  });
+
+  it("leads with form progression and links to Monthly outcomes", () => {
+    assert.match(cj, /data-testid="link-monthly-outcomes"/);
+    assert.match(cj, /See completed appointments and current bookings by entry month/);
+    assert.match(cj, /href="\/admin\/outcomes"/);
+    assert.ok(cj.indexOf('data-testid="form-progression"') < cj.indexOf('data-testid="record-timing"'));
+  });
+
+  it("keeps record timing and attendance review reachable, collapsed, and honestly labelled", () => {
+    assert.match(cj, /<details[^>]*data-testid="record-timing"/);
+    assert.match(cj, /Appointment-record timing \(diagnostic\)/);
+    assert.match(cj, /measures record creation, not a booked procedure/);
+    assert.ok(!/time to procedure booking/i.test(cj));
+    assert.match(cj, /<details[^>]*data-testid="attendance-section"/);
+    assert.match(cj, /<AttendanceReviewCard onOpen=\{onOpenReview\} \/>/);
+    assert.match(J, /<AttendanceReviewPanel/);
+  });
+
+  it("does not repeat the appointment timestamp inside the page", () => {
+    assert.ok(!/As at \{snap\}/.test(cj));
+    assert.match(cj, /<AppointmentFreshnessBadge query=\{freshness\} \/>/);
+  });
+});
+
+describe("the reports index copy (after the audit)", () => {
+  it("no longer implies a record created is a booking", () => {
+    assert.ok(!/booked appointments|reach an appointment/i.test(REPORTS));
+    assert.match(REPORTS, /Registration form progression/);
   });
 });
