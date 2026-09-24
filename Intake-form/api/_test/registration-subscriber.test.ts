@@ -15,11 +15,13 @@ import { PDFDocument } from "pdf-lib";
 import { buildRegistrationPayload } from "../../lib/n8n/payload";
 import { callN8nRegistration } from "../../lib/n8n/bridge";
 import {
-  coverageChangePatch,
+  hiddenPolicyNote,
+  insuranceForSubmission,
   isValidDob,
   policyholderErrors,
   withApplicableInsurance,
 } from "../../lib/registration/insurance";
+import { pdfText } from "./_pdf-text";
 import handler from "../submit";
 
 const AT = new Date("2026-09-23T12:00:00Z");
@@ -71,39 +73,38 @@ const BOTH_PARTNER = {
 
 type Json = Record<string, unknown>;
 
-/** Execute an n8n Code-node body exactly as n8n does ($input / $ / Buffer). */
-function runNode(code: string, input: Json, refs: Record<string, Json> = {}) {
+const FONT_ASSET = JSON.parse(
+  readFileSync(join(__dirname, "../../artifacts/intake-form/public/pdf-fonts/noto-sans-v1.json"), "utf8"),
+);
+/** n8n's `this` for a Code node: helpers.httpRequest serves the font asset. */
+const nodeCtx = (fail = false) => ({
+  helpers: {
+    httpRequest: async (opts: { url: string }) => {
+      if (fail) throw new Error("network down");
+      assert.equal(opts.url, "https://intake.drsnip.com/pdf-fonts/noto-sans-v1.json");
+      return FONT_ASSET;
+    },
+  },
+});
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+
+/** Execute an n8n Code-node body exactly as n8n does ($input / $ / Buffer, async, `this`). */
+async function runNode(code: string, input: Json, refs: Record<string, Json> = {}, ctx: unknown = nodeCtx()) {
   const $input = { first: () => ({ json: input }) };
   const $ = (name: string) => ({ first: () => ({ json: refs[name] }) });
-  const fn = new Function("$input", "$", "Buffer", code);
-  return fn($input, $, Buffer) as Array<{ json: Json; binary?: Json }>;
+  const fn = new AsyncFunction("$input", "$", "Buffer", code);
+  return (await fn.call(ctx, $input, $, Buffer)) as Array<{ json: Json; binary?: Json }>;
 }
 
 /** Full document path: app payload -> webhook shape -> normalise -> render. */
-function renderDocument(payload: unknown) {
+async function renderDocument(payload: unknown, ctx: unknown = nodeCtx()) {
   const webhookItem = { headers: {}, body: payload } as Json;
-  const [normalized] = runNode(NORMALIZE, webhookItem);
+  const [normalized] = await runNode(NORMALIZE, webhookItem);
   const resolved = { patient_id: 999000111, drchrono_action: "create" };
-  const [out] = runNode(RENDER, resolved, { "Parse & Normalize": normalized.json });
+  const [out] = await runNode(RENDER, resolved, { "Parse & Normalize": normalized.json }, ctx);
   const pdf = (out.binary as { pdf: { data: string } }).pdf.data;
   const bytes = Buffer.from(pdf, "base64");
-  return { normalized: normalized.json, bytes, text: pdfText(bytes) };
-}
-
-/** The text-show operands of every content stream, in drawing order. */
-function pdfText(bytes: Buffer): string {
-  const src = bytes.toString("latin1");
-  const parts: string[] = [];
-  const re = /\(((?:\\.|[^\\)])*)\) Tj/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    parts.push(
-      m[1]
-        .replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-        .replace(/\\([\\()])/g, "$1"),
-    );
-  }
-  return parts.join("\n");
+  return { normalized: normalized.json, bytes, text: pdfText(bytes), review: out.json.pdf_review as Json };
 }
 
 function payloadFor(body: Json) {
@@ -188,23 +189,63 @@ test("withApplicableInsurance: stale hidden policy fields are blanked", () => {
   assert.equal(both.partnerInsuredFirstName, "Zqpartfirst");
 });
 
-test("coverageChangePatch: owner flip clears the primary set; detours restore", () => {
-  // Partner's -> Own: the partner's details must not become the patient's policy.
-  const flip = coverageChangePatch("partner", "Own Insurance");
-  assert.equal(flip.insuredFirstName, "");
-  assert.equal(flip.insuranceCompany, "");
-  assert.equal(flip.insuranceCardFront, null);
-  // Partner's -> Both: primary becomes the patient's own policy -> cleared.
-  assert.equal(coverageChangePatch("partner", "Both").insuredDob, "");
-  // Partner's -> No Insurance (-> back to Partner's): kept, so values restore.
-  assert.deepEqual(coverageChangePatch("partner", "No Insurance"), {});
-  assert.deepEqual(coverageChangePatch("partner", "Partner's Insurance"), {});
-  // Owner remembered across the No-Insurance detour: Partner's -> None -> Own clears.
-  assert.equal(coverageChangePatch("partner", "Own Insurance").insuredLastName, "");
-  // Own <-> Both keeps the patient's own policy.
-  assert.deepEqual(coverageChangePatch("patient", "Both"), {});
-  assert.deepEqual(coverageChangePatch("", "Own Insurance"), {});
+test("insuranceForSubmission: two records, mapped once at submit, never mixed", () => {
+  // One form state holding BOTH records, as after switching back and forth.
+  const form = { ...PATIENT, ...PRIMARY, insuredFirstName: "Zqownholder", ...BOTH_PARTNER,
+    partnerInsuranceCardFront: { filename: "pf.jpg", size: 1 }, insuranceCardFront: { filename: "own.jpg", size: 1 } };
+  const partner = insuranceForSubmission({ ...form, insuranceCoverage: "Partner's Insurance" });
+  // Partner's: the partner record travels in the flat fields (wire contract).
+  assert.equal(partner.insuranceCompany, "Zqpartnerplan");
+  assert.equal(partner.insuredFirstName, "Zqpartfirst");
+  assert.equal(partner.insuredDob, "1984-02-29");
+  assert.deepEqual(partner.insuranceCardFront, { filename: "pf.jpg", size: 1 });
+  assert.equal(partner.partnerInsuredFirstName, "");
+  assert.doesNotMatch(JSON.stringify(partner), /Zqownholder|Synthetic Health|own\.jpg/);
+  // Both: own record flat, partner record in partner fields.
+  const both = insuranceForSubmission({ ...form, insuranceCoverage: "Both" });
+  assert.equal(both.insuranceCompany, "Synthetic Health");
+  assert.equal(both.insuredFirstName, "Zqownholder");
+  assert.equal(both.partnerInsuredFirstName, "Zqpartfirst");
+  // Own: own record only.
+  const own = insuranceForSubmission({ ...form, insuranceCoverage: "Own Insurance" });
+  assert.equal(own.insuranceCompany, "Synthetic Health");
+  assert.doesNotMatch(JSON.stringify(own), /Zqpart/);
+  // No Insurance: nothing.
+  const none = insuranceForSubmission({ ...form, insuranceCoverage: "No Insurance" });
+  assert.doesNotMatch(JSON.stringify(none), /Zqpart|Zqownholder|Synthetic Health/);
+  // The form state itself is never modified by switching or submitting.
+  assert.equal(form.partnerInsuredFirstName, "Zqpartfirst");
+  assert.equal(form.insuredFirstName, "Zqownholder");
 });
+
+test("switching Partner's <-> Both keeps the partner policy without retyping", () => {
+  // Typed under Partner's Insurance: the on-screen primary block edits the
+  // partner record (partner* keys).
+  const form: Json = { ...PATIENT, insuranceCoverage: "Partner's Insurance", ...BOTH_PARTNER };
+  assert.deepEqual(policyholderErrors(insuranceForSubmission(form)), {});
+  // -> Both: the same partner record appears in the partner section; the
+  // patient's own policy is still empty, so Both needs its own company/ID.
+  form.insuranceCoverage = "Both";
+  const both = insuranceForSubmission(form);
+  assert.equal(both.partnerInsuredFirstName, "Zqpartfirst");
+  assert.equal(both.partnerInsuranceCompany, "Zqpartnerplan");
+  assert.equal(both.insuranceCompany ?? "", "");
+  assert.deepEqual(policyholderErrors(both), {});
+  // -> back to Partner's: still complete, still the partner's.
+  form.insuranceCoverage = "Partner's Insurance";
+  const back = insuranceForSubmission(form);
+  assert.equal(back.insuredFirstName, "Zqpartfirst");
+  assert.equal(back.insuranceCompany, "Zqpartnerplan");
+});
+
+test("hiddenPolicyNote: kept-but-not-sent details are announced, never silently dropped", () => {
+  assert.equal(hiddenPolicyNote({ insuranceCoverage: "Partner's Insurance", ...BOTH_PARTNER }), null);
+  assert.match(hiddenPolicyNote({ insuranceCoverage: "Own Insurance", ...PRIMARY, ...BOTH_PARTNER })!, /partner's policy details are kept/);
+  assert.match(hiddenPolicyNote({ insuranceCoverage: "Partner's Insurance", ...PRIMARY, ...BOTH_PARTNER })!, /own policy details are kept/);
+  assert.match(hiddenPolicyNote({ insuranceCoverage: "No Insurance", ...PRIMARY })!, /won't be sent with "No Insurance"/);
+  assert.equal(hiddenPolicyNote({ insuranceCoverage: "Both", ...PRIMARY, ...BOTH_PARTNER }), null);
+});
+
 
 // ---- app -> n8n payload ------------------------------------------------------
 
@@ -265,7 +306,7 @@ test("payload: DOB passes through verbatim (no timezone shift)", () => {
 // ---- the real n8n normalise + render ----------------------------------------
 
 test("document: Partner's Insurance renders the partner policyholder name + DOB", async () => {
-  const { normalized, bytes, text } = renderDocument(
+  const { normalized, bytes, text } = await renderDocument(
     payloadFor({ ...PATIENT, ...PRIMARY, ...PARTNER_HOLDER, insuranceCoverage: "Partner's Insurance" }),
   );
   assert.equal(normalized.insurance_insured_first_name, "Zqsubfirst");
@@ -279,8 +320,8 @@ test("document: Partner's Insurance renders the partner policyholder name + DOB"
   assert.ok(doc.getPageCount() >= 1);
 });
 
-test("document: Both renders two distinct policies, each with its own holder", () => {
-  const { text } = renderDocument(
+test("document: Both renders two distinct policies, each with its own holder", async () => {
+  const { text } = await renderDocument(
     payloadFor({ ...PATIENT, ...PRIMARY, ...BOTH_PARTNER, insuranceCoverage: "Both" }),
   );
   const own = text.indexOf("Patient's own policy (primary)");
@@ -297,8 +338,8 @@ test("document: Both renders two distinct policies, each with its own holder", (
   assert.match(partnerBlock, /Partner insurance cards\nNone uploaded/);
 });
 
-test("document: Own Insurance keeps its rows; no partner section", () => {
-  const { text } = renderDocument(
+test("document: Own Insurance keeps its rows; no partner section", async () => {
+  const { text } = await renderDocument(
     payloadFor({ ...PATIENT, ...PRIMARY, insuranceCoverage: "Own Insurance" }),
   );
   assert.match(text, /Patient's own policy/);
@@ -308,19 +349,19 @@ test("document: Own Insurance keeps its rows; no partner section", () => {
   assert.doesNotMatch(text, /Partner's policy/);
 });
 
-test("document: No Insurance renders no policyholder rows", () => {
-  const { text } = renderDocument(payloadFor({ ...PATIENT, insuranceCoverage: "No Insurance" }));
+test("document: No Insurance renders no policyholder rows", async () => {
+  const { text } = await renderDocument(payloadFor({ ...PATIENT, insuranceCoverage: "No Insurance" }));
   assert.match(text, /Current insurance coverage\nNo Insurance/);
   assert.doesNotMatch(text, /Policyholder/);
 });
 
-test("document: an older payload is marked 'not transmitted', never the patient", () => {
+test("document: an older payload is marked 'not transmitted', never the patient", async () => {
   // Shape the app sent before this release: no policyholder blocks at all.
   const legacy = payloadFor({ ...PATIENT, ...PRIMARY, ...PARTNER_HOLDER,
     insuranceCoverage: "Partner's Insurance" }) as unknown as { insurance: Json };
   for (const k of ["policyOwner", "insured", "partnerPolicy", "policyholderContract"])
     delete legacy.insurance[k];
-  const { normalized, text } = renderDocument(legacy);
+  const { normalized, text } = await renderDocument(legacy);
   assert.equal(normalized.insurance_policyholder_contract, false);
   assert.match(text, /Partner's policy - the partner is the policyholder/);
   assert.match(after(text, "Policyholder (insured) name"), /^\nNot transmitted by the intake app/);
@@ -330,19 +371,19 @@ test("document: an older payload is marked 'not transmitted', never the patient"
     insuranceCoverage: "Both" }) as unknown as { insurance: Json };
   for (const k of ["policyOwner", "insured", "partnerPolicy", "policyholderContract"])
     delete legacyBoth.insurance[k];
-  const both = renderDocument(legacyBoth);
+  const both = await renderDocument(legacyBoth);
   assert.match(both.text, /Partner's policy details\nNot transmitted by the intake app/);
 });
 
 test("document: long names, punctuation and accents stay readable and valid", async () => {
   const longLast = "Zqlong" + "-Hyphenated".repeat(12);
-  const { bytes, text } = renderDocument(
+  const { bytes, text } = await renderDocument(
     payloadFor({ ...PATIENT, ...PRIMARY, insuranceCoverage: "Partner's Insurance",
       insuredFirstName: "José (Jr.) O'Brien\\Zq", insuredLastName: longLast,
       insuredDob: "1985-07-04", insuredEmployer: "A & B (Holdings) \"Zq\"" }),
   );
-  // Accents folded, PDF string delimiters escaped (round-trip through Tj).
-  assert.match(text, /Jose \(Jr\.\) O'Brien\\Zq/);
+  // Exact spelling, PDF string delimiters escaped (round-trip through Tj).
+  assert.match(text, /José \(Jr\.\) O'Brien\\Zq/);
   assert.match(text, /\(Holdings\)/);
   // The long name wraps across lines rather than overflowing: every piece is
   // present and no single rendered line holds all of it.
@@ -360,7 +401,7 @@ test("document: page breaks — the insurance section survives a page overflow",
     body[k] = "Yes";
   body.medicalDetails = { mhSurgeries: details, mhMedications: details, mhAllergies: details,
     mhChronic: details, mhBleeding: details };
-  const { bytes, text } = renderDocument(payloadFor(body));
+  const { bytes, text } = await renderDocument(payloadFor(body));
   const doc = await PDFDocument.load(bytes);
   assert.ok(doc.getPageCount() >= 2, "overflowed onto another page");
   assert.match(text, new RegExp(`Page ${doc.getPageCount()} of ${doc.getPageCount()}`));

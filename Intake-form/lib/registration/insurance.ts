@@ -3,7 +3,8 @@
 // the client-side step validation and the server-side rejection can never
 // drift apart. Pure: no DB, no network, no DOM.
 //
-// Policy semantics (unchanged from B.4):
+// Policy semantics ON THE WIRE (unchanged from B.4 — the form keeps its own
+// two-record model and maps to this at submit, see insuranceForSubmission):
 //   * "Own Insurance"       — the flat insurance*/insured* fields are the
 //                             patient's own policy.
 //   * "Partner's Insurance" — the SAME flat fields hold the partner's policy;
@@ -169,23 +170,63 @@ export function withApplicableInsurance<T extends Loose>(body: T): T {
   return out as T;
 }
 
+/** Map a partner-policy key to its flat (primary) counterpart. */
+const PARTNER_TO_PRIMARY: Record<string, string> = {
+  partnerInsuranceCompany: "insuranceCompany",
+  partnerInsuranceIdNo: "insuranceIdNo",
+  partnerInsuranceGroupNo: "insuranceGroupNo",
+  partnerInsuredFirstName: "insuredFirstName",
+  partnerInsuredLastName: "insuredLastName",
+  partnerInsuredDob: "insuredDob",
+  partnerInsuredEmployer: "insuredEmployer",
+  partnerInsuranceCardFront: "insuranceCardFront",
+  partnerInsuranceCardBack: "insuranceCardBack",
+};
+
 /**
- * Patch to apply when the coverage selection changes. The flat (primary)
- * fields belong to the partner under "Partner's Insurance" but to the patient
- * under "Own" / "Both". `fieldsOwner` is whose details the primary fields
- * currently hold (the owner at the last policy-bearing selection — it survives
- * a detour through "No Insurance"). When the new selection belongs to the
- * other person the primary set is cleared rather than silently re-labelled as
- * their policy. Otherwise values are kept, so re-selecting restores them.
+ * The form keeps TWO canonical records while the patient edits:
+ *   * the flat insurance / insured fields = the patient's OWN policy, always;
+ *   * the partnerInsurance / partnerInsured fields = the PARTNER's policy, always.
+ * Switching coverage never moves, clears or relabels either record, so
+ * Partner's <-> Both keeps everything typed and neither person's details can
+ * be attached to the other's policy.
+ *
+ * At submit this maps the two records onto the existing payload contract
+ * (unchanged, see the header comment): for "Partner's Insurance" the partner
+ * record is sent in the flat fields; "Both" sends both; "Own" sends the own
+ * record; "No Insurance" sends neither. Fields that do not apply are blanked.
  */
-export function coverageChangePatch(
-  fieldsOwner: "patient" | "partner" | "",
-  next: string,
-): Record<string, string | null> {
-  const to = primaryPolicyOwner(next);
-  if (!fieldsOwner || !to || fieldsOwner === to) return {};
-  const patch: Record<string, string | null> = {};
-  for (const k of PRIMARY_POLICY_KEYS) patch[k] = "";
-  for (const k of PRIMARY_CARD_KEYS) patch[k] = null;
-  return patch;
+export function insuranceForSubmission<T extends Loose>(form: T): T {
+  const coverage = text(form.insuranceCoverage);
+  if (coverage !== COVERAGE_PARTNER) return withApplicableInsurance(form);
+  const out: Loose = { ...form };
+  for (const [partnerKey, flatKey] of Object.entries(PARTNER_TO_PRIMARY)) {
+    out[flatKey] = form[partnerKey] ?? (PARTNER_CARD_KEYS.includes(partnerKey as never) ? null : "");
+  }
+  return withApplicableInsurance(out as T);
+}
+
+function hasAny(form: Loose, keys: readonly string[]): boolean {
+  return keys.some((k) => {
+    const v = form[k];
+    return typeof v === "string" ? v.trim() !== "" : v != null;
+  });
+}
+
+/**
+ * A plain-language note when details the patient typed are kept on the page
+ * but will NOT be sent with the current coverage choice. Nothing is discarded
+ * by switching; this says so instead of silently hiding it. null = no note.
+ */
+export function hiddenPolicyNote(form: Loose): string | null {
+  const coverage = text(form.insuranceCoverage);
+  const own = hasAny(form, [...PRIMARY_POLICY_KEYS, ...PRIMARY_CARD_KEYS]);
+  const partner = hasAny(form, [...PARTNER_POLICY_KEYS, ...PARTNER_CARD_KEYS]);
+  if (coverage === COVERAGE_NONE && (own || partner))
+    return "The policy details you entered are kept on this page but won't be sent with \"No Insurance\".";
+  if (coverage === COVERAGE_OWN && partner)
+    return "Your partner's policy details are kept on this page but won't be sent unless you choose \"Partner's Insurance\" or \"Both\".";
+  if (coverage === COVERAGE_PARTNER && own)
+    return "Your own policy details are kept on this page but won't be sent unless you choose \"Own Insurance\" or \"Both\".";
+  return null;
 }
