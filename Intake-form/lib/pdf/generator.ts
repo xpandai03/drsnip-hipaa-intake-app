@@ -162,11 +162,17 @@ async function embedFonts(
     const asset = loadFontAsset();
     doc.registerFontkit(fontkit);
     const bytes = (b64: string) => inflateSync(Buffer.from(b64, "base64"));
+    // subset: false is REQUIRED. pdf-lib/fontkit re-subsetting our already
+    // subset Noto files produced fonts whose glyphs Chrome's viewer (PDFium)
+    // does not draw — every label and value vanished while text extraction
+    // stayed correct (DRSNIP_PDF_RENDERING_INCIDENT_RECOVERY.md). The whole
+    // ~190 KB subset is embedded instead; api/_test/pdf-unicode.test.ts
+    // asserts the embedded font program is complete.
     return {
       fonts: {
-        regular: await doc.embedFont(bytes(asset.fonts.regular.ttfDeflateB64), { subset: true }),
-        bold: await doc.embedFont(bytes(asset.fonts.bold.ttfDeflateB64), { subset: true }),
-        oblique: await doc.embedFont(bytes(asset.fonts.italic.ttfDeflateB64), { subset: true }),
+        regular: await doc.embedFont(bytes(asset.fonts.regular.ttfDeflateB64), { subset: false }),
+        bold: await doc.embedFont(bytes(asset.fonts.bold.ttfDeflateB64), { subset: false }),
+        oblique: await doc.embedFont(bytes(asset.fonts.italic.ttfDeflateB64), { subset: false }),
       },
       hasGlyph: commonCoverage(asset),
     };
