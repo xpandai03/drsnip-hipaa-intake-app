@@ -298,3 +298,29 @@ test("console PDF: international names no longer crash generation; exact where s
   }
   if (checked === 0) t.diagnostic("pdftotext not installed: generation + validity checked, text not extracted");
 });
+
+// INCIDENT 2026-09-24 (DRSNIP_PDF_RENDERING_INCIDENT_RECOVERY.md): pdf-lib's
+// re-subsetting of our already-subset Noto fonts produced font programs that
+// Chrome's PDF viewer (PDFium) drew almost nothing from, while text
+// extraction stayed perfect. Guard: every embedded font program in a console
+// PDF must be the COMPLETE asset font, byte-for-byte.
+test("console PDF embeds the complete Noto programs (no pdf-lib re-subsetting)", async () => {
+  const { inflateSync } = await import("node:zlib");
+  const { PDFName, PDFRawStream } = await import("pdf-lib");
+  const expected = new Set(Object.values(ASSET.fonts).map((f) => (f as { sha256: string }).sha256));
+  for (const kind of ["registration", "consultation", "insurance"]) {
+    const bytes = await generateSubmissionPdf({ ...(submissionRow("Łukasz", "Synthetic", "Zoë") as object), formType: kind } as never);
+    const doc = await PDFDocument.load(bytes);
+    const programs: string[] = [];
+    for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+      const dict = (obj as { get?: (k: unknown) => unknown }).get ? (obj as never as import("pdf-lib").PDFDict) : null;
+      if (!dict || dict.get(PDFName.of("Type")) !== PDFName.of("FontDescriptor")) continue;
+      const ff = doc.context.lookup(dict.get(PDFName.of("FontFile2")));
+      assert.ok(ff instanceof PDFRawStream, `${kind}: FontFile2 stream`);
+      const data = ff.dict.get(PDFName.of("Filter")) ? inflateSync(Buffer.from(ff.contents)) : Buffer.from(ff.contents);
+      programs.push((await import("node:crypto")).createHash("sha256").update(data).digest("hex"));
+    }
+    assert.equal(programs.length, 3, `${kind}: three embedded font programs`);
+    for (const h of programs) assert.ok(expected.has(h), `${kind}: embedded font program was altered (re-subset?)`);
+  }
+});
