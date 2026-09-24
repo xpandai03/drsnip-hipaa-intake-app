@@ -7,7 +7,14 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { inflateSync } from "node:zlib";
 import { PDFDocument, StandardFonts, type PDFImage } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import {
+  commonCoverage,
+  loadFontAsset,
+  planText,
+} from "../pdf-unicode/support";
 import type { Submission } from "@workspace/db";
 import { calculateAge } from "./age";
 import { PdfCursor, stampFooters, type PdfFonts } from "./cursor";
@@ -33,14 +40,29 @@ export async function generateSubmissionPdf(
   const doc = await PDFDocument.create();
   doc.setTitle(`DrSnip Intake — ${submission.id}`);
 
-  const fonts: PdfFonts = {
-    regular: await doc.embedFont(StandardFonts.Helvetica),
-    bold: await doc.embedFont(StandardFonts.HelveticaBold),
-    oblique: await doc.embedFont(StandardFonts.HelveticaOblique),
-  };
+  const { fonts, hasGlyph } = await embedFonts(doc);
   const logo = await loadLogo(doc);
 
-  const raw = asRecord(submission.rawPayload);
+  // Every user-entered string is checked ONCE, before layout: shown exactly,
+  // or replaced by an explicit "cannot be shown exactly" notice. Never
+  // transliterated, never '?', and never a thrown encoding error. The stored
+  // submission is not modified.
+  let unrenderable = 0;
+  const safe = (v: unknown): unknown => {
+    if (typeof v === "string") {
+      const plan = planText(v, hasGlyph);
+      if (plan.kind === "unsupported") unrenderable++;
+      return plan.text;
+    }
+    if (Array.isArray(v)) return v.map(safe);
+    if (v && typeof v === "object") {
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, safe(x)]));
+    }
+    return v;
+  };
+  const raw = asRecord(safe(submission.rawPayload));
+  const firstName = safe(submission.firstName) as string;
+  const lastName = safe(submission.lastName) as string;
   const isConsultation = submission.formType === "consultation";
   // Train D: insurance is a third form type. Kept as its own flag rather than
   // folding into isConsultation so every existing branch below reads unchanged.
@@ -57,7 +79,7 @@ export async function generateSubmissionPdf(
         ? "consultation"
         : "registration",
     patientName:
-      `${submission.firstName} ${submission.lastName}`.trim() ||
+      `${firstName} ${lastName}`.trim() ||
       "Unknown Patient",
     // Spouse + children only exist on Consultation submissions (Option A).
     spouseName: isConsultation ? buildSpouseName(raw) : null,
@@ -74,6 +96,14 @@ export async function generateSubmissionPdf(
     logo,
   };
   renderHeader(cursor, header);
+  if (unrenderable > 0) {
+    cursor.heading("Review needed");
+    renderKeyValue(
+      cursor,
+      "Characters not shown",
+      "Some entries contain characters this document cannot show exactly. They are marked below; the exact text is unchanged in the DrSnip intake console.",
+    );
+  }
 
   // ---- Full submission, section by section -----------------------------
   const sections = isInsurance
@@ -118,6 +148,39 @@ export async function generateSubmissionPdf(
 }
 
 // ---- helpers -------------------------------------------------------------
+
+/**
+ * Noto Sans (embedded, subset per document) so names outside WinAnsi render
+ * exactly. If the font asset cannot be read, fall back to the standard fonts
+ * with coverage = WinAnsi only — every other character then becomes an
+ * explicit notice rather than an encoding error.
+ */
+async function embedFonts(
+  doc: PDFDocument,
+): Promise<{ fonts: PdfFonts; hasGlyph: ((cp: number) => boolean) | null }> {
+  try {
+    const asset = loadFontAsset();
+    doc.registerFontkit(fontkit);
+    const bytes = (b64: string) => inflateSync(Buffer.from(b64, "base64"));
+    return {
+      fonts: {
+        regular: await doc.embedFont(bytes(asset.fonts.regular.ttfDeflateB64), { subset: true }),
+        bold: await doc.embedFont(bytes(asset.fonts.bold.ttfDeflateB64), { subset: true }),
+        oblique: await doc.embedFont(bytes(asset.fonts.italic.ttfDeflateB64), { subset: true }),
+      },
+      hasGlyph: commonCoverage(asset),
+    };
+  } catch {
+    return {
+      fonts: {
+        regular: await doc.embedFont(StandardFonts.Helvetica),
+        bold: await doc.embedFont(StandardFonts.HelveticaBold),
+        oblique: await doc.embedFont(StandardFonts.HelveticaOblique),
+      },
+      hasGlyph: null,
+    };
+  }
+}
 
 async function loadLogo(doc: PDFDocument): Promise<PDFImage | null> {
   try {
