@@ -356,7 +356,7 @@ const approxW = (s, size) => String(s).length * size * 0.52;
 const tw = (s, font, size) => (pdfuIsU(font) ? pdfuWidth(s, font, size) : approxW(s, size));
 const wrap = (s, font, size, maxW) => {
   const words = String(s == null ? '' : s).split(/\s+/).filter(Boolean);
-  if (!words.length) return [''];
+  if (!words.length) return Array.of(''); // (not `return [...]`: n8n's static validator reads that as the node's output)
   const out = [];
   let line = '';
   for (const word of words) {
