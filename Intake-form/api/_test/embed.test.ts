@@ -147,6 +147,22 @@ describe("iframeSnippet — attribution forwarding + no third-party scripts", ()
     assert.ok(s.includes('scrolling="no"'));
   });
 
+  it("registration's listener brings the new step into view — only when it is out of view (Safari path)", () => {
+    const s = iframeSnippet(registration);
+    assert.ok(s.includes('d.type === "drsnip:scroll"'));
+    assert.ok(s.includes("if (y < 0 || y >= window.innerHeight)"), "no-op when already visible");
+    // Handled inside the same origin-locked listener.
+    assert.ok(s.indexOf("e.origin !== BASE_ORIGIN") < s.indexOf("drsnip:scroll"));
+  });
+
+  it("insurance and consultation snippets are unchanged: no scroll handler", () => {
+    assert.equal(iframeSnippet(insurance).includes("drsnip:scroll"), false);
+    assert.equal(
+      iframeSnippet(EMBED_FORMS.find((x) => x.key === "consultation")!).includes("drsnip:scroll"),
+      false,
+    );
+  });
+
   it("consultation forwards attribution but carries no height listener (it posts none)", () => {
     const s = iframeSnippet(EMBED_FORMS.find((x) => x.key === "consultation")!);
     assert.ok(s.includes("el.src = FORM_URL"));

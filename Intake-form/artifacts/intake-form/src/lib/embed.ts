@@ -43,6 +43,9 @@ export type EmbedForm = {
   /** Emits the drsnip:height auto-resize message (lib/embed-frame.ts).
    *  Insurance always; registration in its embed mode. Consultation does not. */
   autoHeight: boolean;
+  /** Emits drsnip:scroll on step change (registration's 8-step wizard). The
+   *  snippet's handler is what makes this work on Safari. */
+  scrollSync?: boolean;
 };
 
 export const EMBED_FORMS: EmbedForm[] = [
@@ -53,6 +56,7 @@ export const EMBED_FORMS: EmbedForm[] = [
     iframeId: "drsnip-registration",
     title: "DrSnip Registration Form",
     autoHeight: true,
+    scrollSync: true,
   },
   {
     key: "consultation",
@@ -115,6 +119,14 @@ export function iframeSnippet(form: EmbedForm, sourceKey?: string | null): strin
       `      if (d.type === "drsnip:height" && typeof d.height === "number") {\n` +
       `        if (el) el.style.height = d.height + "px";\n` +
       `      }\n` +
+      (form.scrollSync
+        ? `      // Step change: bring the top of the new step into view, only if\n` +
+          `      // it is not already visible.\n` +
+          `      if (d.type === "drsnip:scroll" && typeof d.top === "number" && el) {\n` +
+          `        var y = el.getBoundingClientRect().top + d.top;\n` +
+          `        if (y < 0 || y >= window.innerHeight) window.scrollTo(0, window.pageYOffset + y);\n` +
+          `      }\n`
+        : "") +
       `    });\n`
     : "";
 

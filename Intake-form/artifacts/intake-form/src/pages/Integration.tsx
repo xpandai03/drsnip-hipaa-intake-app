@@ -339,6 +339,8 @@ const REGISTRATION_EMBED_SNIPPET = iframeSnippet(
 
 const SAMPLE_REGISTRATION_HEIGHT = `https://intake.drsnip.com  {type: 'drsnip:height', height: 1705}`;
 
+const SAMPLE_REGISTRATION_SCROLL = `https://intake.drsnip.com  {type: 'drsnip:scroll', top: 426}`;
+
 const CONSOLE_SNIPPET = `addEventListener('message', e => console.log(e.origin, e.data))`;
 
 // Shown verbatim so the developer knows exactly what to look for.
@@ -653,7 +655,7 @@ export default function Integration() {
           frame a fixed height (<C>height:100vh; height:100dvh</C>), so the form scrolls
           inside it. Replace it with this snippet. It removes the fixed height, turns off
           the frame&rsquo;s own scrollbar, and adds the listener that applies the
-          form&rsquo;s height:
+          form&rsquo;s height and keeps each new step in view:
         </P>
         <CodeBlock code={REGISTRATION_EMBED_SNIPPET} label="WordPress — HTML block (registration)" />
         <P>
@@ -675,6 +677,21 @@ export default function Integration() {
           confirmation screen. It is sent when the form gets <em>shorter</em> as well as
           taller, so the frame never leaves an empty gap under the confirmation. Like
           the conversion event, it carries a number and nothing else.
+        </P>
+        <P>
+          <B>Keeping each step in view.</B> Registration has eight steps of different
+          lengths. When a patient presses Continue at the bottom of a long step, the
+          next step starts above what they can see. The form brings the top of the new
+          step back into view by itself in Chrome, Edge and Firefox. Safari does not let
+          a form inside a frame scroll the page around it, so on every step change the
+          form also sends:
+        </P>
+        <CodeBlock code={SAMPLE_REGISTRATION_SCROLL} />
+        <P>
+          <C>top</C> is the position, in pixels from the top of the frame, that should be
+          visible. The snippet above already handles it: it scrolls the page only when
+          that point is off-screen, so in browsers where the form has already done it,
+          nothing moves twice. Nothing scrolls when the page first loads.
         </P>
         <P>
           <B>Card photos on phones.</B> Keep <C>allow="camera"</C> on the frame; the

@@ -12,9 +12,12 @@ import { readFileSync } from "node:fs";
 import {
   HEIGHT_MESSAGE_TYPE,
   PARENT_ORIGINS,
+  SCROLL_MESSAGE_TYPE,
   buildHeightMessage,
+  buildScrollMessage,
   isEmbedded,
   postEmbedHeight,
+  postEmbedScroll,
 } from "../../artifacts/intake-form/src/lib/embed-frame";
 
 function frame(embedded: boolean) {
@@ -75,6 +78,36 @@ describe("height message contract", () => {
 
   it("dev-only localhost origins are compiled out of production (Vite DEV guard)", () => {
     assert.match(src("lib/embed-frame.ts"), /import\.meta\.env\.DEV\s*\?\s*\["http:\/\/localhost:5173"/);
+  });
+});
+
+describe("scroll message (registration step changes)", () => {
+  it("is exactly { type: 'drsnip:scroll', top } with a non-negative integer", () => {
+    const m = buildScrollMessage(425.6);
+    assert.deepEqual(Object.keys(m).sort(), ["top", "type"]);
+    assert.equal(SCROLL_MESSAGE_TYPE, "drsnip:scroll");
+    assert.equal(m.type, "drsnip:scroll");
+    assert.equal(m.top, 426);
+    assert.equal(buildScrollMessage(-12).top, 0);
+  });
+
+  it("goes only to the drsnip.com origins, and never when not framed", () => {
+    const framed = frame(true);
+    postEmbedScroll(300, PARENT_ORIGINS, framed.win);
+    assert.deepEqual(framed.posted.map((p) => p.origin), PARENT_ORIGINS);
+    const top = frame(false);
+    postEmbedScroll(300, PARENT_ORIGINS, top.win);
+    assert.equal(top.posted.length, 0);
+  });
+
+  it("the shell scrolls only when embedded, only on a CHANGE of step (never on load), and on success", () => {
+    const shell = code("components/MultiStepForm.tsx");
+    assert.ok(shell.includes("if (!embedded || shownStep.current === stepIndex) return;"));
+    assert.ok(shell.includes('if (!embedded || submitState !== "success") return;'));
+    assert.ok(shell.includes('el.scrollIntoView({ block: "nearest" });'));
+    assert.ok(shell.includes("postEmbedScroll("));
+    // The scroll target exists only in embed mode (standalone markup unchanged).
+    assert.ok(shell.includes("{embedded && (\n              <div ref={stepTopRef}"));
   });
 });
 
