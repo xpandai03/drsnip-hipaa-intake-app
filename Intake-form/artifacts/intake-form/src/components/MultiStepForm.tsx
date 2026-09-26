@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -9,12 +9,23 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isEmbedded } from "@/lib/embed-frame";
+import { useEmbedHeight } from "@/hooks/use-embed-height";
 
 // Shared multi-step form shell (Phase 2 — DrSnip). Drives the step index,
 // per-screen validation, animated transitions, and the success screen for both
 // the Registration and Consultation forms. Each form supplies its own data
 // state and `screens` array (the `Screen[]` pattern carried over from CJC) and
 // an `onSubmit` that performs the POST.
+//
+// EMBED MODE (opt-in via `embeddable`, registration only): inside an iframe the
+// full-viewport shell breaks auto-height — `min-h-screen` is 100vh OF THE FRAME
+// (each parent resize re-grows it) and the `fixed` footer anchors to the frame
+// viewport, covering fields. So when embedded the shell drops min-h-screen,
+// puts the Back/Continue bar in the document flow after the step, and posts
+// its height via the insurance form's protocol (lib/embed-frame.ts). Detection
+// is the insurance form's: window.parent !== window. Not embedded — or a form
+// that doesn't pass `embeddable` — renders exactly as before.
 
 export type FormScreen = {
   id: string;
@@ -47,6 +58,7 @@ export function MultiStepForm({
   successTitle,
   successMessage,
   onStepChange,
+  embeddable = false,
 }: {
   screens: FormScreen[];
   onSubmit: () => Promise<boolean>;
@@ -56,7 +68,12 @@ export function MultiStepForm({
    *  past a valid step. Used by Registration for drop-off capture; other forms
    *  simply don't pass it. Never affects wizard flow. */
   onStepChange?: (nextIndex: number) => void;
+  /** Opt in to embed mode when rendered inside an iframe (see header). */
+  embeddable?: boolean;
 }) {
+  const [embedded] = useState(() => embeddable && isEmbedded());
+  const rootRef = useRef<HTMLDivElement>(null);
+  const postHeight = useEmbedHeight(rootRef, embedded);
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [submitState, setSubmitState] = useState<
@@ -124,14 +141,42 @@ export function MultiStepForm({
     return () => document.removeEventListener("keydown", onKeyDown);
   });
 
+  // Belt-and-suspenders explicit re-post on state that changes layout (the
+  // ResizeObserver also catches these, including the success screen's shrink).
+  useEffect(() => {
+    postHeight();
+  }, [stepIndex, submitState, postHeight]);
+
+  // Embedded: one measured wrapper around the wizard AND the success screen,
+  // so the observer survives the swap and reports the shrink.
+  const frame = (content: ReactNode) =>
+    embedded ? (
+      <div ref={rootRef} data-drsnip-embed="">
+        {content}
+      </div>
+    ) : (
+      content
+    );
+
   if (submitState === "success") {
-    return <SuccessScreen title={successTitle} message={successMessage} />;
+    return frame(
+      <SuccessScreen
+        title={successTitle}
+        message={successMessage}
+        embedded={embedded}
+      />,
+    );
   }
 
   const canProceed = current.isValid() && !submitting;
 
-  return (
-    <div className="min-h-screen flex flex-col font-sans relative overflow-hidden bg-primary">
+  return frame(
+    <div
+      className={cn(
+        "flex flex-col font-sans relative overflow-hidden bg-primary",
+        !embedded && "min-h-screen",
+      )}
+    >
       <header className="relative z-10 w-full pt-6 px-6 flex justify-center">
         <img
           src={DRSNIP_LOGO}
@@ -157,7 +202,12 @@ export function MultiStepForm({
         </div>
       </div>
 
-      <main className="relative z-10 flex-1 flex flex-col items-center px-6 pb-32">
+      <main
+        className={cn(
+          "relative z-10 flex-1 flex flex-col items-center px-6",
+          embedded ? "pb-8" : "pb-32",
+        )}
+      >
         <div className="w-full max-w-3xl flex-1 flex flex-col relative pt-4 md:pt-8">
           <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 p-8 md:p-12 min-h-[340px]">
             <AnimatePresence mode="wait" custom={direction} initial={false}>
@@ -188,7 +238,12 @@ export function MultiStepForm({
         </div>
       </main>
 
-      <footer className="fixed bottom-0 left-0 w-full z-20 bg-primary/95 backdrop-blur-xl border-t border-white/10">
+      <footer
+        className={cn(
+          "w-full z-20 bg-primary/95 backdrop-blur-xl border-t border-white/10",
+          embedded ? "relative" : "fixed bottom-0 left-0",
+        )}
+      >
         <div className="w-full max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center">
             {stepIndex > 0 ? (
@@ -239,19 +294,26 @@ export function MultiStepForm({
           </div>
         </div>
       </footer>
-    </div>
+    </div>,
   );
 }
 
 function SuccessScreen({
   title,
   message,
+  embedded = false,
 }: {
   title: string;
   message: string;
+  embedded?: boolean;
 }) {
   return (
-    <div className="min-h-screen flex flex-col font-sans items-center justify-center bg-primary px-6 py-12">
+    <div
+      className={cn(
+        "flex flex-col font-sans items-center justify-center bg-primary px-6 py-12",
+        !embedded && "min-h-screen",
+      )}
+    >
       <div className="relative z-10 w-full max-w-2xl mx-auto">
         <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 p-10 md:p-14 text-center">
           <motion.div

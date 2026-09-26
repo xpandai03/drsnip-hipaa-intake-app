@@ -350,8 +350,8 @@ export default function LinkGenerator({
             <p className="text-sm text-slate-500">
               Copy a form into the website. Each snippet forwards the page&rsquo;s
               own campaign parameters (utm_*, gclid, fbclid) into the form, so
-              submissions record where they came from. The insurance form also
-              auto-resizes inline.
+              submissions record where they came from. The insurance and
+              registration forms also auto-resize inline.
             </p>
           </CardHeader>
           <CardContent className="space-y-5">
