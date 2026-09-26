@@ -15,6 +15,15 @@
 // Framework-free so it is unit-tested directly (api/_test/embed-frame.test.ts).
 
 export const HEIGHT_MESSAGE_TYPE = "drsnip:height";
+/**
+ * Registration only: after a step change the frame asks the parent to bring
+ * `top` (px from the top of the frame) into view. The frame also calls
+ * scrollIntoView itself, which crosses the frame boundary in Chromium and
+ * Firefox; WebKit (Safari) does not let a cross-origin frame scroll its parent,
+ * so the parent snippet handles this message — and does nothing when the
+ * target is already visible, so the two never fight.
+ */
+export const SCROLL_MESSAGE_TYPE = "drsnip:scroll";
 
 /** Production parent origins — the only pages allowed to receive messages. */
 export const PARENT_ORIGINS = ["https://drsnip.com", "https://www.drsnip.com"];
@@ -49,6 +58,37 @@ export function buildHeightMessage(height: number): {
   return { type: HEIGHT_MESSAGE_TYPE, height: Math.ceil(height) };
 }
 
+export function buildScrollMessage(top: number): {
+  type: typeof SCROLL_MESSAGE_TYPE;
+  top: number;
+} {
+  return { type: SCROLL_MESSAGE_TYPE, top: Math.max(0, Math.round(top)) };
+}
+
+function post(
+  message: unknown,
+  origins: string[],
+  win: FrameWindow | undefined,
+): void {
+  if (!isEmbedded(win)) return;
+  for (const origin of origins) {
+    try {
+      win!.parent.postMessage(message, origin);
+    } catch {
+      /* targetOrigin mismatch — browser drops it; expected for non-parents */
+    }
+  }
+}
+
+/** Ask the parent to scroll `top` px (from the frame's top) into view. */
+export function postEmbedScroll(
+  top: number,
+  origins: string[] = embedParentOrigins(),
+  win: FrameWindow | undefined = globalThis.window,
+): void {
+  post(buildScrollMessage(top), origins, win);
+}
+
 /**
  * Post the content height to the parent. No-op when not embedded. `height` is
  * the root element's rendered height (falls back to the body's scrollHeight).
@@ -58,13 +98,5 @@ export function postEmbedHeight(
   origins: string[] = embedParentOrigins(),
   win: FrameWindow | undefined = globalThis.window,
 ): void {
-  if (!isEmbedded(win)) return;
-  const message = buildHeightMessage(height);
-  for (const origin of origins) {
-    try {
-      win!.parent.postMessage(message, origin);
-    } catch {
-      /* targetOrigin mismatch — browser drops it; expected for non-parents */
-    }
-  }
+  post(buildHeightMessage(height), origins, win);
 }

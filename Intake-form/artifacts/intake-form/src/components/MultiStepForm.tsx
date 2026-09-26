@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { isEmbedded } from "@/lib/embed-frame";
+import { isEmbedded, postEmbedScroll } from "@/lib/embed-frame";
 import { useEmbedHeight } from "@/hooks/use-embed-height";
 
 // Shared multi-step form shell (Phase 2 — DrSnip). Drives the step index,
@@ -74,6 +74,7 @@ export function MultiStepForm({
   const [embedded] = useState(() => embeddable && isEmbedded());
   const rootRef = useRef<HTMLDivElement>(null);
   const postHeight = useEmbedHeight(rootRef, embedded);
+  const stepTopRef = useRef<HTMLDivElement>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [submitState, setSubmitState] = useState<
@@ -147,6 +148,35 @@ export function MultiStepForm({
     postHeight();
   }, [stepIndex, submitState, postHeight]);
 
+  // Embedded: the parent page owns scrolling, so after Continue/Back the new
+  // step can start above the visible part of the page (the patient pressed
+  // Continue at the bottom of a tall step). Bring the top of the step into
+  // view, two ways (see SCROLL_MESSAGE_TYPE in lib/embed-frame.ts):
+  //   • scrollIntoView — crosses the frame boundary in Chromium/Firefox, and
+  //     scrolls the frame's own document when the parent frame is fixed-height;
+  //   • a drsnip:scroll message for the parent snippet — WebKit/Safari does not
+  //     let a cross-origin frame scroll its parent. The parent acts only if the
+  //     target is still out of view, so the two never double-scroll.
+  // "nearest" = no movement when already visible. Never on first render —
+  // loading the form must not move the page.
+  const bringIntoView = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest" });
+    const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+    postEmbedScroll(el.getBoundingClientRect().top + window.scrollY - margin);
+  };
+  const shownStep = useRef(stepIndex);
+  useEffect(() => {
+    if (!embedded || shownStep.current === stepIndex) return;
+    shownStep.current = stepIndex;
+    bringIntoView(stepTopRef.current);
+  }, [embedded, stepIndex]);
+  // Same for the confirmation screen, which replaces a (usually taller) step.
+  useEffect(() => {
+    if (!embedded || submitState !== "success") return;
+    bringIntoView(rootRef.current);
+  }, [embedded, submitState]);
+
   // Embedded: one measured wrapper around the wizard AND the success screen,
   // so the observer survives the swap and reports the shrink.
   const frame = (content: ReactNode) =>
@@ -210,6 +240,11 @@ export function MultiStepForm({
       >
         <div className="w-full max-w-3xl flex-1 flex flex-col relative pt-4 md:pt-8">
           <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 p-8 md:p-12 min-h-[340px]">
+            {/* Scroll target for embedded step changes: sits at the heading's
+                top edge; scroll-margin keeps the card's top edge in view. */}
+            {embedded && (
+              <div ref={stepTopRef} aria-hidden className="scroll-mt-16" />
+            )}
             <AnimatePresence mode="wait" custom={direction} initial={false}>
               <motion.div
                 key={current.id}
