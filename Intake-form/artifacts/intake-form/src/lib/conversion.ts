@@ -18,6 +18,20 @@ const ALLOWED_PARENT_ORIGINS = [
   "https://www.drsnip.com",
 ];
 
+/**
+ * Build-state marker. Vite inlines the flag, so exactly ONE of these two
+ * literals survives in the production bundle. The Docker build runs
+ * scripts/assert-conversion-bundle.mjs, which fails the image (and so the
+ * deploy) unless the ENABLED literal is present — a plain `fly deploy` without
+ * the build arg can no longer silently compile conversions off, as it did from
+ * release v75 (16 Sep 2026). main.tsx writes it to <html data-drsnip-conversion>
+ * so it is never tree-shaken and can be read on the live page.
+ */
+export const CONVERSION_BUILD_STATE =
+  import.meta.env.VITE_CONVERSION_TRACKING_ENABLED === "true"
+    ? "drsnip-conversion-build:enabled"
+    : "drsnip-conversion-build:disabled";
+
 /** Master flag — build-time env, default OFF. */
 export function conversionEnabled(): boolean {
   return import.meta.env.VITE_CONVERSION_TRACKING_ENABLED === "true";
