@@ -138,12 +138,35 @@ describe("iframeSnippet — attribution forwarding + no third-party scripts", ()
     assert.ok(s.includes("el.src = FORM_URL"), "and forwarding still happens");
   });
 
-  it("registration/consultation forward attribution but carry no height listener", () => {
-    for (const f of [registration, EMBED_FORMS.find((x) => x.key === "consultation")!]) {
-      const s = iframeSnippet(f);
-      assert.ok(s.includes("el.src = FORM_URL"), `${f.key} should forward`);
-      assert.equal(s.includes("drsnip:height"), false, `${f.key} posts no height yet`);
-    }
+  it("registration now carries the same origin-locked auto-height listener as insurance", () => {
+    const s = iframeSnippet(registration);
+    assert.ok(s.includes("drsnip:height"));
+    assert.ok(s.includes("e.origin !== BASE_ORIGIN"), "listener stays origin-locked");
+    assert.ok(s.includes("el.src = FORM_URL"), "and forwarding still happens");
+    assert.ok(s.includes('allow="camera"'));
+    assert.ok(s.includes('scrolling="no"'));
+  });
+
+  it("registration's listener brings the new step into view — only when it is out of view (Safari path)", () => {
+    const s = iframeSnippet(registration);
+    assert.ok(s.includes('d.type === "drsnip:scroll"'));
+    assert.ok(s.includes("if (y < 0 || y >= window.innerHeight)"), "no-op when already visible");
+    // Handled inside the same origin-locked listener.
+    assert.ok(s.indexOf("e.origin !== BASE_ORIGIN") < s.indexOf("drsnip:scroll"));
+  });
+
+  it("insurance and consultation snippets are unchanged: no scroll handler", () => {
+    assert.equal(iframeSnippet(insurance).includes("drsnip:scroll"), false);
+    assert.equal(
+      iframeSnippet(EMBED_FORMS.find((x) => x.key === "consultation")!).includes("drsnip:scroll"),
+      false,
+    );
+  });
+
+  it("consultation forwards attribution but carries no height listener (it posts none)", () => {
+    const s = iframeSnippet(EMBED_FORMS.find((x) => x.key === "consultation")!);
+    assert.ok(s.includes("el.src = FORM_URL"));
+    assert.equal(s.includes("drsnip:height"), false);
   });
 
   it("NEVER injects a third-party tag manager / analytics script", () => {

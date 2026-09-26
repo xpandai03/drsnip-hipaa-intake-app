@@ -46,6 +46,12 @@ ENV VITE_CONVERSION_TRACKING_ENABLED=$VITE_CONVERSION_TRACKING_ENABLED
 # (the esbuild bundle of the Hono server).
 RUN pnpm run build
 
+# Fail the image — and so the deploy — if conversion tracking was compiled OFF.
+# Self-test first (proves the check rejects a folded bundle), then the real
+# bundle. VITE_CONVERSION_TRACKING_ENABLED comes from fly.toml [build.args].
+RUN node scripts/assert-conversion-bundle.mjs --self-test \
+ && node scripts/assert-conversion-bundle.mjs
+
 # ---- Stage 2: runtime ------------------------------------------------------
 FROM node:20-slim AS runner
 WORKDIR /app
