@@ -40,7 +40,8 @@ export type EmbedForm = {
   path: string;
   iframeId: string;
   title: string;
-  /** Only the insurance form emits the drsnip:height auto-resize message. */
+  /** Emits the drsnip:height auto-resize message (lib/embed-frame.ts).
+   *  Insurance always; registration in its embed mode. Consultation does not. */
   autoHeight: boolean;
 };
 
@@ -51,7 +52,7 @@ export const EMBED_FORMS: EmbedForm[] = [
     path: "/",
     iframeId: "drsnip-registration",
     title: "DrSnip Registration Form",
-    autoHeight: false,
+    autoHeight: true,
   },
   {
     key: "consultation",
@@ -82,10 +83,10 @@ export function formUrl(path: string, sourceKey?: string | null): string {
 
 /**
  * Copy-ready iframe embed snippet, mirroring the shipped insurance embed shape
- * (responsive min-width:100%, scrolling off). The insurance form additionally
- * gets the origin-locked postMessage auto-height listener it already emits;
- * registration/consultation render at their own height (they are full-page
- * forms — the direct link is usually the simpler share).
+ * (responsive min-width:100%, scrolling off). Insurance and registration
+ * additionally get the origin-locked postMessage auto-height listener for the
+ * height they emit; consultation renders at its own height (a full-page form —
+ * the direct link is usually the simpler share).
  */
 export function iframeSnippet(form: EmbedForm, sourceKey?: string | null): string {
   const defaultSource = (sourceKey ?? "").trim();
