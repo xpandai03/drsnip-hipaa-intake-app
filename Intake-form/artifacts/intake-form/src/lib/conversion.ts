@@ -27,10 +27,13 @@ const ALLOWED_PARENT_ORIGINS = [
  * release v75 (16 Sep 2026). main.tsx writes it to <html data-drsnip-conversion>
  * so it is never tree-shaken and can be read on the live page.
  */
-export const CONVERSION_BUILD_STATE =
-  import.meta.env.VITE_CONVERSION_TRACKING_ENABLED === "true"
+export function conversionBuildState(): string {
+  // Read lazily (inside a function) so importing this module outside Vite —
+  // e.g. under node:test, where import.meta.env is undefined — never throws.
+  return import.meta.env.VITE_CONVERSION_TRACKING_ENABLED === "true"
     ? "drsnip-conversion-build:enabled"
     : "drsnip-conversion-build:disabled";
+}
 
 /** Master flag — build-time env, default OFF. */
 export function conversionEnabled(): boolean {
