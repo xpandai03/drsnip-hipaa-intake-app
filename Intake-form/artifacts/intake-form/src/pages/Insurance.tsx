@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   ArrowLeft,
@@ -14,6 +14,7 @@ import { FileUploadStub, type StubFileRef } from "@/components/ui/FileUploadStub
 import { cn } from "@/lib/utils";
 import { postConversion } from "@/lib/conversion";
 import { readAttribution } from "@/lib/attribution";
+import { useEmbedHeight } from "@/hooks/use-embed-height";
 
 // ===========================================================================
 // DrSnip — native Insurance form (Phase 1: form + route + embed + DB storage).
@@ -51,18 +52,11 @@ const POPPINS_HREF =
   "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap";
 
 // --- Embed height protocol (recon §5) --------------------------------------
-// Origin-locked BOTH directions: the parent snippet checks e.origin ===
-// intake.drsnip.com before applying; here we post to explicit parent origins
-// only (never '*'). The browser silently drops messages whose targetOrigin
-// doesn't match the real parent, so looping the allowlist is safe + locked.
-const ALLOWED_PARENT_ORIGINS = [
-  "https://drsnip.com",
-  "https://www.drsnip.com",
-  ...(import.meta.env.DEV
-    ? ["http://localhost:5173", "http://localhost:4173"]
-    : []),
-];
-const HEIGHT_MESSAGE_TYPE = "drsnip:height";
+// Detection, origins and the { type: "drsnip:height", height } message live in
+// lib/embed-frame.ts, shared with the registration form's embed mode. Origin-
+// locked BOTH directions: the parent snippet checks e.origin ===
+// intake.drsnip.com before applying; the poster targets explicit parent
+// origins only (never '*').
 
 // --- Field option sets -----------------------------------------------------
 // Office: values MUST match the registration form's officeLocation literals
@@ -201,31 +195,9 @@ export default function Insurance() {
   }, []);
 
   // --- Auto-height: post the content height to the parent iframe ----------
-  const postHeight = useCallback(() => {
-    if (typeof window === "undefined" || window.parent === window) return;
-    const h = Math.ceil(
-      rootRef.current?.getBoundingClientRect().height ??
-        document.body.scrollHeight,
-    );
-    for (const origin of ALLOWED_PARENT_ORIGINS) {
-      try {
-        window.parent.postMessage({ type: HEIGHT_MESSAGE_TYPE, height: h }, origin);
-      } catch {
-        /* targetOrigin mismatch — browser drops it; expected for non-parents */
-      }
-    }
-  }, []);
-
-  // Fire on mount, and whenever the rendered size changes (step change, error
+  // Fires on mount, and whenever the rendered size changes (step change, error
   // reveal, file add/remove, secondary expand — all change the root's height).
-  useEffect(() => {
-    postHeight();
-    const el = rootRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => postHeight());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [postHeight]);
+  const postHeight = useEmbedHeight(rootRef);
   // Belt-and-suspenders explicit re-post on state that changes layout.
   useEffect(() => {
     postHeight();

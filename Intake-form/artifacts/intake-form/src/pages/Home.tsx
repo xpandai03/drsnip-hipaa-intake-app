@@ -772,6 +772,8 @@ export default function Home() {
       screens={screens}
       onSubmit={onSubmit}
       onStepChange={onStepChange}
+      // Embedded on drsnip.com/registration: auto-height + inline bar.
+      embeddable
       successTitle="Thank you — your registration is in."
       successMessage="Our team at DrSnip will review your information and reach out to schedule your consultation. If we need anything else, we'll contact you at the email or phone number you provided."
     />
