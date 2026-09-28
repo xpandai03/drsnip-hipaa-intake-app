@@ -155,6 +155,18 @@ describe("iframeSnippet — attribution forwarding + no third-party scripts", ()
     assert.ok(s.indexOf("e.origin !== BASE_ORIGIN") < s.indexOf("drsnip:scroll"));
   });
 
+  it("registration's snippet sends drsnip:ready into the frame on every load, origin-locked", () => {
+    const s = iframeSnippet(registration);
+    assert.ok(s.includes('el.addEventListener("load", function () {'));
+    assert.ok(s.includes('el.contentWindow.postMessage({ type: "drsnip:ready" }, BASE_ORIGIN);'));
+    assert.ok(s.indexOf("el.src = FORM_URL") < s.indexOf('addEventListener("load"'), "same sync script as src: cannot miss the load");
+  });
+
+  it("insurance and consultation snippets send no ready message", () => {
+    assert.equal(iframeSnippet(insurance).includes("drsnip:ready"), false);
+    assert.equal(iframeSnippet(EMBED_FORMS.find((x) => x.key === "consultation")!).includes("drsnip:ready"), false);
+  });
+
   it("insurance and consultation snippets are unchanged: no scroll handler", () => {
     assert.equal(iframeSnippet(insurance).includes("drsnip:scroll"), false);
     assert.equal(

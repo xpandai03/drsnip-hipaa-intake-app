@@ -644,11 +644,14 @@ export default function Integration() {
 
         <H3>3a. Registration: auto-height is now supported</H3>
         <P>
-          The registration form now sizes itself the same way the insurance form does.
-          Nothing needs to be switched on: the form detects that it is inside a frame
-          and, only then, lays its Back / Continue bar out at the end of each step
-          (instead of pinning it to the bottom of the frame) and reports its height.
-          Visitors who open the form directly see exactly the same page as before.
+          The registration form now sizes itself the same way the insurance form does,
+          as soon as the page uses the snippet below. The snippet tells the form, each
+          time the frame loads, that the page will apply its height
+          (<C>{"{type: 'drsnip:ready'}"}</C>). Only then does the form lay its Back /
+          Continue bar out at the end of each step and report its height. On a page
+          without the snippet, it keeps its full-page layout with the bar pinned to the
+          bottom of the frame, exactly as before. Visitors who open the form directly
+          see no change.
         </P>
         <P>
           <B>What to change on drsnip.com/registration.</B> The current embed gives the

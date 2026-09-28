@@ -46,6 +46,9 @@ export type EmbedForm = {
   /** Emits drsnip:scroll on step change (registration's 8-step wizard). The
    *  snippet's handler is what makes this work on Safari. */
   scrollSync?: boolean;
+  /** Snippet sends drsnip:ready into the frame on every load; the form keeps
+   *  its standalone layout until it hears it (lib/embed-frame.ts). */
+  readyHandshake?: boolean;
 };
 
 export const EMBED_FORMS: EmbedForm[] = [
@@ -57,6 +60,7 @@ export const EMBED_FORMS: EmbedForm[] = [
     title: "DrSnip Registration Form",
     autoHeight: true,
     scrollSync: true,
+    readyHandshake: true,
   },
   {
     key: "consultation",
@@ -112,6 +116,13 @@ export function iframeSnippet(form: EmbedForm, sourceKey?: string | null): strin
 
   const heightListener = form.autoHeight
     ? `\n` +
+      (form.readyHandshake
+        ? `    // Tell the form this page applies its height. Until it hears this, it\n` +
+          `    // keeps its full-page layout. Sent again if the frame reloads.\n` +
+          `    if (el) el.addEventListener("load", function () {\n` +
+          `      el.contentWindow.postMessage({ type: "drsnip:ready" }, BASE_ORIGIN);\n` +
+          `    });\n\n`
+        : "") +
       `    // Auto-height: the form posts its content height as it grows.\n` +
       `    window.addEventListener("message", function (e) {\n` +
       `      if (e.origin !== BASE_ORIGIN) return;\n` +
