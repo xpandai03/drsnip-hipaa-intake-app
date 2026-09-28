@@ -9,7 +9,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { isEmbedded, postEmbedScroll } from "@/lib/embed-frame";
+import {
+  isEmbedded,
+  isParentReady,
+  onParentReady,
+  postEmbedScroll,
+} from "@/lib/embed-frame";
 import { useEmbedHeight } from "@/hooks/use-embed-height";
 
 // Shared multi-step form shell (Phase 2 — DrSnip). Drives the step index,
@@ -71,7 +76,17 @@ export function MultiStepForm({
   /** Opt in to embed mode when rendered inside an iframe (see header). */
   embeddable?: boolean;
 }) {
-  const [embedded] = useState(() => embeddable && isEmbedded());
+  // `framed`: inside an iframe and this form opted in. `embedded` (the embed
+  // layout + height/scroll messages) additionally waits for the parent's
+  // drsnip:ready handshake — without it the form renders exactly as v93
+  // (pinned bar, no messages), which is safe in a fixed-height frame.
+  const [framed] = useState(() => embeddable && isEmbedded());
+  const [parentReady, setParentReady] = useState(() => isParentReady());
+  useEffect(
+    () => (framed ? onParentReady(() => setParentReady(true)) : undefined),
+    [framed],
+  );
+  const embedded = framed && parentReady;
   const rootRef = useRef<HTMLDivElement>(null);
   const postHeight = useEmbedHeight(rootRef, embedded);
   const stepTopRef = useRef<HTMLDivElement>(null);
@@ -177,10 +192,12 @@ export function MultiStepForm({
     bringIntoView(rootRef.current);
   }, [embedded, submitState]);
 
-  // Embedded: one measured wrapper around the wizard AND the success screen,
-  // so the observer survives the swap and reports the shrink.
+  // Framed: one measured wrapper around the wizard AND the success screen, so
+  // the observer survives the swap and reports the shrink. Present from first
+  // render whenever framed (an unstyled block — no layout effect before ready),
+  // so the handshake arriving never remounts the form.
   const frame = (content: ReactNode) =>
-    embedded ? (
+    framed ? (
       <div ref={rootRef} data-drsnip-embed="">
         {content}
       </div>
