@@ -25,6 +25,16 @@ export const HEIGHT_MESSAGE_TYPE = "drsnip:height";
  */
 export const SCROLL_MESSAGE_TYPE = "drsnip:scroll";
 
+/**
+ * Registration only — the handshake. Registration stays in its standalone
+ * layout (pinned bar, no height/scroll messages: exactly v93) until the parent
+ * page proves it applies the form's height by sending { type: "drsnip:ready" }
+ * into the frame (the §3a snippet does, on every frame load). A parent with a
+ * fixed-height frame and no listener never sends it, so it keeps the pinned
+ * bar instead of an inline bar hidden below the frame.
+ */
+export const READY_MESSAGE_TYPE = "drsnip:ready";
+
 /** Production parent origins — the only pages allowed to receive messages. */
 export const PARENT_ORIGINS = ["https://drsnip.com", "https://www.drsnip.com"];
 
@@ -49,6 +59,56 @@ type FrameWindow = {
 /** True when running inside an iframe. */
 export function isEmbedded(win: FrameWindow | undefined = globalThis.window): boolean {
   return typeof win !== "undefined" && win.parent !== (win as unknown);
+}
+
+type ReadyEvent = { origin: string; source: unknown; data: unknown };
+
+/** A ready message counts only from an allowed origin AND our real parent. */
+export function isReadyMessage(
+  e: ReadyEvent,
+  origins: string[],
+  win: { parent: unknown },
+): boolean {
+  const d = e.data as { type?: unknown } | null;
+  return (
+    origins.includes(e.origin) &&
+    e.source === win.parent &&
+    !!d &&
+    typeof d === "object" &&
+    d.type === READY_MESSAGE_TYPE
+  );
+}
+
+let parentReady = false;
+const readySubscribers = new Set<() => void>();
+
+/** True once the parent has sent a valid ready message (sticky). */
+export function isParentReady(): boolean {
+  return parentReady;
+}
+
+/** Calls `cb` once the parent is ready (immediately if it already is). */
+export function onParentReady(cb: () => void): () => void {
+  if (parentReady) {
+    cb();
+    return () => {};
+  }
+  readySubscribers.add(cb);
+  return () => {
+    readySubscribers.delete(cb);
+  };
+}
+
+// Listen from the moment this module loads (before React mounts), so a ready
+// message sent on the frame's load event is never missed. Browser + iframe only;
+// under node:test there is no window and nothing is registered.
+if (typeof window !== "undefined" && window.parent !== window) {
+  window.addEventListener("message", (e) => {
+    if (parentReady || !isReadyMessage(e, embedParentOrigins(), window)) return;
+    parentReady = true;
+    for (const cb of [...readySubscribers]) cb();
+    readySubscribers.clear();
+  });
 }
 
 export function buildHeightMessage(height: number): {

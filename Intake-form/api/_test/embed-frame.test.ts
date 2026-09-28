@@ -12,7 +12,11 @@ import { readFileSync } from "node:fs";
 import {
   HEIGHT_MESSAGE_TYPE,
   PARENT_ORIGINS,
+  READY_MESSAGE_TYPE,
   SCROLL_MESSAGE_TYPE,
+  isParentReady,
+  isReadyMessage,
+  onParentReady,
   buildHeightMessage,
   buildScrollMessage,
   isEmbedded,
@@ -108,6 +112,43 @@ describe("scroll message (registration step changes)", () => {
     assert.ok(shell.includes("postEmbedScroll("));
     // The scroll target exists only in embed mode (standalone markup unchanged).
     assert.ok(shell.includes("{embedded && (\n              <div ref={stepTopRef}"));
+  });
+});
+
+describe("ready handshake (registration stays v93 until the parent says ready)", () => {
+  const parent = {};
+  const win = { parent };
+  const ok = { origin: "https://drsnip.com", source: parent, data: { type: "drsnip:ready" } };
+
+  it("accepts only { type: 'drsnip:ready' } from an allowed origin AND the real parent", () => {
+    assert.equal(READY_MESSAGE_TYPE, "drsnip:ready");
+    assert.equal(isReadyMessage(ok, PARENT_ORIGINS, win), true);
+    assert.equal(isReadyMessage({ ...ok, origin: "https://www.drsnip.com" }, PARENT_ORIGINS, win), true);
+    assert.equal(isReadyMessage({ ...ok, origin: "https://evil.example" }, PARENT_ORIGINS, win), false);
+    assert.equal(isReadyMessage({ ...ok, source: {} }, PARENT_ORIGINS, win), false, "not our parent");
+    assert.equal(isReadyMessage({ ...ok, data: { type: "drsnip:height" } }, PARENT_ORIGINS, win), false);
+    assert.equal(isReadyMessage({ ...ok, data: "drsnip:ready" }, PARENT_ORIGINS, win), false);
+    assert.equal(isReadyMessage({ ...ok, data: null }, PARENT_ORIGINS, win), false);
+  });
+
+  it("is not ready by default (no window under node) and subscribers wait", () => {
+    assert.equal(isParentReady(), false);
+    let called = false;
+    const off = onParentReady(() => (called = true));
+    assert.equal(called, false);
+    off();
+  });
+
+  it("the shell's embed layout and messages require framed AND parent-ready", () => {
+    const shell = code("components/MultiStepForm.tsx");
+    assert.ok(shell.includes("const embedded = framed && parentReady;"));
+    assert.ok(shell.includes("useEmbedHeight(rootRef, embedded)"), "no height before ready");
+    assert.ok(shell.includes('embedded ? "relative" : "fixed bottom-0 left-0"'), "pinned bar before ready");
+  });
+
+  it("the frame listens from module load, so a ready sent on the load event is not missed", () => {
+    const lib = code("lib/embed-frame.ts");
+    assert.match(lib, /\nif \(typeof window !== "undefined" && window\.parent !== window\) \{\n  window\.addEventListener\("message"/);
   });
 });
 
