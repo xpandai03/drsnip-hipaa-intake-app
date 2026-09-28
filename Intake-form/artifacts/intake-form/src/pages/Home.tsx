@@ -15,6 +15,14 @@ import {
   Reveal,
 } from "@/components/ui/form-fields";
 import { DatePicker } from "@/components/ui/DatePicker";
+import {
+  COVERAGE_PARTNER,
+  hiddenPolicyNote,
+  insuranceForSubmission,
+  policyholderErrors,
+  showsPartnerPolicy,
+  showsPrimaryPolicy,
+} from "../../../../lib/registration/insurance";
 import { FieldShell } from "@/components/ui/form-fields";
 import {
   FileUploadStub,
@@ -174,6 +182,28 @@ type RegistrationData = Record<MedicalKey, string> & {
   partnerInsuranceCardBack: StubFileRef | null;
 };
 
+type PrimaryKey =
+  | "insuranceCompany"
+  | "insuranceIdNo"
+  | "insuranceGroupNo"
+  | "insuredFirstName"
+  | "insuredLastName"
+  | "insuredDob"
+  | "insuredEmployer"
+  | "insuranceCardFront"
+  | "insuranceCardBack";
+const PRIMARY_TO_PARTNER: Record<PrimaryKey, keyof RegistrationData> = {
+  insuranceCompany: "partnerInsuranceCompany",
+  insuranceIdNo: "partnerInsuranceIdNo",
+  insuranceGroupNo: "partnerInsuranceGroupNo",
+  insuredFirstName: "partnerInsuredFirstName",
+  insuredLastName: "partnerInsuredLastName",
+  insuredDob: "partnerInsuredDob",
+  insuredEmployer: "partnerInsuredEmployer",
+  insuranceCardFront: "partnerInsuranceCardFront",
+  insuranceCardBack: "partnerInsuranceCardBack",
+};
+
 const initialData: RegistrationData = {
   officeLocation: "",
   legalFirstName: "",
@@ -248,10 +278,20 @@ export default function Home() {
 
   // A primary policy is collected for every coverage except "No Insurance".
   // The partner's (secondary) policy is collected only for "Both" (B.4).
-  const showPrimaryInsurance =
-    data.insuranceCoverage !== "" &&
-    data.insuranceCoverage !== "No Insurance";
-  const showPartnerInsurance = data.insuranceCoverage === "Both";
+  const showPrimaryInsurance = showsPrimaryPolicy(data.insuranceCoverage);
+  const showPartnerInsurance = showsPartnerPolicy(data.insuranceCoverage);
+  // The policyholder's name + DOB are required wherever the policyholder is
+  // the partner (lib/registration/insurance.ts — shared with /api/submit).
+  const primaryHolderRequired = data.insuranceCoverage === COVERAGE_PARTNER;
+  // Two canonical records (lib/registration/insurance.ts): the flat fields are
+  // always the patient's OWN policy, the partner* fields always the PARTNER's.
+  // Under "Partner's Insurance" the first block on screen edits the partner
+  // record, so switching Partner's <-> Both never retypes, clears or
+  // relabels anything; the mapping to the payload happens once, at submit.
+  const pk = (k: PrimaryKey): keyof RegistrationData =>
+    primaryHolderRequired ? PRIMARY_TO_PARTNER[k] : k;
+  const submission = insuranceForSubmission(data);
+  const policyNote = hiddenPolicyNote(data);
   // Whose policy the primary set represents — partner's when "Partner's
   // Insurance" is the sole selection, otherwise the patient's own.
   const primaryInsuranceTitle =
@@ -470,6 +510,14 @@ export default function Home() {
             options={INSURANCE_OPTIONS}
             required
           />
+          {policyNote && (
+            <p
+              className="text-sm text-slate-500 -mt-3 ml-1"
+              data-testid="hidden-policy-note"
+            >
+              {policyNote}
+            </p>
+          )}
           <Reveal show={showPrimaryInsurance}>
             <div className="grid gap-6">
               <p className="text-sm font-semibold text-primary">
@@ -477,58 +525,68 @@ export default function Home() {
               </p>
               <TextField
                 label="Insurance Company"
-                value={data.insuranceCompany}
-                onChange={(v) => update({ insuranceCompany: v })}
+                value={data[pk("insuranceCompany")] as string}
+                onChange={(v) => update({ [pk("insuranceCompany")]: v })}
                 required
               />
               <div className="grid gap-6 sm:grid-cols-2">
                 <TextField
                   label="ID No."
-                  value={data.insuranceIdNo}
-                  onChange={(v) => update({ insuranceIdNo: v })}
+                  value={data[pk("insuranceIdNo")] as string}
+                  onChange={(v) => update({ [pk("insuranceIdNo")]: v })}
                   required
                 />
                 <TextField
                   label="Group No."
-                  value={data.insuranceGroupNo}
-                  onChange={(v) => update({ insuranceGroupNo: v })}
+                  value={data[pk("insuranceGroupNo")] as string}
+                  onChange={(v) => update({ [pk("insuranceGroupNo")]: v })}
                 />
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
                 <TextField
                   label="Insured's Legal First Name"
-                  value={data.insuredFirstName}
-                  onChange={(v) => update({ insuredFirstName: v })}
+                  value={data[pk("insuredFirstName")] as string}
+                  onChange={(v) => update({ [pk("insuredFirstName")]: v })}
+                  required={primaryHolderRequired}
+                  hint={
+                    primaryHolderRequired
+                      ? "The partner who holds this policy."
+                      : undefined
+                  }
                 />
                 <TextField
                   label="Insured's Legal Last Name"
-                  value={data.insuredLastName}
-                  onChange={(v) => update({ insuredLastName: v })}
+                  value={data[pk("insuredLastName")] as string}
+                  onChange={(v) => update({ [pk("insuredLastName")]: v })}
+                  required={primaryHolderRequired}
                 />
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
-                <FieldShell label="Insured's Date of Birth">
+                <FieldShell
+                  label="Insured's Date of Birth"
+                  required={primaryHolderRequired}
+                >
                   <DatePicker
-                    value={data.insuredDob}
-                    onChange={(v) => update({ insuredDob: v })}
+                    value={data[pk("insuredDob")] as string}
+                    onChange={(v) => update({ [pk("insuredDob")]: v })}
                   />
                 </FieldShell>
                 <TextField
                   label="Insured's Employer"
-                  value={data.insuredEmployer}
-                  onChange={(v) => update({ insuredEmployer: v })}
+                  value={data[pk("insuredEmployer")] as string}
+                  onChange={(v) => update({ [pk("insuredEmployer")]: v })}
                 />
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
                 <FileUploadStub
                   label="Insurance card — front"
-                  value={data.insuranceCardFront}
-                  onChange={(f) => update({ insuranceCardFront: f })}
+                  value={data[pk("insuranceCardFront")] as StubFileRef | null}
+                  onChange={(f) => update({ [pk("insuranceCardFront")]: f })}
                 />
                 <FileUploadStub
                   label="Insurance card — back"
-                  value={data.insuranceCardBack}
-                  onChange={(f) => update({ insuranceCardBack: f })}
+                  value={data[pk("insuranceCardBack")] as StubFileRef | null}
+                  onChange={(f) => update({ [pk("insuranceCardBack")]: f })}
                 />
               </div>
             </div>
@@ -562,15 +620,18 @@ export default function Home() {
                   label="Insured's Legal First Name"
                   value={data.partnerInsuredFirstName}
                   onChange={(v) => update({ partnerInsuredFirstName: v })}
+                  required
+                  hint="The partner who holds this policy."
                 />
                 <TextField
                   label="Insured's Legal Last Name"
                   value={data.partnerInsuredLastName}
                   onChange={(v) => update({ partnerInsuredLastName: v })}
+                  required
                 />
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
-                <FieldShell label="Insured's Date of Birth">
+                <FieldShell label="Insured's Date of Birth" required>
                   <DatePicker
                     value={data.partnerInsuredDob}
                     onChange={(v) => update({ partnerInsuredDob: v })}
@@ -598,14 +659,16 @@ export default function Home() {
           </Reveal>
         </div>
       ),
+      // Validated on exactly what will be sent (see insuranceForSubmission).
       isValid: () =>
-        data.insuranceCoverage !== "" &&
+        submission.insuranceCoverage !== "" &&
         (!showPrimaryInsurance ||
-          (data.insuranceCompany.trim() !== "" &&
-            data.insuranceIdNo.trim() !== "")) &&
+          (String(submission.insuranceCompany ?? "").trim() !== "" &&
+            String(submission.insuranceIdNo ?? "").trim() !== "")) &&
         (!showPartnerInsurance ||
-          (data.partnerInsuranceCompany.trim() !== "" &&
-            data.partnerInsuranceIdNo.trim() !== "")),
+          (submission.partnerInsuranceCompany.trim() !== "" &&
+            submission.partnerInsuranceIdNo.trim() !== "")) &&
+        Object.keys(policyholderErrors(submission)).length === 0,
     },
     {
       id: "review",
@@ -624,10 +687,10 @@ export default function Home() {
             label="Insurance cards"
             value={
               [
-                data.insuranceCardFront,
-                data.insuranceCardBack,
-                data.partnerInsuranceCardFront,
-                data.partnerInsuranceCardBack,
+                submission.insuranceCardFront,
+                submission.insuranceCardBack,
+                submission.partnerInsuranceCardFront,
+                submission.partnerInsuranceCardBack,
               ].filter(Boolean).length + " uploaded"
             }
           />
@@ -659,9 +722,12 @@ export default function Home() {
     });
   };
 
-  const onSubmit = async (): Promise<boolean> => {
+  const onSubmit = async (): Promise<boolean | string> => {
+    // Only the policy fields that apply to the chosen coverage are sent, in
+    // the unchanged payload shape; both records stay on the page untouched.
+    const applicable = insuranceForSubmission(data);
     const payload = {
-      ...data,
+      ...applicable,
       formType: "registration" as const,
       firstName: data.legalFirstName,
       lastName: data.legalLastName,
@@ -669,8 +735,8 @@ export default function Home() {
       phone: data.mobileNumber,
       dateOfBirth: data.dateOfBirth,
       stateResidence: data.state,
-      insuranceCardFront: data.insuranceCardFront,
-      insuranceCardBack: data.insuranceCardBack,
+      insuranceCardFront: applicable.insuranceCardFront,
+      insuranceCardBack: applicable.insuranceCardBack,
       attribution,
       // Lets the server delete this session's drop-off partial on success.
       partialId,
@@ -690,6 +756,10 @@ export default function Home() {
       // ever runs here. Fires ONLY on a confirmed success, so a validation
       // failure or a network error can never report a conversion.
       if (ok) postConversion("registration");
+      // A server-side validation rejection carries an actionable message.
+      if (!ok && res.status === 400 && typeof json.error === "string" && json.fieldErrors) {
+        return json.error;
+      }
       return ok;
     } catch {
       // HIPAA: never log the submission body.
@@ -702,6 +772,8 @@ export default function Home() {
       screens={screens}
       onSubmit={onSubmit}
       onStepChange={onStepChange}
+      // Embedded on drsnip.com/registration: auto-height + inline bar.
+      embeddable
       successTitle="Thank you — your registration is in."
       successMessage="Our team at DrSnip will review your information and reach out to schedule your consultation. If we need anything else, we'll contact you at the email or phone number you provided."
     />
