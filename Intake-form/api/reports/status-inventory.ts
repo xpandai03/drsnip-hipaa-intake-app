@@ -16,7 +16,8 @@
 // the database, before anything reaches this file.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { displayLabel, labelKey, normalizedKey } from "../../lib/metrics/attendance-contract";
 import { getApproved, getDraft } from "../_lib/attendance-store";
@@ -45,9 +46,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Keep the observed inventory current. Additive: a label that stops
     // occurring is still one the clinic used and may have classified.
-    await db.execute(sql`SELECT public.drsnip_refresh_status_labels()`);
+    await reportQuery(sql`SELECT public.drsnip_refresh_status_labels()`);
 
-    const r = await db.execute<Row>(sql`SELECT * FROM public.drsnip_status_inventory()`);
+    const r = await reportQuery<Row>(sql`SELECT * FROM public.drsnip_status_inventory()`);
     const [approved, draft] = await Promise.all([getApproved(), getDraft()]);
 
     const decided = new Map<string, { classification: string; procedure_signal: boolean }>();

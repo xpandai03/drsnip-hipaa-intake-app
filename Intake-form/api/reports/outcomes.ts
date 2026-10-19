@@ -11,7 +11,8 @@
 // supply statuses, profile ids or any other filter.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { firstOf, sqlState } from "../_lib/reporting";
 import { CLINIC_TZ, CLINIC_TZ_LABEL } from "../_lib/clinic-time";
@@ -68,14 +69,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const [m, r] = await Promise.all([
-      db.execute<Record<string, unknown>>(sql`
+      reportQuery<Record<string, unknown>>(sql`
         -- entry_month as text: the driver turns a SQL date into a local-midnight
         -- JS Date, which is a month early anywhere east of UTC.
         SELECT m.*, m.entry_month::text AS entry_month_text, ec.basis AS cutoff_basis
           FROM public.drsnip_conversion_monthly(${form}::text, ${monthFrom}::date, ${monthToExclusive}::date) m
           CROSS JOIN public.drsnip_evidence_cutoff() ec
       `),
-      db.execute<Record<string, unknown>>(sql`SELECT * FROM public.drsnip_conversion_rules()`),
+      reportQuery<Record<string, unknown>>(sql`SELECT * FROM public.drsnip_conversion_rules()`),
     ]);
     const rows = m.rows;
     const rule = r.rows[0];

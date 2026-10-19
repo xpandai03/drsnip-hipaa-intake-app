@@ -11,7 +11,8 @@
 // PHI: selects only non-identifying categoricals + counts (see api/_lib/reporting.ts).
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import {
   DIMENSION_EXPR,
@@ -78,7 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // embeds RESOLVED_LOCATION_SQL, whose correlation is written with literal
     // `submissions.<col>` qualifiers (see the note in api/_lib/location.ts).
     // Aliasing this to `v` — as it was — makes those qualifiers unresolvable.
-    const result = await db.execute<{ value: string | null; count: number }>(sql`
+    const result = await reportQuery<{ value: string | null; count: number }>(sql`
       SELECT elem AS value, count(*)::int AS count
       FROM submissions
       CROSS JOIN LATERAL jsonb_array_elements_text(
@@ -116,7 +117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     toExclusive,
     location,
   });
-  const result = await db.execute<{ value: string | null; count: number }>(sql`
+  const result = await reportQuery<{ value: string | null; count: number }>(sql`
     SELECT (${sql.raw(expr)})::text AS value, count(*)::int AS count
     FROM submissions
     ${where}

@@ -14,7 +14,8 @@
 //   * Nothing that turns "tells us nothing" into non-attendance.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { firstOf, sqlState } from "../_lib/reporting";
 import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
@@ -70,7 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   )).toISOString().slice(0, 10);
 
   try {
-    const r = await db.execute<Row>(sql`
+    const r = await reportQuery<Row>(sql`
       SELECT * FROM public.drsnip_attendance_metric(
         ${metric}::text, ${win.fromDay}::date, ${toExclusive}::date, ${windowDays}::int)`);
     const row = r.rows[0];

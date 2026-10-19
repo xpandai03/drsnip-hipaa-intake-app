@@ -112,6 +112,9 @@ RETURNS TABLE (version text, state text, rules jsonb, source_note text,
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
+-- Exactly one row. Without ROWS 1 the planner assumes 1,000 and, joined to
+-- every appointment, estimates millions of rows (see the classifier).
+ROWS 1
 SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT r.version, r.state, r.rules, r.source_note, r.confirmed_by_name, r.confirmed_via, r.confirmed_on
@@ -148,10 +151,23 @@ STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 SET statement_timeout = '20s'
+-- 2026-10-19: the first version of this body was planned at 3.4 M rows (a
+-- 1,000-row default for the rules function x every appointment), which made
+-- PostgreSQL 17 JIT-compile it with LLVM. On the then-256 MB database machine
+-- that exhausted memory and took the database down for 30 minutes. The status
+-- is now classified once per DISTINCT label (about 14), the rules are read
+-- once, and JIT is off for every reporting function.
+SET jit = off
 AS $classify$
 -- >>> CONVERSION CLASSIFY BODY >>>
 WITH
-rl AS (SELECT r.rules FROM public.drsnip_conversion_rules() r),
+rl AS (SELECT (SELECT r.rules FROM public.drsnip_conversion_rules() r) AS rules),
+-- One classification per distinct status label, not per appointment.
+lc AS (
+  SELECT l.st, public.drsnip_conversion_status_class(l.st, rl.rules) AS cls
+    FROM (SELECT DISTINCT s.current_status AS st FROM public.appointment_snapshots s) l
+    CROSS JOIN rl
+),
 covered AS (
   SELECT DISTINCT w.patient_source_id AS pid
     FROM public.appointment_sync_windows w
@@ -166,10 +182,11 @@ fe AS (
 -- Every live (not deleted) appointment on the chart, whatever its type or date.
 a AS (
   SELECT s.patient_source_id AS pid,
-         public.drsnip_conversion_status_class(s.current_status, rl.rules) AS cls,
+         lc.cls,
          -- created_at is Eastern wall-clock stored as UTC (see header).
          (s.source_created_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York' AS created_at
-    FROM public.appointment_snapshots s CROSS JOIN rl
+    FROM public.appointment_snapshots s
+    JOIN lc ON lc.st IS NOT DISTINCT FROM s.current_status
    WHERE s.deleted_flag IS NOT TRUE
 ),
 pa AS (
@@ -186,14 +203,18 @@ SELECT fe.pid,
        date_trunc('month', fe.entry_at AT TIME ZONE 'America/Los_Angeles')::date,
        date_trunc('week',  fe.entry_at AT TIME ZONE 'America/Los_Angeles')::date,
        fe.n_subs,
-       EXISTS (SELECT 1 FROM covered c WHERE c.pid = fe.pid),
+       (cv.pid IS NOT NULL),
        coalesce(pa.converted, false),
        pa.conversion_at,
        (pa.conversion_at AT TIME ZONE 'America/Los_Angeles')::date,
        coalesce(pa.has_not_converted, false),
        coalesce(pa.has_unclassified, false),
        (pa.pid IS NOT NULL)
-  FROM fe LEFT JOIN pa ON pa.pid = fe.pid
+  FROM fe
+  LEFT JOIN pa ON pa.pid = fe.pid
+  -- A join, not a correlated EXISTS: the subplan form re-ran the covered set
+  -- for every patient row.
+  LEFT JOIN covered cv ON cv.pid = fe.pid
 -- <<< CONVERSION CLASSIFY BODY <<<
 $classify$;
 
@@ -271,6 +292,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 SET statement_timeout = '20s'
+SET jit = off
 AS $fn$
 DECLARE
   k    constant integer := 5;

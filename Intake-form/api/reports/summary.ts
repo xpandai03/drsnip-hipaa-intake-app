@@ -16,7 +16,8 @@
 // here and Pacific in the CSV, so the same submission had two dates.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import {
   suppressRows,
@@ -57,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // min/max rendered as the CLINIC day so the reported range matches the
   // buckets and the CSV, not the UTC day.
   const [totalRow] = (
-    await db.execute<{ n: number; lo: string | null; hi: string | null }>(sql`
+    await reportQuery<{ n: number; lo: string | null; hi: string | null }>(sql`
       SELECT count(*)::int AS n,
              to_char(min(created_at) AT TIME ZONE ${CLINIC_TZ}, 'YYYY-MM-DD') AS lo,
              to_char(max(created_at) AT TIME ZONE ${CLINIC_TZ}, 'YYYY-MM-DD') AS hi
@@ -65,13 +66,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `)
   ).rows;
 
-  const byForm = await db.execute<{ value: string | null; count: number }>(sql`
+  const byForm = await reportQuery<{ value: string | null; count: number }>(sql`
     SELECT form_type AS value, count(*)::int AS count
     FROM submissions ${where}
     GROUP BY 1 ORDER BY 2 DESC, 1 ASC
   `);
 
-  const byStatus = await db.execute<{ value: string | null; count: number }>(sql`
+  const byStatus = await reportQuery<{ value: string | null; count: number }>(sql`
     SELECT coalesce(n8n_status, 'pending') AS value, count(*)::int AS count
     FROM submissions ${where}
     GROUP BY 1 ORDER BY 2 DESC, 1 ASC
