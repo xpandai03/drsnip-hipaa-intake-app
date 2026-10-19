@@ -12,7 +12,8 @@
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
-import { RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { RefreshCw, AlertTriangle, CheckCircle2, Download } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 import { AdminLayout } from "./AdminLayout";
 import { PageHeader } from "./PageHeader";
 import { clinicTime } from "@/components/reporting/freshness";
@@ -83,7 +84,34 @@ function ConvertedNow({ r }: { r: PeriodRow }) {
   );
 }
 
+/** Admin only: the unclassified-appointment CSV, with the same count the file has. */
+function UnclassifiedExport() {
+  const q = useQuery({
+    queryKey: ["unclassified-count"],
+    queryFn: () => getJson<{ rows: number; no_other_converted: number }>("/api/reports/unclassified-count"),
+    retry: 1,
+  });
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="unclassified-export">
+      <a
+        href="/admin/conversion/unclassified.csv"
+        download
+        data-testid="unclassified-download"
+        className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+        Download unclassified appointments (CSV)
+      </a>
+      <span className="text-xs text-muted-foreground" data-testid="unclassified-count">
+        {q.data ? `${q.data.rows.toLocaleString("en-US")} rows` : q.isError ? "count unavailable" : "counting…"}
+      </span>
+    </div>
+  );
+}
+
 export default function Conversion() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const search = useSearch();
   const view = useMemo(() => parseViewState(search), [search]);
   const go = useCallback((next: ViewState) => {
@@ -140,6 +168,7 @@ export default function Conversion() {
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <Toggle label="Which form" value={view.form} options={FORMS} onChange={(form) => go({ ...view, form })} testPrefix="form" />
           <Toggle label="Group by" value={view.grain} options={GRAINS} onChange={(grain) => go({ ...view, grain })} testPrefix="grain" />
+          {isAdmin && <UnclassifiedExport />}
         </div>
 
         {d && (

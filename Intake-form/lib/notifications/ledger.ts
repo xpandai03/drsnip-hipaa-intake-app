@@ -26,7 +26,9 @@ export type NotificationChannel =
   | "patientmail"
   | "digest"
   // Train 4: system-health alarms raised by the sweep (kind: sync_zero).
-  | "sync";
+  | "sync"
+  // Admin downloads (kind: export_unclassified). User id + row count only.
+  | "export";
 
 /** Who the send was aimed at, as a ROLE. Never an address. */
 export type RecipientClass = "staff" | "operator";
