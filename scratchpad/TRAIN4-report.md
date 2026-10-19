@@ -64,7 +64,9 @@ The hourly sync requests `verbose=true` (needed for status transitions), which r
 
 **Change (live):** on both workflows, `saveDataSuccessExecution` `all` → **`none`**, `saveDataErrorExecution` stays **`all`**, and `saveManualExecutions` `true` → **`false`** (so a manual run cannot store them either). The diff is settings only (`n8n-rollback/*_2026-10-19_train4b_retention_{pre,post}.json`). Verified: the 15:40 catch-up ran (`success`) and was **not** stored.
 
-**Stored executions, not purged (Raunek's call):**
+**Purge (approved by Raunek, 2026-10-19).** Every stored execution of both workflows was deleted through the n8n API: **hourly sync 336** (all success; 2026-10-05 17:05 → 2026-10-19 15:05) and **catch-up 2,008** (2,002 success, 6 error; 2026-10-05 16:40 → 2026-10-19 15:30). That is **2,344 deleted, 0 failed, 0 remaining** for either workflow (re-listed afterwards). The counts are slightly below those in the table that follows because n8n's 14-day pruning had already removed the oldest. Error-only retention stays in place. Registration v2, Consultation v2 and the Jotform workflow were not touched.
+
+**Stored executions as counted before the purge:**
 
 | Workflow | Stored | Success / error | Range | Holding DrChrono appointment records |
 |---|---:|---|---|---|
@@ -136,7 +138,12 @@ Insurance, August: 10 → 11 of 29.
 | In Room | 1 | 1 |
 | Checked In Online, MD In, MD Out | seen only in transition history | n/a |
 
-The blank status is the one that matters. It sits on 859 patients' appointments; a patient with only blank-status appointments is "Unclassified only" (0–2 patients per month at present).
+**Does the blank status move the percentages? Barely** (read-only, 5 s timeout, after the 16:05 sync):
+- 862 patients have a blank-status appointment. **860 of them also have a converted-set appointment**, so they are converted either way.
+- **Only 2 have no converted appointment.** Both are registration patients (of 2,437) with blank or unclassified statuses only, about 0.08 percentage points. None are insurance patients (11 of 170 have a blank).
+- Blank-status appointments are **almost all in the past**: 891 past, 3 future, 0 undated (clinic wall-clock, 2026-01-30 → 2026-12-02).
+- They are spread across the intake months in line with volume: Jan 1, May 1, Jun 43, Jul 177, Aug 240, Sep 231, Oct 199, Nov 1, Dec 1.
+- They read like past appointments whose status was simply never set, sitting beside a converted appointment on the same chart.
 
 ## Step 4: conversion by cohort
 
@@ -191,16 +198,18 @@ The subject is `DrSnip intake sweep: …` (a colon). Test identities are exclude
 
 **Rollback:** `fly deploy -a drsnip-intake-demo --image registry.fly.io/drsnip-intake-demo:deployment-01M3M8MPPYFS4YR0H3E53SCHB5` (v96). Its functions and the v1 rules row are still installed. Never roll back to v75–v92.
 
-## Deferred (not touched)
+## Deferred to Train 5, in priority order
 
-- **Train 1b:** `Sheets: ManualReview` still runs before Respond, with bare `$json` refs, in both v2 workflows.
-- **Train 1c:** Insurance v1 is still `saveDataSuccessExecution: none`.
-- **The manual-review investigation:** the backlog is 255 non-test rows; the consultation rate is 18.5% since Sep 24.
+1. **DrChrono timestamp normalisation for Journeys and the booking metrics.** Stored `source_created_at`/`source_updated_at` are Eastern wall-clock values and `scheduled_time` is Pacific, all labelled UTC. The older metrics compare them with true-UTC submission times, so they are off by hours. The new conversion SQL already corrects `created_at`.
+2. **App reconnect instead of exit on a DB drop.** The process exited (code 1) at 15:37:03 on an unhandled pool error when the DB restarted under it.
+3. **Train 1b.** Move `Sheets: ManualReview` after Respond in both v2 workflows, with explicit node references.
+4. **Insurance v1 retention on** (`saveDataSuccessExecution: all`), the prerequisite for Train 1c.
+5. **The manual-review investigation.** 257 open (test rows excluded); the consultation rate is 18.5% since Sep 24.
+6. **A retention decision for the three audited workflows holding DrChrono patient-search responses:** Registration v2 (302 stored), Consultation v2 (201), legacy Jotform (1).
+
+## Also deferred (unchanged from the brief)
+
 - **The Journeys period bug:** the hard-coded periods end at "September 2026", which runs to today. The sync fix does not resolve it.
 - **The legacy Jotform workflow:** an inline API key in `Download File`, and no `errorWorkflow`.
 - **Test-data cleanup:** charts 135620405 and 135966665, 15 Qaignore rows, and the ManualReview tab rows.
 - **`8faf35fc`:** stuck since 2026-09-14.
-- **New, found this train:**
-  - Stored DrChrono timestamps are Eastern/Pacific wall-clock values labelled UTC. The older Journeys/booking metrics compare them directly, so they are off by hours. The new conversion SQL corrects `created_at`.
-  - The app process exits when its DB connection drops (unhandled pool error at 15:37:03).
-  - The purge of the stored sync executions above awaits Raunek.
