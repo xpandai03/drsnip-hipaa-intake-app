@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { pool } from "@workspace/db";
 import { requireServiceToken } from "../_lib/service-auth";
 import { record as recordNotification } from "../../lib/notifications/ledger";
+import { TEST_IDENTITY_SQL } from "../../lib/notifications/test-identities";
 import {
   renderDigest,
   shouldRecordSyncZero,
@@ -43,6 +44,8 @@ function consoleBaseUrl(): string {
 }
 
 async function collect(): Promise<DigestData> {
+  // Every count below excludes test identities (lib/notifications/test-identities.ts).
+  //
   // Stuck: no status AND no response timestamp. `updated_at` is deliberately
   // NOT used — the bridge UPDATE never bumps it, so every row in the table has
   // updated_at = created_at (Train 2 report).
@@ -51,41 +54,53 @@ async function collect(): Promise<DigestData> {
   // 'not_applicable' rows: those carry a terminal status and a response body,
   // so they are not stuck, they are done.
   const stuck = await pool.query(
-    `SELECT id, form_type,
-            floor(EXTRACT(epoch FROM (now() - created_at)) / 60)::int AS age_minutes
-       FROM submissions
-      WHERE n8n_status IS NULL
-        AND n8n_response_at IS NULL
-        AND form_type IN ('registration', 'consultation')
-        AND created_at < now() - ($1 || ' minutes')::interval
-      ORDER BY created_at`,
+    `SELECT s.id, s.form_type,
+            floor(EXTRACT(epoch FROM (now() - s.created_at)) / 60)::int AS age_minutes
+       FROM submissions s
+      WHERE s.n8n_status IS NULL
+        AND s.n8n_response_at IS NULL
+        AND s.form_type IN ('registration', 'consultation')
+        AND s.created_at < now() - ($1 || ' minutes')::interval
+        AND NOT ${TEST_IDENTITY_SQL}
+      ORDER BY s.created_at`,
     [String(STUCK_AFTER_MINUTES)],
   );
 
   const failed = await pool.query(
-    `SELECT COALESCE(n8n_response_body->>'error_message', 'unclassified') AS error_message,
+    `SELECT COALESCE(s.n8n_response_body->>'error_message', 'unclassified') AS error_message,
             count(*)::int AS count,
-            array_agg(id::text ORDER BY created_at) AS ids
-       FROM submissions
-      WHERE n8n_status = 'failed'
-        AND created_at > now() - interval '24 hours'
+            array_agg(s.id::text ORDER BY s.created_at) AS ids
+       FROM submissions s
+      WHERE s.n8n_status = 'failed'
+        AND s.created_at > now() - interval '24 hours'
+        AND NOT ${TEST_IDENTITY_SQL}
       GROUP BY 1
       ORDER BY 2 DESC`,
   );
 
   const mr = await pool.query(
     `SELECT count(*)::int AS open,
-            floor(EXTRACT(epoch FROM (now() - min(created_at))) / 86400)::int AS oldest_days,
-            count(*) FILTER (WHERE created_at > now() - interval '24 hours')::int AS added_24h
-       FROM submissions
-      WHERE n8n_status = 'manual_review'`,
+            floor(EXTRACT(epoch FROM (now() - min(s.created_at))) / 86400)::int AS oldest_days,
+            count(*) FILTER (WHERE s.created_at > now() - interval '24 hours')::int AS added_24h
+       FROM submissions s
+      WHERE s.n8n_status = 'manual_review'
+        AND NOT ${TEST_IDENTITY_SQL}`,
   );
 
+  // A sender that is switched off on purpose is not a problem. App-side
+  // patientmail is a redundant secondary notifier (the staff email goes out
+  // through the n8n Gmail nodes); it runs with PATIENTMAIL_ENABLED=false
+  // (Train 4), so its `skipped` rows — `disabled`, and the older
+  // `no_recipient` — are excluded here. A patientmail ERROR still shows.
   const problems = await pool.query(
     `SELECT channel, outcome, detail, count(*)::int AS count
-       FROM notification_events
+       FROM notification_events n
       WHERE outcome <> 'sent'
         AND created_at > now() - interval '24 hours'
+        AND NOT (channel = 'patientmail' AND outcome = 'skipped')
+        -- A send about a test identity is not a problem either.
+        AND NOT EXISTS (SELECT 1 FROM submissions s
+                         WHERE s.id = n.submission_id AND ${TEST_IDENTITY_SQL})
       GROUP BY 1, 2, 3
       ORDER BY 4 DESC`,
   );

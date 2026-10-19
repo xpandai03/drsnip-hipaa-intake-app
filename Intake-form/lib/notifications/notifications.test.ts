@@ -8,6 +8,7 @@
 
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
 import {
   isQuiet,
   renderDigest,
@@ -345,5 +346,39 @@ describe("sync_zero alarm (Train 4)", () => {
     assert.equal(shouldRecordSyncZero(streak(7), true), false);
     assert.equal(shouldRecordSyncZero(streak(5), false), false);
     assert.equal(shouldRecordSyncZero(undefined, false), false);
+  });
+});
+
+describe("Train 4 — a deliberately-off patientmail is not a digest problem", () => {
+  const SWEEP = readFileSync(new URL("../../api/internal/sweep.ts", import.meta.url), "utf8");
+  it("the problems query drops patientmail skips but keeps patientmail errors", () => {
+    assert.match(SWEEP, /AND NOT \(channel = 'patientmail' AND outcome = 'skipped'\)/);
+    assert.ok(!/channel = 'patientmail' AND outcome = 'error'/.test(SWEEP), "errors must not be filtered");
+  });
+});
+
+describe("Train 4 — test identities are not counted", () => {
+  const SWEEP = readFileSync(new URL("../../api/internal/sweep.ts", import.meta.url), "utf8");
+  it("recognises the documented recipe", async () => {
+    const { isTestIdentity } = await import("./test-identities");
+    assert.equal(isTestIdentity({ email: "ops@xpandai.com" }), true);
+    assert.equal(isTestIdentity({ email: "OPS@XPANDAI.COM" }), true);
+    assert.equal(isTestIdentity({ firstName: "Rehearsal", lastName: "Qaignore0819" }), true);
+    assert.equal(isTestIdentity({ firstName: "Smoke", lastName: "Run" }), true);
+    assert.equal(isTestIdentity({ firstName: "Pat", lastName: "Tester" }), true);
+    assert.equal(isTestIdentity({ email: "someone@example.com", firstName: "Pat", lastName: "Jones" }), false);
+    assert.equal(isTestIdentity({ email: "x@notxpandai.com.au" }), false);
+  });
+  it("every submissions read in the sweep excludes them (stuck, failed, manual review, problems)", () => {
+    assert.equal((SWEEP.match(/\$\{TEST_IDENTITY_SQL\}/g) ?? []).length, 4);
+  });
+});
+
+describe("Train 4 — the subject uses a colon, not an em dash", () => {
+  it("noisy and quiet subjects", () => {
+    assert.equal(renderDigest(BASE).subject, "DrSnip intake sweep: 1 stuck, 2 failed 24h");
+    const quiet: DigestData = { ...BASE, stuck: [], failed24h: [], notificationProblems24h: [] };
+    assert.equal(renderDigest(quiet).subject, "DrSnip intake sweep: all clear");
+    assert.ok(!renderDigest(BASE).subject.includes("—"));
   });
 });
