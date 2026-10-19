@@ -373,3 +373,12 @@ describe("Train 4 — test identities are not counted", () => {
     assert.equal((SWEEP.match(/\$\{TEST_IDENTITY_SQL\}/g) ?? []).length, 4);
   });
 });
+
+describe("Train 4 — the subject uses a colon, not an em dash", () => {
+  it("noisy and quiet subjects", () => {
+    assert.equal(renderDigest(BASE).subject, "DrSnip intake sweep: 1 stuck, 2 failed 24h");
+    const quiet: DigestData = { ...BASE, stuck: [], failed24h: [], notificationProblems24h: [] };
+    assert.equal(renderDigest(quiet).subject, "DrSnip intake sweep: all clear");
+    assert.ok(!renderDigest(BASE).subject.includes("—"));
+  });
+});

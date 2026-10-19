@@ -196,8 +196,8 @@ export function renderDigest(d: DigestData): RenderedDigest {
 
   return {
     subject: quiet
-      ? "DrSnip intake sweep — all clear"
-      : `DrSnip intake sweep — ${d.stuck.length} stuck, ${failedTotal} failed 24h`,
+      ? "DrSnip intake sweep: all clear"
+      : `DrSnip intake sweep: ${d.stuck.length} stuck, ${failedTotal} failed 24h`,
     body: lines.join("\n") + "\n",
     quiet,
   };
