@@ -2,7 +2,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { pool } from "@workspace/db";
 import { requireServiceToken } from "../_lib/service-auth";
 import { record as recordNotification } from "../../lib/notifications/ledger";
-import { renderDigest, type DigestData } from "../../lib/notifications/digest";
+import {
+  renderDigest,
+  shouldRecordSyncZero,
+  type DigestData,
+  type SyncZeroStatus,
+} from "../../lib/notifications/digest";
 
 // ---------------------------------------------------------------------------
 // GET /api/internal/sweep — Train 3.
@@ -86,6 +91,7 @@ async function collect(): Promise<DigestData> {
   );
 
   return {
+    syncZero: await collectSyncZero(),
     generatedAt: new Date(),
     consoleBaseUrl: consoleBaseUrl(),
     stuck: stuck.rows.map((r) => ({
@@ -113,6 +119,60 @@ async function collect(): Promise<DigestData> {
       count: Number(r.count),
     })),
   };
+}
+
+/**
+ * Train 4 — hourly appointment-sync health. Counts the current run of
+ * consecutive successful INCREMENTAL runs that saw 0 appointments (the weekly
+ * reconcile and operator catch-ups are excluded: they widen the window and
+ * would mask a broken hourly one). Read-only. A failure here must never sink
+ * the digest, so it degrades to "unknown" (undefined).
+ */
+async function collectSyncZero(): Promise<SyncZeroStatus | undefined> {
+  try {
+    const r = await pool.query(
+      `WITH recent AS (
+         SELECT started_at, appointments_seen
+           FROM appointment_sync_runs
+          WHERE scope_key = 'practice_incremental'
+            AND mode = 'incremental'
+            AND outcome = 'success'
+          ORDER BY started_at DESC
+          LIMIT 200
+       ), last_nonzero AS (
+         SELECT max(started_at) AS at FROM recent WHERE appointments_seen > 0
+       )
+       SELECT count(*) FILTER (WHERE r.started_at > coalesce(l.at, '-infinity'))::int AS zero_streak,
+              min(r.started_at) FILTER (WHERE r.started_at > coalesce(l.at, '-infinity')) AS streak_since,
+              (SELECT appointments_seen FROM recent ORDER BY started_at DESC LIMIT 1) AS last_seen
+         FROM recent r CROSS JOIN last_nonzero l`,
+    );
+    const row = r.rows[0] ?? {};
+    return {
+      zeroStreak: Number(row.zero_streak ?? 0),
+      streakSince: row.streak_since ? new Date(row.streak_since) : null,
+      lastSeen:
+        row.last_seen === null || row.last_seen === undefined ? null : Number(row.last_seen),
+    };
+  } catch (err) {
+    console.error(
+      "[sweep] sync health read failed",
+      err instanceof Error ? err.name : "UnknownError",
+    );
+    return undefined;
+  }
+}
+
+/** Has this zero streak already been ledgered? One sync_zero row per streak. */
+async function syncZeroAlreadyRecorded(since: Date | null): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 FROM notification_events
+      WHERE channel = 'sync' AND kind = 'sync_zero'
+        AND created_at >= coalesce($1::timestamptz, '-infinity')
+      LIMIT 1`,
+    [since ? since.toISOString() : null],
+  );
+  return r.rowCount !== null && r.rowCount > 0;
 }
 
 /**
@@ -186,6 +246,27 @@ export default async function handler(
   };
 
   if (send) {
+    // The sync alarm is ledgered once per zero streak, so it appears in the
+    // digest's skips/errors section for 24h and stays on record afterwards.
+    if (data.syncZero) {
+      try {
+        const already = await syncZeroAlreadyRecorded(data.syncZero.streakSince);
+        if (shouldRecordSyncZero(data.syncZero, already)) {
+          await recordNotification({
+            channel: "sync",
+            kind: "sync_zero",
+            recipientClass: "operator",
+            outcome: "error",
+            detail: `${data.syncZero.zeroStreak} consecutive hourly runs saw 0 appointments`,
+          });
+        }
+      } catch (err) {
+        console.error(
+          "[sweep] sync_zero ledger check failed",
+          err instanceof Error ? err.name : "UnknownError",
+        );
+      }
+    }
     delivery = await deliver(digest.subject, digest.body);
     // The tick itself is ledgered even when the digest is empty, so silence is
     // distinguishable from "the sweep is not running".
@@ -206,6 +287,7 @@ export default async function handler(
         failed_24h: data.failed24h.reduce((a, g) => a + g.count, 0),
         manual_review_open: data.manualReview.open,
         notification_problems_24h: data.notificationProblems24h.length,
+        sync_zero_streak: data.syncZero?.zeroStreak ?? null,
         sent: send,
         delivery: delivery.outcome,
       }),
@@ -217,6 +299,7 @@ export default async function handler(
     failed24h: data.failed24h,
     manualReview: data.manualReview,
     notificationProblems24h: data.notificationProblems24h,
+    syncZero: data.syncZero ?? null,
     quiet: digest.quiet,
     subject: digest.subject,
     body: digest.body,

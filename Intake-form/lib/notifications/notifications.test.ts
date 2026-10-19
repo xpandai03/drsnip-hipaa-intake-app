@@ -11,6 +11,9 @@ import { describe, it } from "node:test";
 import {
   isQuiet,
   renderDigest,
+  shouldRecordSyncZero,
+  syncZeroAlarming,
+  SYNC_ZERO_THRESHOLD,
   type DigestData,
 } from "./digest";
 import { sanitizeDetail } from "./ledger";
@@ -296,5 +299,51 @@ describe("stuck threshold", () => {
 
   it("an unparseable timestamp falls back to pending rather than crying wolf", () => {
     assert.equal(syncStatusCell({ n8nStatus: null, createdAt: "nonsense" }, NOW), "pending");
+  });
+});
+
+describe("sync_zero alarm (Train 4)", () => {
+  const QUIET: DigestData = {
+    ...BASE,
+    stuck: [],
+    failed24h: [],
+    notificationProblems24h: [],
+  };
+  const streak = (n: number) => ({
+    zeroStreak: n,
+    streakSince: n > 0 ? new Date("2026-10-19T08:05:00Z") : null,
+    lastSeen: n > 0 ? 0 : 12,
+  });
+
+  it("the threshold is 6 consecutive runs", () => {
+    assert.equal(SYNC_ZERO_THRESHOLD, 6);
+  });
+
+  it("counts a streak, not any single empty hour", () => {
+    assert.equal(syncZeroAlarming(streak(0)), false);
+    assert.equal(syncZeroAlarming(streak(1)), false);
+    assert.equal(syncZeroAlarming(streak(5)), false);
+    assert.equal(syncZeroAlarming(streak(6)), true);
+    assert.equal(syncZeroAlarming(streak(690)), true);
+    assert.equal(syncZeroAlarming(undefined), false);
+  });
+
+  it("an alarming streak makes the digest non-quiet and says so", () => {
+    const d: DigestData = { ...QUIET, syncZero: streak(6) };
+    assert.equal(isQuiet(d), false);
+    assert.match(renderDigest(d).body, /Appointment sync: ALERT, 6 consecutive hourly runs saw 0 appointments/);
+  });
+
+  it("a healthy or short streak leaves a quiet digest quiet", () => {
+    assert.equal(isQuiet({ ...QUIET, syncZero: streak(0) }), true);
+    assert.equal(isQuiet({ ...QUIET, syncZero: streak(5) }), true);
+    assert.match(renderDigest({ ...QUIET, syncZero: streak(0) }).body, /Appointment sync: ok, 0 empty runs in a row, latest run saw 12/);
+  });
+
+  it("is ledgered once per streak", () => {
+    assert.equal(shouldRecordSyncZero(streak(6), false), true);
+    assert.equal(shouldRecordSyncZero(streak(7), true), false);
+    assert.equal(shouldRecordSyncZero(streak(5), false), false);
+    assert.equal(shouldRecordSyncZero(undefined, false), false);
   });
 });

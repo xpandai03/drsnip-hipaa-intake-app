@@ -57,17 +57,36 @@ function hasForbiddenField(obj) {
 // Timestamps
 // ---------------------------------------------------------------------------
 
+/** The practice's clock. `since` is rendered in it (see toDrChronoStamp). */
+const PRACTICE_TIME_ZONE = "America/Los_Angeles";
+
 /**
  * DrChrono's documented `since` format: ISO 8601 with NO timezone
- * ("2014-02-24T15:32:19"). We hold watermarks in UTC and render them in this
- * shape. Because the parameter carries no zone, the server's interpretation is
- * not something we control — which is exactly why every incremental read also
- * applies an overlap window (see sinceWithOverlap).
+ * ("2014-02-24T15:32:19"). DrChrono does NOT read it as UTC. Its stored
+ * created_at/updated_at behave as US/Eastern wall-clock (the minimum lag
+ * between created_at and our first observation is 4.0h, measured 2026-10-19),
+ * and scheduled_time is Pacific. We hold watermarks in UTC and render them as
+ * Pacific wall-clock time, which is never later than intended whether DrChrono
+ * reads it as Eastern or Pacific (at worst, 3 hours of extra overlap).
+ *
+ * Rendering the UTC clock here instead (as the hourly workflow did from
+ * 2026-09-20 to 2026-10-19) pushes every window ~4 hours into the future: every
+ * hourly run returned an empty page and still logged success. The overlap in
+ * sinceWithOverlap remains, for records updated at a window boundary.
  */
-function toDrChronoStamp(value) {
+function toDrChronoStamp(value, timeZone) {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().replace(/\.\d{3}Z$/, "");
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat("en-US", {
+    timeZone: timeZone || PRACTICE_TIME_ZONE,
+    hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(d)) {
+    parts[p.type] = p.value;
+  }
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
 }
 
 /** Parse a source timestamp to an ISO string, or null. Never throws. */

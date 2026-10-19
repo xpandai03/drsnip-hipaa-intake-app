@@ -298,9 +298,22 @@ describe("HTTP handling", () => {
 });
 
 describe("timestamps and the incremental cursor", () => {
-  it("renders `since` in DrChrono's documented no-timezone ISO shape", () => {
-    assert.equal(S.toDrChronoStamp("2026-07-02T11:00:00.000Z"), "2026-07-02T11:00:00");
+  it("renders `since` as zone-less Pacific wall-clock time", () => {
+    // DrChrono does not read a zone-less `since` as UTC; a UTC rendering put
+    // every hourly window ~4h in the future (Sep 20 – Oct 19, 2026).
+    assert.equal(S.toDrChronoStamp("2026-07-02T11:00:00.000Z"), "2026-07-02T04:00:00"); // PDT, UTC-7
+    assert.equal(S.toDrChronoStamp("2026-01-15T20:00:00.000Z"), "2026-01-15T12:00:00"); // PST, UTC-8
+    assert.equal(S.toDrChronoStamp("2026-10-19T00:30:00.000Z"), "2026-10-18T17:30:00"); // crosses midnight
     assert.equal(S.toDrChronoStamp("nope"), null);
+  });
+
+  it("never renders a `since` later than the instant it was given", () => {
+    // The failure mode was a window in the future. A Pacific rendering read back
+    // as Pacific is the same instant; read as Eastern or UTC it is earlier.
+    for (const iso of ["2026-03-08T09:59:59Z", "2026-11-01T08:30:00Z", "2026-10-19T14:05:00Z"]) {
+      const stamp = S.toDrChronoStamp(iso)!;
+      assert.ok(new Date(stamp + "Z").getTime() <= new Date(iso).getTime(), iso);
+    }
   });
 
   it("preserves underlying UTC while staying Pacific-reportable", () => {
