@@ -19,6 +19,7 @@ import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminReports from "@/pages/admin/Reports";
 import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
+import AdminConversion from "@/pages/admin/Conversion";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -124,6 +125,13 @@ function Router() {
       <Route path="/admin/outcomes">
         <WithAuth>
           <AdminOutcomes />
+        </WithAuth>
+      </Route>
+
+      {/* Conversion by entry cohort with a cumulative fill (Train 4). */}
+      <Route path="/admin/conversion">
+        <WithAuth>
+          <AdminConversion />
         </WithAuth>
       </Route>
 

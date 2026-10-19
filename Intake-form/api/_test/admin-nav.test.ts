@@ -64,12 +64,15 @@ describe("the mobile bottom bar fits", () => {
 describe("nothing is unreachable", () => {
   const routes = allNavRoutes();
 
-  it("reaches all eleven destinations, with no duplicates", () => {
-    // Five slot routes + five children. More than the six the old
+  it("reaches all twelve destinations, with no duplicates", () => {
+    // Five slot routes + seven children. More than the six the old
     // horizontally-scrolling strip exposed.
-    // Monthly outcomes (2026-09) is the eleventh.
-    assert.equal(routes.length, 11);
-    assert.equal(new Set(routes).size, 11);
+    // Monthly outcomes (2026-09) is the eleventh; Conversion by cohort
+    // (Train 4) the twelfth — two taps on mobile: Reports, then the entry.
+    assert.equal(routes.length, 12);
+    assert.equal(new Set(routes).size, 12);
+    const reports = PRIMARY_NAV.find((e) => e.id === "reports")!;
+    assert.ok(reports.children!.some((c) => c.to === "/admin/conversion"));
   });
 
   it("exposes the real-data journeys page, separately from the synthetic demo", () => {
@@ -278,13 +281,16 @@ describe("real reporting is easy to find", () => {
     assert.equal(reports.to, "/admin/reports");
   });
 
-  it("Monthly outcomes is FIRST under Reports, Patient journeys second", () => {
-    // The clinic's main question is where each month's patients stand now;
-    // "how fast within a window" is the second. Both are real data.
+  it("Monthly outcomes is FIRST under Reports, Conversion by cohort second, Patient journeys third", () => {
+    // The clinic's main question is where each month's patients stand now, and
+    // how that filled in (Train 4); "how fast within a window" comes after.
+    // All are real data.
     assert.equal(reports.children![0].to, "/admin/outcomes");
     assert.equal(reports.children![0].demo, undefined);
-    assert.equal(reports.children![1].to, "/admin/journeys");
+    assert.equal(reports.children![1].to, "/admin/conversion");
     assert.equal(reports.children![1].demo, undefined);
+    assert.equal(reports.children![2].to, "/admin/journeys");
+    assert.equal(reports.children![2].demo, undefined);
   });
 
   it("the demo is LAST under Reports and says so in its own label", () => {

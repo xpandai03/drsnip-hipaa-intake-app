@@ -95,6 +95,7 @@ export const PRIMARY_NAV: NavEntry[] = [
     // Activity, with nothing to mark it as invented.
     children: [
       { to: "/admin/outcomes", label: "Monthly outcomes" },
+      { to: "/admin/conversion", label: "Conversion by cohort" },
       { to: "/admin/journeys", label: "Patient journeys" },
       { to: "/admin/dashboard", label: "Intake dashboard" },
       { to: "/admin/activity", label: "Activity" },
