@@ -356,3 +356,20 @@ describe("Train 4 — a deliberately-off patientmail is not a digest problem", (
     assert.ok(!/channel = 'patientmail' AND outcome = 'error'/.test(SWEEP), "errors must not be filtered");
   });
 });
+
+describe("Train 4 — test identities are not counted", () => {
+  const SWEEP = readFileSync(new URL("../../api/internal/sweep.ts", import.meta.url), "utf8");
+  it("recognises the documented recipe", async () => {
+    const { isTestIdentity } = await import("./test-identities");
+    assert.equal(isTestIdentity({ email: "ops@xpandai.com" }), true);
+    assert.equal(isTestIdentity({ email: "OPS@XPANDAI.COM" }), true);
+    assert.equal(isTestIdentity({ firstName: "Rehearsal", lastName: "Qaignore0819" }), true);
+    assert.equal(isTestIdentity({ firstName: "Smoke", lastName: "Run" }), true);
+    assert.equal(isTestIdentity({ firstName: "Pat", lastName: "Tester" }), true);
+    assert.equal(isTestIdentity({ email: "someone@example.com", firstName: "Pat", lastName: "Jones" }), false);
+    assert.equal(isTestIdentity({ email: "x@notxpandai.com.au" }), false);
+  });
+  it("every submissions read in the sweep excludes them (stuck, failed, manual review, problems)", () => {
+    assert.equal((SWEEP.match(/\$\{TEST_IDENTITY_SQL\}/g) ?? []).length, 4);
+  });
+});
