@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import { RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { PageHeader } from "./PageHeader";
@@ -222,6 +222,13 @@ export default function Outcomes() {
             <span className="inline-flex items-center rounded-full border border-emerald-600/30 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
               Actual intake data
             </span>
+            <Link
+              href={`/admin/conversion?form=${view.cohort}`}
+              data-testid="link-cohort-view"
+              className="rounded-full border px-2 py-0.5 font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Conversion by cohort →
+            </Link>
           </div>
         </PageHeader>
 

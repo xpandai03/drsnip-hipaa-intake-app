@@ -54,6 +54,19 @@ const LIVE: Card[] = [
     testId: "reports-card-outcomes",
   },
   {
+    to: "/admin/conversion",
+    title: "Conversion by cohort",
+    blurb:
+      "Patients grouped by the month or week their first form came in: the share converted as of today, and how it filled in over the following periods.",
+    answers: [
+      "Of May's registrations, how many had converted by June, July, August?",
+      "How do this month's insurance inquiries compare with last month's?",
+      "Week by week, is conversion getting faster?",
+    ],
+    icon: CalendarCheck,
+    testId: "reports-card-conversion",
+  },
+  {
     to: "/admin/journeys?journey=registration",
     title: "Registration form progression",
     blurb:

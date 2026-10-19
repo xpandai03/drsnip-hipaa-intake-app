@@ -48,6 +48,7 @@ import reportsFreshnessHandler from "../api/reports/freshness";
 import reportsStatusInventoryHandler from "../api/reports/status-inventory";
 import reportsAttendanceHandler from "../api/reports/attendance";
 import reportsOutcomesHandler from "../api/reports/outcomes";
+import reportsConversionCohortsHandler from "../api/reports/conversion-cohorts";
 import attendanceDraftHandler from "../api/attendance-mapping/draft";
 import attendancePreviewHandler from "../api/attendance-mapping/preview";
 import attendanceApproveHandler from "../api/attendance-mapping/approve";
@@ -122,6 +123,7 @@ app.all("/api/reports/freshness", adapt(reportsFreshnessHandler));
 app.all("/api/reports/status-inventory", adapt(reportsStatusInventoryHandler));
 app.all("/api/reports/attendance", adapt(reportsAttendanceHandler));
 app.all("/api/reports/outcomes", adapt(reportsOutcomesHandler));
+app.all("/api/reports/conversion-cohorts", adapt(reportsConversionCohortsHandler));
 // Attendance definition review. Draft/preview are admin-gated; approve/withdraw
 // need the explicit approval capability (api/_lib/auth.ts).
 app.all("/api/attendance-mapping/draft", adapt(attendanceDraftHandler));
