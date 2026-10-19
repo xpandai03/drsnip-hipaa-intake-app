@@ -102,26 +102,26 @@ function DropOffsPage() {
   const rows = query.data?.partials ?? [];
 
   return (
-    <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto">
+    <div>
+      <div>
         <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-white">
+            <h1 className="text-2xl font-semibold tracking-tight text-[var(--sh-fg)]">
               Registration drop-offs
               {query.data && (
-                <span className="ml-3 text-xl font-normal text-white/70">
+                <span className="ml-3 text-xl font-normal text-[var(--sh-muted)] sh-num">
                   {query.data.total.toLocaleString()}
                 </span>
               )}
             </h1>
-            <p className="text-sm text-white/75 mt-1">
+            <p className="text-sm text-[var(--sh-muted)] mt-1">
               Started registration and entered contact info, but didn't submit.
               Recent activity (last 24h) is hidden by default — they may still be
               finishing.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-white/80 bg-white/10 rounded-lg px-3 py-1.5">
+            <label className="flex items-center gap-2 text-sm text-[var(--sh-muted)] border border-[var(--sh-border)] bg-white rounded-md px-3 py-1.5">
               <input
                 type="checkbox"
                 checked={includeRecent}
@@ -133,7 +133,7 @@ function DropOffsPage() {
             <select
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="bg-white/10 text-white/90 text-sm rounded-lg px-3 py-1.5 border border-white/10"
+              className="min-h-10 bg-white text-[var(--sh-fg)] text-sm rounded-md px-2 py-1.5 border border-[var(--sh-border)]"
               data-testid="dropoff-location"
             >
               <option value="all" className="text-slate-900">All locations</option>
@@ -154,9 +154,9 @@ function DropOffsPage() {
           </div>
         </header>
 
-        <section className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-5">
+        <section className="border border-[var(--sh-border)] bg-[var(--sh-card)] p-4 sm:p-6">
           {query.isLoading ? (
-            <Skeleton className="h-64 rounded-2xl" />
+            <Skeleton className="h-64" />
           ) : query.isError ? (
             <div className="py-14 text-center">
               <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />

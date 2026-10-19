@@ -427,24 +427,24 @@ function SubmissionsPage() {
     filters.search !== "";
 
   return (
-    <div className="min-h-screen pt-16 md:pt-24 pb-28 md:pb-12 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div>
+      <div>
+        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Submissions</h1>
-            <p className="text-sm text-white/75 mt-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-[var(--sh-fg)]">Submissions</h1>
+            <p className="text-sm text-[var(--sh-muted)] mt-1">
               Every patient intake submission. Click any row for the full detail.
             </p>
           </div>
           {/* Export CSV — one file per form (admin only; server enforces via
               requireAdmin). Each button exports only that form's rows. */}
           {isAdmin && (
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               <Button
                 type="button"
                 variant="secondary"
                 onClick={() => onExport("registration")}
-                className="w-full justify-center bg-white text-primary hover:bg-white/90 sm:w-auto sm:shrink-0"
+                className="w-full justify-center bg-[var(--sh-accent)] text-white hover:opacity-90 sm:w-auto sm:shrink-0"
                 data-testid="export-registration-btn"
               >
                 <Download className="w-4 h-4" />
@@ -454,7 +454,7 @@ function SubmissionsPage() {
                 type="button"
                 variant="secondary"
                 onClick={() => onExport("consultation")}
-                className="w-full justify-center bg-white text-primary hover:bg-white/90 sm:w-auto sm:shrink-0"
+                className="w-full justify-center bg-[var(--sh-accent)] text-white hover:opacity-90 sm:w-auto sm:shrink-0"
                 data-testid="export-consultation-btn"
               >
                 <Download className="w-4 h-4" />
@@ -464,7 +464,7 @@ function SubmissionsPage() {
                 type="button"
                 variant="secondary"
                 onClick={() => onExport("insurance")}
-                className="w-full justify-center bg-white text-primary hover:bg-white/90 sm:w-auto sm:shrink-0"
+                className="w-full justify-center bg-[var(--sh-accent)] text-white hover:opacity-90 sm:w-auto sm:shrink-0"
                 data-testid="export-insurance-btn"
               >
                 <Download className="w-4 h-4" />
@@ -512,7 +512,7 @@ function SubmissionsPage() {
           </div>
         )}
 
-        <div className="mt-6 bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 overflow-hidden">
+        <div className="mt-6 border border-[var(--sh-border)] bg-[var(--sh-card)] overflow-hidden">
           {query.isLoading && !query.data ? (
             <TableSkeleton />
           ) : query.isError ? (
@@ -614,7 +614,7 @@ function FilterBar({
   hasFilters: boolean;
 }) {
   return (
-    <div className="bg-white rounded-3xl shadow-2xl shadow-black/20 border-0 p-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
+    <div className="border border-[var(--sh-border)] bg-[var(--sh-card)] p-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
       <FilterField label="Form">
         <Select
           value={filters.form_type}

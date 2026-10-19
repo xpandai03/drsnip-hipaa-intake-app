@@ -52,6 +52,14 @@ export const users = pgTable("users", {
   // (read-only). DEFAULT 'admin' so existing accounts keep full access on
   // rollout. Server-side permission checks live in api/_lib/permissions.ts.
   role: text("role").notNull().default("admin"),
+  // Attendance-definition approval (migration 0020). NOT inherited from `role`:
+  // `normalizeRole` resolves anything that is not 'viewer' to 'admin', so every
+  // account is an admin, and approving what a clinic's records mean is not the
+  // same privilege as exporting a CSV. Default false; granted explicitly.
+  //
+  // RELEASE COUPLING: `findActiveUserByEmail` does a SELECT *, so this column
+  // and migration 0020 have to ship together.
+  canApproveDefinitions: boolean("can_approve_definitions").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

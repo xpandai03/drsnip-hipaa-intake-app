@@ -1,0 +1,24 @@
+-- 0020a_approval_capability_column.sql — the ONE piece of 0020 that the
+-- application cannot start without.
+--
+-- WHY THIS IS SPLIT OUT, AND WHY IT IS REGISTERED IN migrate.ts.
+--
+-- The session lookup selects `users.can_approve_definitions` by name on EVERY
+-- authenticated request. Deploy the new application against a database without
+-- that column and login returns 500 — a total authentication outage, verified
+-- by running the built server against a copy of the pre-migration schema.
+--
+-- The rest of 0020 (tables, SECURITY DEFINER functions, grants to
+-- drsnip_metrics_fn) cannot be registered: migrate.ts runs as the application
+-- role and 0012a's restricted role is created by hand. But THIS statement needs
+-- no special role, is additive, and is idempotent — so it belongs in the
+-- release_command, where Fly runs it BEFORE the new machines take traffic.
+--
+-- That removes the ordering hazard rather than documenting it. Applying 0020 by
+-- hand first is still correct and still the recommended sequence; this file is
+-- what makes the wrong order survivable instead of an outage.
+--
+-- 0020 also contains this statement, identically. Both are idempotent; whichever
+-- runs first wins and the second is a no-op.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS can_approve_definitions boolean NOT NULL DEFAULT false;

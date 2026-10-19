@@ -19,10 +19,10 @@ import {
   isAllowedDimension,
   suppressRows,
   buildWhere,
-  parseDateUtc,
-  addDaysUtc,
   firstOf,
 } from "../_lib/reporting";
+import { isAllowedLocation } from "../_lib/location";
+import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
 
 const LIMIT = 500;
 
@@ -47,12 +47,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "invalid form_type" });
   }
 
-  const from = parseDateUtc(req.query.from);
-  const toDay = parseDateUtc(req.query.to);
-  const toExclusive = toDay ? addDaysUtc(toDay, 1) : undefined; // inclusive day
-  if (from && toExclusive && from.getTime() >= toExclusive.getTime()) {
+  // CLINIC days (Pacific), matching the exports. These were UTC days.
+  const window = resolveClinicWindow(firstOf(req.query.from), firstOf(req.query.to));
+  if (window.invalid) {
     return res.status(400).json({ error: "from must be <= to" });
   }
+  const from = window.from;
+  const toExclusive = window.toExclusive;
+
+  const locationParam = firstOf(req.query.location);
+  const location = isAllowedLocation(locationParam) ? locationParam : undefined;
 
   // ── how_heard: consultation-only jsonb array unnest ──────────────────────
   if (dimension === "how_heard") {
@@ -64,13 +68,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         note: "how_heard is collected on the consultation form only; no rows for the requested form_type.",
       });
     }
-    const where = buildWhere({ formType: "consultation", from, toExclusive });
+    const where = buildWhere({
+      formType: "consultation",
+      from,
+      toExclusive,
+      location,
+    });
+    // The table MUST stay UNALIASED: the location filter inside buildWhere
+    // embeds RESOLVED_LOCATION_SQL, whose correlation is written with literal
+    // `submissions.<col>` qualifiers (see the note in api/_lib/location.ts).
+    // Aliasing this to `v` — as it was — makes those qualifiers unresolvable.
     const result = await db.execute<{ value: string | null; count: number }>(sql`
       SELECT elem AS value, count(*)::int AS count
-      FROM submissions v
+      FROM submissions
       CROSS JOIN LATERAL jsonb_array_elements_text(
-        CASE WHEN jsonb_typeof(v.raw_payload->'howHeard') = 'array'
-             THEN v.raw_payload->'howHeard' ELSE '[]'::jsonb END
+        CASE WHEN jsonb_typeof(submissions.raw_payload->'howHeard') = 'array'
+             THEN submissions.raw_payload->'howHeard' ELSE '[]'::jsonb END
       ) AS elem
       ${where}
       GROUP BY 1
@@ -82,13 +95,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       dimension,
       rows,
       suppressed_cells,
+      scope: {
+        form_type: "consultation",
+        from: window.fromDay ?? null,
+        to: window.toDay ?? null,
+        location: location ?? null,
+        timezone: CLINIC_TZ,
+        timezone_label: CLINIC_TZ_LABEL,
+        unit: "selections",
+      },
       note: "Consultation form only. Multi-select: channel counts can exceed submission counts.",
     });
   }
 
   // ── standard dimension (trusted expression from the allow-list) ──────────
   const expr = DIMENSION_EXPR[dimension];
-  const where = buildWhere({ formType: formTypeParam, from, toExclusive });
+  const where = buildWhere({
+    formType: formTypeParam,
+    from,
+    toExclusive,
+    location,
+  });
   const result = await db.execute<{ value: string | null; count: number }>(sql`
     SELECT (${sql.raw(expr)})::text AS value, count(*)::int AS count
     FROM submissions
@@ -98,5 +125,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     LIMIT ${LIMIT}
   `);
   const { rows, suppressed_cells } = suppressRows(result.rows);
-  return res.status(200).json({ dimension, rows, suppressed_cells });
+  return res.status(200).json({
+    dimension,
+    rows,
+    suppressed_cells,
+    scope: {
+      form_type: formTypeParam ?? null,
+      from: window.fromDay ?? null,
+      to: window.toDay ?? null,
+      location: location ?? null,
+      timezone: CLINIC_TZ,
+      timezone_label: CLINIC_TZ_LABEL,
+      unit: "submissions",
+    },
+  });
 }
