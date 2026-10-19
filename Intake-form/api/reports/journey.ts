@@ -16,7 +16,8 @@
 // the UI can say how old the appointment snapshot is.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { firstOf, sqlState } from "../_lib/reporting";
 import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
@@ -110,14 +111,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const spec = describeMetric(metric as JourneyMetricId);
 
   try {
-    const result = await db.execute<FnRow>(sql`
+    const result = await reportQuery<FnRow>(sql`
       SELECT * FROM public.drsnip_journey_metric(
         ${spec.fnName}::text, ${from}::date, ${toExclusiveDay}::date, ${windowDays}::int)
     `);
     const row = result.rows[0];
     if (!row) return res.status(500).json({ error: "metric unavailable" });
 
-    const fresh = await db.execute<{
+    const fresh = await reportQuery<{
       intake_latest_at: string | null;
       appointments_synced_at: string | null;
       appointment_sync_active: boolean;

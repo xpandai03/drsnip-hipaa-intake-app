@@ -18,7 +18,8 @@
 // is worse than no freshness at all.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 
 type FreshRow = {
@@ -85,9 +86,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const [fresh, health] = await Promise.all([
       // One statement, so the timestamp and the basis it came from agree (0022).
-      db.execute<FreshRow & { cutoff_basis: string | null }>(
+      reportQuery<FreshRow & { cutoff_basis: string | null }>(
         sql`SELECT f.*, ec.basis AS cutoff_basis FROM public.drsnip_journey_freshness() f CROSS JOIN public.drsnip_evidence_cutoff() ec`),
-      db.execute<HealthRow>(sql`SELECT * FROM public.drsnip_sync_health()`),
+      reportQuery<HealthRow>(sql`SELECT * FROM public.drsnip_sync_health()`),
     ]);
     const f = fresh.rows[0];
     if (!f) return res.status(500).json({ error: "freshness unavailable" });

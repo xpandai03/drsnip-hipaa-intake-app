@@ -2,15 +2,16 @@
 // be unit-tested without a DOM (api/_test/outcomes-view.test.ts).
 //
 // THE RENDERING CONTRACT IS THE API RESPONSE. Nothing here calculates an
-// outcome, a total, a share or a rate. A value the server withheld arrives as
-// null and stays withheld: it is never shown as zero, never left blank, never
-// derived from its neighbours, and never used to size anything on screen.
+// outcome, a total, a share or a rate — the converted share arrives from the
+// server. A value the server withheld arrives as null and stays withheld: it is
+// never shown as zero, never left blank, never derived from its neighbours, and
+// never used to size anything on screen.
 
 export type Cohort = "registration" | "insurance";
 
-export const COHORTS: ReadonlyArray<{ id: Cohort; label: string; metric: string }> = [
-  { id: "registration", label: "Registration", metric: "outcome_registration" },
-  { id: "insurance", label: "Insurance inquiry", metric: "outcome_insurance" },
+export const COHORTS: ReadonlyArray<{ id: Cohort; label: string }> = [
+  { id: "registration", label: "Registration" },
+  { id: "insurance", label: "Insurance inquiry" },
 ];
 
 /**
@@ -86,57 +87,40 @@ export function monthLabel(m: string): string {
 // ---------------------------------------------------------------------------
 export type Count = number | null;
 
+export const BUCKET_KEYS = ["converted", "not_converted", "unclassified_only", "no_appointment"] as const;
+export type BucketKey = (typeof BUCKET_KEYS)[number];
+
 export type MonthRow = {
   entry_month: string;
-  status: "ok" | "empty" | "suppressed" | "not_started" | string;
+  status: "ok" | "empty" | "suppressed" | "not_started" | "unavailable" | string;
   withheld: string[];
-  observation: { entry_period_complete: boolean | null; days_observed_min: Count; days_observed_max: Count };
+  entry_period_complete: boolean | null;
   cohort: { total: Count; covered: Count; not_covered: Count; unlinked_submissions: Count };
-  outcomes: { completed: Count; scheduled: Count; unknown: Count; neither: Count };
-  neither_breakdown: { no_qualifying_record: Count; had_qualifying_record: Count };
-  unknown_reasons: Record<string, Count | boolean>;
-  annotations: Record<string, Count | boolean>;
-};
-
-export type Profile = {
-  profile_source_id: string | null;
-  exact_name: string | null;
-  name_source: string | null;
-  name_observed_on: string | null;
-  role: string;
-  is_stored: boolean;
-  stored_appointments: Count;
+  outcomes: Record<BucketKey, Count>;
+  converted_pct: number | null;
+  converted_before_entry: Count;
+  repeat_submitters: Count;
 };
 
 export type OutcomesResponse = {
-  metric: string;
+  form: Cohort;
   label: string;
-  counts_what: string;
-  cohort_note: string;
-  definition: {
-    scope_key: string;
-    scope_version: number | null;
+  unit: string;
+  rules: {
+    version: string;
     state: string;
-    engineering_preview: boolean;
-    label: string;
-    description: string;
-    status_rules: { version: string; state: string; rules: Record<string, string[]>; source: string };
-    profiles: Profile[];
-    profile_coverage: { stored_profile_ids: number; stored_with_verified_name: number; stored_unknown_meaning: number; note: string };
+    explanation: string;
+    source: string;
+    confirmed_by: string | null;
+    confirmed_via: string | null;
+    confirmed_on: string | null;
   };
-  as_of: { evidence_cutoff: string | null; basis: string | null; evidence_age_minutes: number | null; note: string };
+  as_of: { evidence_cutoff: string | null; basis: string | null; evidence_age_minutes: number | null };
   period: { from_month: string; to_month: string; timezone_label: string };
-  buckets: Record<"completed" | "scheduled" | "unknown" | "neither", { label: string; means: string; detail: string }>;
-  role_labels: Record<string, { label: string; means: string }>;
-  status_explanations: ReadonlyArray<{ key: string; means: string }>;
-  unknown_reasons: Record<string, string>;
-  annotations: Record<string, string>;
-  no_combined_measure: string;
+  buckets: Record<BucketKey, { label: string; means: string }>;
   months: MonthRow[];
   suppression: { threshold: number; note: string };
 };
-
-export const BUCKET_KEYS = ["completed", "scheduled", "unknown", "neither"] as const;
 
 /** Newest entry month first, as Jeff reads it. The API returns oldest first. */
 export function newestFirst(rows: MonthRow[]): MonthRow[] {
@@ -152,11 +136,15 @@ export function cell(v: Count): Cell {
   return v === null || v === undefined || !Number.isFinite(v) ? { kind: "withheld" } : { kind: "value", n: v };
 }
 
+/** "64.7%", or null when the server withheld the share. */
+export function pctLabel(v: number | null): string | null {
+  return v === null || v === undefined || !Number.isFinite(v) ? null : `${v.toFixed(1)}%`;
+}
+
 /**
  * A proportional bar is drawn ONLY when every one of the four outcomes was
  * published and they account for the whole published cohort. Any withheld
- * outcome means no bar at all: the remaining segments, their widths or a
- * "rest" segment would each give the protected values away.
+ * outcome means no bar at all.
  */
 export function chartable(r: MonthRow): boolean {
   if (r.status !== "ok") return false;
@@ -181,26 +169,15 @@ export function rowNotice(r: MonthRow): string | null {
 
 const WITHHELD_WHY: Record<string, string> = {
   partition_small_cell:
-    "At least one outcome is a small group, so it is withheld together with another outcome — and this month's details — so it cannot be worked out by subtraction.",
+    "At least one outcome is a small group, so it is withheld together with another outcome so it cannot be worked out by subtraction.",
   not_covered_small:
     "A small number of patients are still awaiting their first appointment-history read, so that count and the cohort total are withheld.",
   covered_cohort_small: "The whole month is too small to publish.",
-  neither_breakdown_small: "The split of “Neither established” is withheld because one part is a small group.",
   unlinked_submissions_small: "The number of unlinked submissions is a small group and is withheld.",
   evidence_cutoff_unavailable: "There is no valid time appointment data is complete to, so nothing is classified.",
 };
 export function withheldReasons(r: MonthRow): string[] {
   return r.withheld.map((w) => WITHHELD_WHY[w] ?? "Some values are withheld to protect small groups.");
-}
-
-/** "observed 13–44 days", or that the month is still open. */
-export function observationLabel(r: MonthRow): string {
-  const { entry_period_complete: done, days_observed_min: lo, days_observed_max: hi } = r.observation;
-  const d = (n: number) => `${Math.floor(n)} day${Math.floor(n) === 1 ? "" : "s"}`;
-  if (r.status === "not_started") return "Not started at the data cutoff";
-  if (hi === null) return "—";
-  if (!done) return `Still open · entrants observed up to ${d(hi)}`;
-  return `Entrants observed ${Math.floor(lo ?? 0)}–${d(hi)}`;
 }
 
 /**
@@ -210,16 +187,4 @@ export function observationLabel(r: MonthRow): string {
 export const STALE_AFTER_MINUTES = 180;
 export function isStale(ageMinutes: number | null): boolean {
   return ageMinutes !== null && ageMinutes > STALE_AFTER_MINUTES;
-}
-
-/** Profiles grouped by role, in the order a reader needs them. Names come from the API. */
-export const ROLE_ORDER = ["qualifying", "comparison", "inclusion_undecided", "excluded_known", "unknown_profile"] as const;
-export function profilesByRole(profiles: Profile[]): Array<{ role: string; profiles: Profile[] }> {
-  return ROLE_ORDER
-    .map((role) => ({
-      role,
-      // An unnamed type is only worth listing if it actually occurs.
-      profiles: profiles.filter((p) => p.role === role && (role !== "unknown_profile" || p.is_stored)),
-    }))
-    .filter((g) => g.profiles.length > 0);
 }

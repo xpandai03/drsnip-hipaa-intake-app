@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 
 import {
   parseViewState, toSearch, monthOptions, clinicMonth, cell, chartable, rowNotice,
-  newestFirst, profilesByRole, isStale, observationLabel, withheldReasons,
-  INTAKE_START_MONTH, MAX_MONTHS, type MonthRow, type Profile,
+  newestFirst, isStale, pctLabel, withheldReasons,
+  INTAKE_START_MONTH, MAX_MONTHS, type MonthRow,
 } from "../../artifacts/intake-form/src/pages/admin/outcomes-view";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
@@ -25,13 +25,13 @@ const row = (o: Partial<MonthRow> & { outcomes?: Partial<MonthRow["outcomes"]> }
   entry_month: "2026-07",
   status: "ok",
   withheld: [],
-  observation: { entry_period_complete: true, days_observed_min: 54.2, days_observed_max: 84.9 },
+  entry_period_complete: true,
   cohort: { total: 100, covered: 100, not_covered: 0, unlinked_submissions: 0 },
+  converted_pct: 60,
+  converted_before_entry: 7,
+  repeat_submitters: 6,
   ...o,
-  outcomes: { completed: 50, scheduled: 20, unknown: 10, neither: 20, ...(o.outcomes ?? {}) },
-  neither_breakdown: { no_qualifying_record: 15, had_qualifying_record: 5 },
-  unknown_reasons: {},
-  annotations: {},
+  outcomes: { converted: 60, not_converted: 10, unclassified_only: 5, no_appointment: 25, ...(o.outcomes ?? {}) },
 });
 
 describe("URL state", () => {
@@ -70,72 +70,44 @@ describe("URL state", () => {
 describe("withheld stays withheld", () => {
   it("a null is a withheld cell — never a zero", () => {
     assert.deepEqual(cell(null), { kind: "withheld" });
-    assert.deepEqual(cell(0), { kind: "value", n: 0 }, "a real zero is a value");
+    assert.deepEqual(cell(0), { kind: "value", n: 0 });
+    assert.equal(pctLabel(null), null);
+    assert.equal(pctLabel(64.66), "64.7%");
   });
 
   it("draws a bar only when all four outcomes are published and account for the cohort", () => {
     assert.equal(chartable(row()), true);
-    for (const k of ["completed", "scheduled", "unknown", "neither"] as const) {
-      assert.equal(chartable(row({ outcomes: { [k]: null } })), false, `${k} withheld`);
-    }
-    assert.equal(chartable(row({ cohort: { total: null, covered: null, not_covered: null, unlinked_submissions: 0 } })), false);
-    assert.equal(chartable(row({ outcomes: { neither: 19 } })), false, "parts that do not add up are not drawn");
+    assert.equal(chartable(row({ outcomes: { not_converted: null } })), false);
+    assert.equal(chartable(row({ outcomes: { no_appointment: 24 } })), false, "parts must add up");
     assert.equal(chartable(row({ status: "suppressed" })), false);
   });
 
-  it("says so when there is no valid appointment-data cutoff", () => {
-    assert.match(rowNotice(row({ status: "unavailable" }))!, /freshness is unavailable/);
-    const [t] = withheldReasons(row({ withheld: ["evidence_cutoff_unavailable"] }));
-    assert.match(t, /no valid time/);
-  });
-
   it("keeps 'no entries' and 'no evidence' apart", () => {
-    const empty = rowNotice(row({ status: "empty" }))!;
-    const notStarted = rowNotice(row({ status: "not_started" }))!;
-    const small = rowNotice(row({ status: "suppressed" }))!;
-    assert.match(empty, /No entries/);
-    assert.match(notStarted, /after the data cutoff/);
-    assert.match(small, /Too few patients/);
-    assert.equal(new Set([empty, notStarted, small]).size, 3);
+    assert.match(rowNotice(row({ status: "empty" }))!, /No entries/);
+    assert.match(rowNotice(row({ status: "not_started" }))!, /after the data cutoff/);
+    assert.match(rowNotice(row({ status: "unavailable" }))!, /freshness is unavailable/);
     assert.equal(rowNotice(row()), null);
   });
 
   it("explains every withheld reason the API can send", () => {
-    for (const w of ["partition_small_cell", "not_covered_small", "covered_cohort_small",
-                     "neither_breakdown_small", "unlinked_submissions_small"]) {
-      const [text] = withheldReasons(row({ withheld: [w] }));
-      assert.ok(text && !/Some values are withheld/.test(text), `${w} has its own explanation`);
+    const API = read("../../lib/db/migrations/0023_jeff_conversion_rules.sql");
+    const sent = [...API.matchAll(/array_append\(withheld, '([a-z_]+)'\)/g)].map((m) => m[1]);
+    assert.ok(sent.length >= 4);
+    for (const w of new Set(sent)) {
+      assert.ok(!/Some values are withheld/.test(withheldReasons(row({ withheld: [w] }))[0]), w);
     }
   });
 });
 
 describe("presentation helpers", () => {
   it("lists the newest entry month first", () => {
-    const r = newestFirst([row({ entry_month: "2026-06" }), row({ entry_month: "2026-09" }), row({ entry_month: "2026-07" })]);
-    assert.deepEqual(r.map((x) => x.entry_month), ["2026-09", "2026-07", "2026-06"]);
-  });
-
-  it("says how long a cohort has been observed, and when it is still open", () => {
-    assert.equal(observationLabel(row()), "Entrants observed 54–84 days");
-    assert.match(observationLabel(row({ observation: { entry_period_complete: false, days_observed_min: 0, days_observed_max: 22.4 } })), /Still open/);
-  });
-
-  it("groups appointment types by role in reading order, and lists an unnamed type only if it occurs", () => {
-    const p = (id: string | null, role: string, stored = true): Profile => ({
-      profile_source_id: id, exact_name: id ? `Name ${id}` : null, name_source: null,
-      name_observed_on: null, role, is_stored: stored, stored_appointments: null,
-    });
-    const g = profilesByRole([
-      p("1", "excluded_known"), p("2", "qualifying"), p("3", "comparison"),
-      p("4", "unknown_profile", false), p(null, "unknown_profile", true), p("5", "inclusion_undecided"),
-    ]);
-    assert.deepEqual(g.map((x) => x.role), ["qualifying", "comparison", "inclusion_undecided", "excluded_known", "unknown_profile"]);
-    assert.deepEqual(g.at(-1)!.profiles.map((x) => x.profile_source_id), [null]);
+    const r = newestFirst([row({ entry_month: "2026-06" }), row({ entry_month: "2026-08" }), row({ entry_month: "2026-07" })]);
+    assert.deepEqual(r.map((x) => x.entry_month), ["2026-08", "2026-07", "2026-06"]);
   });
 
   it("flags data older than three hours as stale", () => {
     assert.equal(isStale(null), false);
-    assert.equal(isStale(65), false);
+    assert.equal(isStale(180), false);
     assert.equal(isStale(181), true);
   });
 });
@@ -150,8 +122,8 @@ describe("the page's source contract", () => {
     assert.ok(REPORTS.indexOf('"/admin/outcomes"') < REPORTS.indexOf('"/admin/journeys?journey=registration"'), "listed first");
   });
 
-  it("reads the one endpoint and no other metric", () => {
-    assert.match(c, /\/api\/reports\/outcomes\?metric=/);
+  it("reads the one endpoint, by form", () => {
+    assert.match(c, /\/api\/reports\/outcomes\?form=/);
     assert.ok(!/\/api\/reports\/(booking|journey|attendance)/.test(c));
   });
 
@@ -159,48 +131,27 @@ describe("the page's source contract", () => {
     assert.ok(!/window=|WINDOWS|Follow-up window|filter-window/.test(c));
   });
 
-  it("carries no appointment-type id or name of its own", () => {
+  it("carries no status label or appointment-type id of its own", () => {
     assert.ok(!/\b\d{6}\b/.test(c), "a profile id is hard-coded");
-    assert.ok(!/Vasectomy|PVST|Consultation Only|Lab Only/.test(c), "a profile name is hard-coded");
-    assert.match(c, /d\.definition\.profiles/);
-    assert.match(c, /d\.role_labels/);
-    assert.match(c, /d\.buckets\[k\]\.label/);
+    for (const label of ["'Complete'", '"Complete"', '"Cancelled"', '"No Show"', '"Rescheduled"']) {
+      assert.ok(!c.includes(label), `status ${label} is hard-coded in the page`);
+    }
+    assert.match(c, /d\.rules\.explanation/);
   });
 
-  it("shows no rate, percentage or combined total", () => {
-    assert.ok(!/\brate\b|toFixed|conversion/i.test(c), "a rate or conversion figure is rendered");
-    // The ONLY division is the bar-segment width, behind chartable().
-    const divisions = c.match(/\/ covered/g) ?? [];
-    assert.equal(divisions.length, 1);
-    assert.match(c, /if \(!chartable\(row\)\)/);
-    assert.ok(!/completed\s*\+\s*.*scheduled|scheduled\s*\+\s*.*completed/.test(c), "a combined total");
+  it("shows the converted share from the server and never computes one", () => {
+    assert.match(c, /row\.converted_pct/);
+    assert.ok(!/\/\s*r(ow)?\.cohort\.covered\s*\*\s*100/.test(c.replace(/width: `\$\{\(n \/ covered\) \* 100\}%`/, "")));
   });
 
   it("renders withheld through the shared cell() rule, and never as 0", () => {
-    assert.match(c, /const c = cell\(v\);/);
-    assert.ok(!/\?\? 0\b/.test(c), "a withheld value would render as zero");
-  });
-
-  it("states the provisional definition and the data cutoff", () => {
-    assert.match(c, /data-testid="provisional-banner"/);
-    assert.match(c, /d\?\.definition\.engineering_preview/);
-    assert.match(c, /Appointment data complete to/);
-    assert.match(c, /data-testid="stale-warning"/);
+    assert.match(c, /cell\(v\)/);
+    assert.ok(!/\?\? 0\b/.test(c), "a withheld value could render as 0");
   });
 
   it("shows ONE appointment-data timestamp, from the same response as the figures", () => {
-    assert.ok(!/AppointmentFreshnessBadge|useFreshness/.test(c), "a second, separately fetched timestamp is back");
-    assert.match(c, /d\.as_of\.basis/);
-  });
-
-  it("uses the short provisional banner and keeps the long definitions expandable", () => {
-    assert.match(c, /Provisional reporting scope/);
-    assert.match(c, /data-testid="bucket-detail"/);
-    assert.match(c, /d\.buckets\[k\]\.detail/);
-  });
-
-  it("never describes Neither as lost, non-attendance or outreach", () => {
-    assert.ok(!/\blost\b|did not attend|no-show|outreach|follow up with/i.test(c));
+    assert.equal((c.match(/data-testid="data-complete-to"/g) ?? []).length, 1);
+    assert.match(c, /d\.as_of\.evidence_cutoff/);
   });
 
   it("offers a retry on error and a skeleton while loading", () => {
@@ -220,7 +171,7 @@ describe("the patient journeys page (after the audit)", () => {
 
   it("leads with form progression and links to Monthly outcomes", () => {
     assert.match(cj, /data-testid="link-monthly-outcomes"/);
-    assert.match(cj, /See completed appointments and current bookings by entry month/);
+    assert.match(cj, /See conversion by entry month/);
     assert.match(cj, /href="\/admin\/outcomes"/);
     assert.ok(cj.indexOf('data-testid="form-progression"') < cj.indexOf('data-testid="record-timing"'));
   });

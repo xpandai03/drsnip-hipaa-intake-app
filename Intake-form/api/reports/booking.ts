@@ -13,7 +13,8 @@
 // IMMATURE, not as someone who did not book.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { firstOf, sqlState } from "../_lib/reporting";
 import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
@@ -61,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const r = await db.execute<Record<string, unknown>>(sql`
+    const r = await reportQuery<Record<string, unknown>>(sql`
       SELECT * FROM public.drsnip_booking_metric(
         ${spec.fnName}::text, ${from}::date, ${toExclusive}::date, ${windowDays}::int)
     `);

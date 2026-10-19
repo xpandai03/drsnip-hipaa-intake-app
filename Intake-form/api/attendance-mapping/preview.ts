@@ -14,7 +14,8 @@
 // difference of two counts.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db, sql } from "@workspace/db";
+import { sql } from "@workspace/db";
+import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { canPreviewDefinitions } from "../_lib/permissions";
 import { audit, getDraft } from "../_lib/attendance-store";
@@ -64,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   )).toISOString().slice(0, 10);
 
   try {
-    const r = await db.execute<Row>(sql`
+    const r = await reportQuery<Row>(sql`
       SELECT * FROM public.drsnip_attendance_preview(
         ${JSON.stringify(parsed.labels)}::jsonb, ${metric}::text,
         ${from}::date, ${toExclusive}::date, ${windowDays}::int)`);
