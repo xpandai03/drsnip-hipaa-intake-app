@@ -49,6 +49,8 @@ import reportsStatusInventoryHandler from "../api/reports/status-inventory";
 import reportsAttendanceHandler from "../api/reports/attendance";
 import reportsOutcomesHandler from "../api/reports/outcomes";
 import reportsConversionCohortsHandler from "../api/reports/conversion-cohorts";
+import reportsUnclassifiedCountHandler from "../api/reports/unclassified-count";
+import adminUnclassifiedCsvHandler from "../api/admin/unclassified-csv";
 import attendanceDraftHandler from "../api/attendance-mapping/draft";
 import attendancePreviewHandler from "../api/attendance-mapping/preview";
 import attendanceApproveHandler from "../api/attendance-mapping/approve";
@@ -124,6 +126,7 @@ app.all("/api/reports/status-inventory", adapt(reportsStatusInventoryHandler));
 app.all("/api/reports/attendance", adapt(reportsAttendanceHandler));
 app.all("/api/reports/outcomes", adapt(reportsOutcomesHandler));
 app.all("/api/reports/conversion-cohorts", adapt(reportsConversionCohortsHandler));
+app.all("/api/reports/unclassified-count", adapt(reportsUnclassifiedCountHandler));
 // Attendance definition review. Draft/preview are admin-gated; approve/withdraw
 // need the explicit approval capability (api/_lib/auth.ts).
 app.all("/api/attendance-mapping/draft", adapt(attendanceDraftHandler));
@@ -149,6 +152,11 @@ app.all("/api/internal/sweep", adapt(internalSweepHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+
+// The one non-/api server route under /admin: the unclassified-appointment CSV
+// (admin only). Registered before the static handlers so the SPA fallback never
+// answers it with index.html.
+app.all("/admin/conversion/unclassified.csv", adapt(adminUnclassifiedCsvHandler));
 
 // Hidden client roadmap (/plan/*) — keep it out of search indexes at the HTTP
 // layer (belt-and-suspenders with the page's own robots meta). Runs before the

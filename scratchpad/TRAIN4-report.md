@@ -213,3 +213,53 @@ The subject is `DrSnip intake sweep: …` (a colon). Test identities are exclude
 - **The legacy Jotform workflow:** an inline API key in `Download File`, and no `errorWorkflow`.
 - **Test-data cleanup:** charts 135620405 and 135966665, 15 Qaignore rows, and the ManualReview tab rows.
 - **`8faf35fc`:** stuck since 2026-09-14.
+
+## Blank-status analysis: the unclassified-appointment export (release v98)
+
+A CSV of every live DrChrono appointment whose status is blank or otherwise unclassified, so the clinic's staff can decide what a blank status means.
+
+**Where and who.** The link is on **Conversion by cohort**, beside the Month/Week toggle, with its row count. It is **admin only**: signed out returns 401, and a viewer gets 403 and sees no link. The file is served at `GET /admin/conversion/unclassified.csv`.
+
+**Columns, in order:**
+1. `appointment_id`
+2. `chart_id`
+3. `appointment_date` (Pacific)
+4. `appointment_status` (`blank`, or the unclassified label)
+5. `form_type` (`registration` / `insurance` / `none`)
+6. `form_month`
+7. `patient_has_other_converted_appt` (`yes` / `no`)
+8. `drchrono_link` (`https://app.drchrono.com/appointments/{id}/`)
+
+The file contains no name, DOB, phone, email, notes or appointment reason.
+
+**Sort:** `no` rows first (the ones that move the numbers), then by appointment date.
+
+**Notes on the data:**
+- Deleted appointments are not listed.
+- A patient with both forms is listed under `registration`.
+- `none` means the chart has no registration or insurance form; for example, it was linked through a consultation only.
+- The DrChrono link route was verified to exist (it redirects to sign-in, as `/chart/{id}/` does). Opening it needs a DrChrono login.
+
+**Logging.** Each download writes one `notification_events` row (`kind = export_unclassified`, `channel = export`) with `detail = user=<user id> rows=<n>`. It records no content and no address.
+
+**Build time.** About 95 ms in production (plan cost 2,488), so it is built on request and not cached.
+
+**Counts (production, as of 2026-10-19 18:22 UTC; they move with the hourly sync):**
+
+| Measure | Rows |
+|---|---:|
+| Total rows in the file | **899** |
+| `blank` | 896 |
+| `MD In` | 2 |
+| `Arrived` | 1 |
+| **Rows with no other converted appointment** (`no`) | **5** (4 charts) |
+
+The `no` rows by form month, all registration:
+
+| Form month | `no` rows |
+|---|---:|
+| 2026-08 | 2 (1 blank, 1 MD In) |
+| 2026-09 | 2 (blank) |
+| 2026-10 | 1 (MD In) |
+
+Only these 5 rows (4 patients) can change a conversion percentage. The other 894 sit on charts that already have a converted appointment.
