@@ -1,0 +1,2318 @@
+{
+ "updatedAt": "2026-05-09T02:29:42.393Z",
+ "createdAt": "2026-04-10T00:20:38.663Z",
+ "id": "6warkNFZSSzuasMB",
+ "name": "Patient Intake \u2014 Jotform \u2192 Sheets \u2192 DrChrono",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "job-form-submission",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "fe372f2b-7a75-44c2-8767-7a6e43d9d6fc",
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 1.1,
+   "position": [
+    -2416,
+    208
+   ],
+   "webhookId": "job-form-submission",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "functionCode": "// Parse & normalize Jotform payload for DrSnip Registration Form\n\nconst raw = items[0].json;\n\n// ---------- STEP 1: Extract source safely ----------\nlet src = {};\n\nif (raw.body?.rawRequest) {\n  try {\n    src = JSON.parse(raw.body.rawRequest);\n  } catch {\n    src = raw.body;\n  }\n} else if (raw.rawRequest) {\n  try {\n    src = JSON.parse(raw.rawRequest);\n  } catch {\n    src = raw;\n  }\n} else {\n  src = raw.body || raw;\n}\n\n// ---------- HELPERS ----------\nconst pick = (...keys) => {\n  for (const k of keys) {\n    if (src[k] !== undefined && src[k] !== null && String(src[k]).trim() !== '') {\n      return src[k];\n    }\n  }\n  return '';\n};\n\nconst normDob = () => {\n  const d = src.q8_q8_datetime6;\n  if (!d) return '';\n  if (typeof d === 'string') return d.slice(0, 10);\n  if (typeof d === 'object') {\n    const y = d.year;\n    const m = String(d.month || '').padStart(2, '0');\n    const day = String(d.day || '').padStart(2, '0');\n    if (y && m && day) return `${y}-${m}-${day}`;\n  }\n  return '';\n};\n\nconst parseAddress = () => {\n  const a = src.q9_q9_address7;\n  if (!a || typeof a !== 'object') {\n    return { street: '', city: '', state: '', zip: '' };\n  }\n  return {\n    street: [a.addr_line1, a.addr_line2].filter(Boolean).join(' '),\n    city: a.city || '',\n    state: a.state || '',\n    zip: a.postal || ''\n  };\n};\n\nconst parsePhone = () => {\n  const p = src.q10_q10_phone8;\n  if (p && typeof p === 'object') return p.full || '';\n  if (typeof p === 'string') return p;\n  return '';\n};\n\nconst parseInsuranceCardUrls = () => {\n  // Jotform exposes file upload answers under any key matching /fileupload/i\n  // (and the question number can shift if the form is edited). Scan all keys.\n  const out = [];\n  for (const key of Object.keys(src)) {\n    if (!/fileupload/i.test(key)) continue;\n    const v = src[key];\n    if (!v) continue;\n    const arr = Array.isArray(v) ? v : [v];\n    for (const item of arr) {\n      if (typeof item === 'string' && /^https?:\\/\\//.test(item)) {\n        out.push(item);\n      }\n    }\n  }\n  return out;\n};\n\n// Human-readable medical history question labels (Jotform q16-q28)\nconst Q_LABELS = {\n  q16: 'Have you ever had testicle abnormality, scrotal abnormality, hernia, infection, or tumor?',\n  q17: 'Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?',\n  q18: 'Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?',\n  q19: 'Do you have a kidney abnormality or abnormal kidney function?',\n  q20: 'Is there medication you take regularly or have you taken any medication in the last 2 weeks?',\n  q21: 'Have you had any surgeries?',\n  q22: 'Have you ever fainted or almost fainted during, or after, a medical procedure?',\n  q23: 'Do you have any allergies to a drug, medication, or anesthetic?',\n  q24: 'Have you had any major medical problems or do you have any chronic medical problems?',\n  q25: 'Do you, or does anyone in your family, have a tendency to bleed easily?',\n  q26: 'Have you had any complications or excessive pain or bleeding after surgery?',\n  q27: 'Do you think you are more sensitive to pain than the average person?',\n  q28: 'Are you currently taking any aspirin products, or anticipate taking aspirin in the five days leading up to your procedure?'\n};\n\n// Extract medical history yes/no fields (q16-q28 inclusive)\nconst parseMedicalHistory = () => {\n  const out = [];\n  for (const key of Object.keys(src)) {\n    const m = key.match(/^q(\\d+)_/);\n    if (!m) continue;\n    const n = parseInt(m[1], 10);\n    if (n < 16 || n > 28) continue;\n    const val = src[key];\n    let display;\n    if (typeof val === 'string') display = val;\n    else if (Array.isArray(val)) display = val.join(', ');\n    else if (val == null) display = '';\n    else if (typeof val === 'object') display = JSON.stringify(val);\n    else display = String(val);\n    const label = Q_LABELS['q' + n] || key;\n    out.push({ key, label, value: display });\n  }\n  // sort by question number for stable order\n  out.sort((a, b) => {\n    const na = parseInt((a.key.match(/^q(\\d+)_/) || [])[1] || '0', 10);\n    const nb = parseInt((b.key.match(/^q(\\d+)_/) || [])[1] || '0', 10);\n    return na - nb;\n  });\n  return out;\n};\n\n// ---------- CORE DATA ----------\nconst addr = parseAddress();\nconst insuranceCardUrls = parseInsuranceCardUrls();\nconst medicalHistory = parseMedicalHistory();\n\nconst submissionId =\n  raw.body?.submissionID ||\n  raw.submissionID ||\n  src.submissionID ||\n  src.submission_id ||\n  '';\n\nconst clean = {\n  submission_id: submissionId,\n  timestamp: new Date().toISOString(),\n\n  first_name: pick('q4_q4_textbox2'),\n  last_name: pick('q7_q7_textbox5'),\n  dob: normDob(),\n  email: pick('q13_q13_email11'),\n  phone: parsePhone(),\n\n  address_street: addr.street,\n  address_city: addr.city,\n  address_state: addr.state,\n  address_zip: addr.zip,\n\n  insurance_status: pick('q31_q31_radio29'),\n  insurance_provider: pick('q32_q32_textbox30'),\n  insurance_member_id: pick('q33_q33_textbox31'),\n  insurance_group_id: pick('q34_q34_textbox32'),\n\n  consent_hipaa: pick('q11_q11_radio9') === 'Yes',\n  consent_treatment: pick('q12_q12_radio10') === 'Yes',\n\n  office_location: pick('q3_q3_dropdown1'),\n  preferred_first_name: pick('q5_q5_textbox3'),\n  primary_care_physician: pick('q15_q15_textbox13'),\n  surgery_details: pick('q29_q29_textarea27'),\n\n  insurance_card_urls: insuranceCardUrls,\n  has_insurance_cards: insuranceCardUrls.length > 0,\n\n  medical_history: medicalHistory,\n\n  _debug_submission_id: submissionId\n};\n\nreturn [\n  {\n    json: {\n      ...clean,\n      original: clean\n    }\n  }\n];"
+   },
+   "id": "6412549c-c817-47db-933a-b0473592e7ab",
+   "name": "Parse & Normalize",
+   "type": "n8n-nodes-base.function",
+   "typeVersion": 1,
+   "position": [
+    -2208,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "append",
+    "documentId": {
+     "__rl": true,
+     "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+     "mode": "list",
+     "cachedResultName": "DrSnip_Intake_Sheet",
+     "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI/edit?usp=drivesdk"
+    },
+    "sheetName": {
+     "__rl": true,
+     "value": 102925546,
+     "mode": "list",
+     "cachedResultName": "DrSnip_Intake_Sheet",
+     "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI/edit#gid=102925546"
+    },
+    "columns": {
+     "mappingMode": "autoMapInputData",
+     "value": {},
+     "matchingColumns": [],
+     "schema": [
+      {
+       "id": "timestamp",
+       "displayName": "timestamp",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "submission_id",
+       "displayName": "submission_id",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "first_name",
+       "displayName": "first_name",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "last_name",
+       "displayName": "last_name",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "dob",
+       "displayName": "dob",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "email",
+       "displayName": "email",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "phone",
+       "displayName": "phone",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "insurance_provider",
+       "displayName": "insurance_provider",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "insurance_member_id",
+       "displayName": "insurance_member_id",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "consent_hipaa",
+       "displayName": "consent_hipaa",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "address_street",
+       "displayName": "address_street",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "address_city",
+       "displayName": "address_city",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "address_state",
+       "displayName": "address_state",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "address_zip",
+       "displayName": "address_zip",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "insurance_group_id",
+       "displayName": "insurance_group_id",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "consent_treatment",
+       "displayName": "consent_treatment",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      },
+      {
+       "id": "insurance_card_url",
+       "displayName": "insurance_card_url",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true,
+       "removed": false
+      }
+     ],
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": false
+    },
+    "options": {}
+   },
+   "id": "573ac6b2-6f38-45c2-9d93-76f1882db7a1",
+   "name": "Sheets: Audit Log",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.4,
+   "position": [
+    -1984,
+    208
+   ],
+   "alwaysOutputData": true,
+   "credentials": {
+    "googleSheetsOAuth2Api": {
+     "id": "hQTs0UCcXWEtQ3j0",
+     "name": "Google Sheets account"
+    }
+   },
+   "continueOnFail": true
+  },
+  {
+   "parameters": {
+    "url": "https://app.drchrono.com/api/patients",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "oAuth2Api",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "first_name",
+       "value": "={{  $('Parse & Normalize').item.json.first_name }}"
+      },
+      {
+       "name": "last_name",
+       "value": "={{ $('Parse & Normalize').item.json.last_name }}"
+      },
+      {
+       "name": "date_of_birth",
+       "value": "={{ $('Parse & Normalize').item.json.dob }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "f88fb8c2-904a-4efa-8a14-12d4870f0a90",
+   "name": "DrChrono: Search Patient",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -1760,
+    208
+   ],
+   "credentials": {
+    "oAuth2Api": {
+     "id": "vCwf0HNhIwA3cFV1",
+     "name": "DRSNIP-CHRONO"
+    }
+   },
+   "continueOnFail": true
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 1
+     },
+     "conditions": [
+      {
+       "id": "exists-check",
+       "leftValue": "={{ $json.results ? $json.results.length : 0 }}",
+       "rightValue": 0,
+       "operator": {
+        "type": "number",
+        "operation": "gt"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "74791e36-3bbb-4ce9-81c2-8ec5d425ec2e",
+   "name": "IF: Patient Exists?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -1536,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "method": "PATCH",
+    "url": "=https://app.drchrono.com/api/patients/{{ $json.results[0].id }}",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "oAuth2Api",
+    "sendBody": true,
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "nick_name",
+       "value": "={{ $('Parse & Normalize').item.json.preferred_first_name }}"
+      },
+      {
+       "name": "email",
+       "value": "={{ $('Parse & Normalize').item.json.email }}"
+      },
+      {
+       "name": "cell_phone",
+       "value": "={{ $('Parse & Normalize').item.json.phone }}"
+      },
+      {
+       "name": "address",
+       "value": "={{ $('Parse & Normalize').item.json.address_street }}"
+      },
+      {
+       "name": "city",
+       "value": "={{ $('Parse & Normalize').item.json.address_city }}"
+      },
+      {
+       "name": "state",
+       "value": "={{ $('Parse & Normalize').item.json.address_state }}"
+      },
+      {
+       "name": "zip_code",
+       "value": "={{ $('Parse & Normalize').item.json.address_zip }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "6e5505e4-8979-40e4-ab55-a99b456be379",
+   "name": "DrChrono: Update Patient",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -1328,
+    80
+   ],
+   "credentials": {
+    "oAuth2Api": {
+     "id": "vCwf0HNhIwA3cFV1",
+     "name": "DRSNIP-CHRONO"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://app.drchrono.com/api/patients",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "oAuth2Api",
+    "sendBody": true,
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "first_name",
+       "value": "={{ $('Parse & Normalize').item.json.first_name }}"
+      },
+      {
+       "name": "last_name",
+       "value": "={{ $('Parse & Normalize').item.json.last_name }}"
+      },
+      {
+       "name": "nick_name",
+       "value": "={{ $('Parse & Normalize').item.json.preferred_first_name }}"
+      },
+      {
+       "name": "date_of_birth",
+       "value": "={{ $('Parse & Normalize').item.json.dob }}"
+      },
+      {
+       "name": "email",
+       "value": "={{ $('Parse & Normalize').item.json.email }}"
+      },
+      {
+       "name": "cell_phone",
+       "value": "={{ $('Parse & Normalize').item.json.phone }}"
+      },
+      {
+       "name": "address",
+       "value": "={{ $('Parse & Normalize').item.json.address_street }}"
+      },
+      {
+       "name": "city",
+       "value": "={{ $('Parse & Normalize').item.json.address_city }}"
+      },
+      {
+       "name": "state",
+       "value": "={{ $('Parse & Normalize').item.json.address_state }}"
+      },
+      {
+       "name": "zip_code",
+       "value": "={{ $('Parse & Normalize').item.json.address_zip }}"
+      },
+      {
+       "name": "doctor",
+       "value": "324569"
+      },
+      {
+       "name": "gender",
+       "value": "Male"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "a52a7c22-c36e-4384-90e0-2ce023d61b47",
+   "name": "DrChrono: Create Patient",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -1328,
+    320
+   ],
+   "credentials": {
+    "oAuth2Api": {
+     "id": "vCwf0HNhIwA3cFV1",
+     "name": "DRSNIP-CHRONO"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "functionCode": "// Pull DrChrono response from previous node\nconst drchrono = items[0].json;\n\n// Reach back to the original normalized payload (HTTP nodes strip it)\nconst original = $node[\"Parse & Normalize\"].json;\n\n// Search Patient response is the source of truth on the Update branch\n// (DrChrono PATCH /patients/{id} returns an empty body when no fields change)\nconst search = $node[\"DrChrono: Search Patient\"].json || {};\n\n// ---------- GET PATIENT ID ----------\nlet patient_id = null;\nif (drchrono.id) {\n  patient_id = drchrono.id;\n} else if (drchrono.results && drchrono.results[0] && drchrono.results[0].id) {\n  patient_id = drchrono.results[0].id;\n} else if (search.results && search.results[0] && search.results[0].id) {\n  patient_id = search.results[0].id;\n}\n\n// ---------- OUTPUT ----------\nreturn [\n  {\n    json: {\n      ...original,\n      patient_id,\n      has_insurance_cards: (original.insurance_card_urls || []).length > 0\n    }\n  }\n];"
+   },
+   "id": "20475188-5fdd-4158-8025-465ce615aecd",
+   "name": "Resolve Patient ID",
+   "type": "n8n-nodes-base.function",
+   "typeVersion": 1,
+   "position": [
+    -880,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 1
+     },
+     "conditions": [
+      {
+       "id": "has-doc",
+       "leftValue": "={{ $('Resolve Patient ID').item.json.has_insurance_cards }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "ab2de9d8-8cb9-475b-bde0-3111565e6ccf",
+   "name": "IF: Has Document?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://app.drchrono.com/api/documents",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "oAuth2Api",
+    "sendBody": true,
+    "contentType": "multipart-form-data",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "patient",
+       "value": "={{ $json.patient_id }}"
+      },
+      {
+       "name": "description",
+       "value": "Insurance card (Jotform intake)"
+      },
+      {
+       "parameterType": "formBinaryData",
+       "name": "document",
+       "inputDataFieldName": "data"
+      },
+      {
+       "name": "doctor",
+       "value": "324569"
+      },
+      {
+       "name": "date",
+       "value": "={{ $now.format('yyyy-MM-dd') }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "527131fe-d81f-4771-b822-6b712926938e",
+   "name": "DrChrono: Upload Document",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -80,
+    -208
+   ],
+   "credentials": {
+    "oAuth2Api": {
+     "id": "vCwf0HNhIwA3cFV1",
+     "name": "DRSNIP-CHRONO"
+    }
+   },
+   "continueOnFail": true
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "doc-failed",
+       "leftValue": "={{ $json.error }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "a6b3c29c-a556-4b0c-a899-aa79b67ed6c5",
+   "name": "IF: Upload Failed?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    208,
+    -208
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "append",
+    "documentId": "={{ $vars.SHEETS_DOC_ID || 'REPLACE_WITH_SPREADSHEET_ID' }}",
+    "sheetName": "Fallback_Docs",
+    "columns": {
+     "mappingMode": "defineBelow",
+     "value": {
+      "timestamp": "={{ new Date().toISOString() }}",
+      "patient_id": "={{ $('Resolve Patient ID').item.json.patient_id }}",
+      "insurance_card_url": "={{ $('Resolve Patient ID').item.json.insurance_card_url }}",
+      "error": "={{ $json.error || 'unknown' }}"
+     }
+    },
+    "options": {}
+   },
+   "id": "1e9c84c2-127d-446b-8a29-fc89cc308915",
+   "name": "Sheets: Fallback Log",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.4,
+   "position": [
+    496,
+    -240
+   ],
+   "credentials": {
+    "googleSheetsOAuth2Api": {
+     "id": "hQTs0UCcXWEtQ3j0",
+     "name": "Google Sheets account"
+    }
+   },
+   "disabled": true
+  },
+  {
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ { success: true, message: 'Submission processed' } }}",
+    "options": {}
+   },
+   "id": "5f58eaaf-c944-4146-a929-69ed85feaca5",
+   "name": "Respond to Webhook",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    512,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Pull from Resolve Patient ID \u2014 direct $json here is the PDF-upload\n// response (insurance fields don't exist on it).\nconst rp = $('Resolve Patient ID').first().json;\nconst urls = rp.insurance_card_urls || [];\nconst patient_id = rp.patient_id;\n\nreturn urls.map((url, i) => ({\n  json: {\n    patient_id,\n    insurance_card_url: url,\n    doc_index: i + 1\n  }\n}));"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -848,
+    -240
+   ],
+   "id": "269dadbb-22d9-47bc-9a4e-b646f2987bea",
+   "name": "Code in JavaScript"
+  },
+  {
+   "parameters": {
+    "url": "={{ $json.insurance_card_url }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "APIKEY",
+       "value": "c23de1a35351ef6d98541533b21fd9b0"
+      }
+     ]
+    },
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 2,
+       "batchInterval": 8000
+      }
+     },
+     "response": {
+      "response": {
+       "neverError": true,
+       "responseFormat": "file"
+      }
+     }
+    }
+   },
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    -656,
+    -256
+   ],
+   "id": "c163b3ca-ed3a-466d-93ca-edab6fea897c",
+   "name": "Download File"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 3
+     },
+     "conditions": [
+      {
+       "id": "d9f9c2e7-f103-470e-afd7-358b6fafc02f",
+       "leftValue": "={{ $binary.data.mimeType }}",
+       "rightValue": "image/",
+       "operator": {
+        "type": "string",
+        "operation": "notStartsWith"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    -320,
+    -288
+   ],
+   "id": "2539e62b-902c-4950-89a0-137cb7143daa",
+   "name": "Valid File?"
+  },
+  {
+   "parameters": {
+    "jsCode": "const MIME_MAP = {\n  jpg: 'image/jpeg',\n  jpeg: 'image/jpeg',\n  png: 'image/png',\n  gif: 'image/gif',\n  webp: 'image/webp',\n  heic: 'image/heic',\n  pdf: 'application/pdf'\n};\n\nconst items = $input.all();\n\nreturn items.map((item) => {\n  const bin = item.binary && item.binary.data;\n  if (!bin) return item;\n\n  const url = (item.json.insurance_card_url || '').toLowerCase();\n  const extFromUrl = url.split('?')[0].split('.').pop();\n  const ext = (bin.fileExtension || extFromUrl || '').toLowerCase();\n  const mime = MIME_MAP[ext] || bin.mimeType || 'application/octet-stream';\n  const name = bin.fileName || `insurance_card_${item.json.doc_index || 1}.${ext || 'jpg'}`;\n\n  return {\n    json: item.json,\n    binary: {\n      data: { ...bin, mimeType: mime, fileName: name }\n    }\n  };\n});"
+   },
+   "id": "aefb0d49-f7fa-4a19-bd1d-788753f4a41b",
+   "name": "Fix MIME",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -496,
+    -288
+   ]
+  },
+  {
+   "id": "7558be02-0e29-40f0-8816-24bdd46c2cbc",
+   "name": "Generate Registration PDF",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -720,
+    208
+   ],
+   "parameters": {
+    "jsCode": "// Generate a self-contained PDF of the registration form (no external deps).\n// HIPAA-safe: PDF is built in-process and never sent to a third-party renderer.\n\nconst data = $('Parse & Normalize').first().json;\n\n// ---------- Build content rows ----------\nconst rows = [];\nconst sec = (t) => rows.push({ type: 'section', text: t });\nconst kv = (k, v) => rows.push({\n  type: 'kv',\n  key: k,\n  value: String(v == null || v === '' ? '\u2014' : v)\n});\n\nsec('Patient Demographics');\nkv('Full Name', `${data.first_name || ''} ${data.last_name || ''}`.trim());\nkv('Preferred Name', data.preferred_first_name);\nkv('Date of Birth', data.dob);\nkv('Email', data.email);\nkv('Phone', data.phone);\nkv('Street', data.address_street);\nkv('City', data.address_city);\nkv('State', data.address_state);\nkv('ZIP', data.address_zip);\nkv('Office Location', data.office_location);\nkv('Primary Care Physician', data.primary_care_physician);\n\nsec('Insurance');\nkv('Insurance Status', data.insurance_status);\nkv('Provider', data.insurance_provider);\nkv('Member ID', data.insurance_member_id);\nkv('Group ID', data.insurance_group_id);\nkv('Insurance Cards Attached', (data.insurance_card_urls || []).length);\n\nsec('Consent');\nkv('HIPAA Consent', data.consent_hipaa ? 'Yes' : 'No');\nkv('Treatment Consent', data.consent_treatment ? 'Yes' : 'No');\n\nsec('Medical History');\nconst hist = data.medical_history || [];\nif (hist.length === 0) {\n  kv('(no responses captured)', '');\n} else {\n  for (const h of hist) kv(h.label || h.key, h.value);\n}\n\nsec('Surgery Details');\nkv('Notes', data.surgery_details || '\u2014');\n\nsec('Submission Metadata');\nkv('Submission ID', data.submission_id);\nkv('Timestamp', data.timestamp);\n\n// ---------- Hand-built minimal PDF ----------\nconst PAGE_W = 612;\nconst PAGE_H = 792;\nconst ML = 54, MR = 54, MT = 54, MB = 54;\nconst LEAD = 14;\nconst SZ_TITLE = 16, SZ_SECTION = 12, SZ_BODY = 10;\n\nconst escape = (s) => String(s)\n  .replace(/\\\\/g, '\\\\\\\\')\n  .replace(/\\(/g, '\\\\(')\n  .replace(/\\)/g, '\\\\)')\n  .replace(/[\\r\\n]+/g, ' ');\n\nconst charsPerLine = Math.floor((PAGE_W - ML - MR) / (SZ_BODY * 0.52));\nconst wrap = (s, width) => {\n  if (!s) return [''];\n  const words = String(s).split(/\\s+/);\n  const out = [];\n  let line = '';\n  for (const w of words) {\n    if (!line) line = w;\n    else if ((line + ' ' + w).length <= width) line = line + ' ' + w;\n    else { out.push(line); line = w; }\n  }\n  if (line) out.push(line);\n  return out;\n};\n\nconst pages = [];\nlet cur = [];\nlet y = PAGE_H - MT;\n\nconst pushPage = () => {\n  if (cur.length) pages.push(cur);\n  cur = [];\n  y = PAGE_H - MT;\n};\n\nconst writeLine = (text, size, font) => {\n  if (y - size < MB) pushPage();\n  cur.push({ text, size, font, x: ML, y });\n  y -= LEAD;\n};\n\nwriteLine('DrSnip - Patient Registration Intake', SZ_TITLE, 'F2');\nwriteLine(`Generated: ${new Date().toISOString().slice(0, 19)}Z`, SZ_BODY, 'F1');\ny -= 6;\n\nfor (const r of rows) {\n  if (r.type === 'section') {\n    y -= 6;\n    writeLine(r.text, SZ_SECTION, 'F2');\n  } else {\n    const text = `${r.key}: ${r.value}`;\n    for (const ln of wrap(text, charsPerLine)) writeLine(ln, SZ_BODY, 'F1');\n  }\n}\nif (cur.length) pages.push(cur);\n\n// Assemble PDF objects\nconst objects = [];\nconst add = (s) => { objects.push(s); return objects.length; };\n\nconst catalogId = add('PLACEHOLDER_CATALOG');\nconst pagesId = add('PLACEHOLDER_PAGES');\nconst helvId = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');\nconst helvBoldId = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');\n\nconst pageIds = [];\nfor (const p of pages) {\n  let stream = '';\n  for (const t of p) {\n    stream += `BT /${t.font} ${t.size} Tf ${t.x} ${t.y} Td (${escape(t.text)}) Tj ET\\n`;\n  }\n  const len = Buffer.byteLength(stream, 'binary');\n  const streamId = add(`<< /Length ${len} >>\\nstream\\n${stream}endstream`);\n  const pageId = add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 ${helvId} 0 R /F2 ${helvBoldId} 0 R >> >> /Contents ${streamId} 0 R >>`);\n  pageIds.push(pageId);\n}\n\nobjects[catalogId - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;\nobjects[pagesId - 1] = `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map(i => `${i} 0 R`).join(' ')}] >>`;\n\nlet pdf = '%PDF-1.4\\n%\\xE2\\xE3\\xCF\\xD3\\n';\nconst offsets = [];\nfor (let i = 0; i < objects.length; i++) {\n  offsets.push(Buffer.byteLength(pdf, 'binary'));\n  pdf += `${i + 1} 0 obj\\n${objects[i]}\\nendobj\\n`;\n}\nconst xrefStart = Buffer.byteLength(pdf, 'binary');\npdf += `xref\\n0 ${objects.length + 1}\\n0000000000 65535 f \\n`;\nfor (const off of offsets) {\n  pdf += `${String(off).padStart(10, '0')} 00000 n \\n`;\n}\npdf += `trailer\\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\\nstartxref\\n${xrefStart}\\n%%EOF`;\n\nconst buffer = Buffer.from(pdf, 'binary');\nconst safe = `${data.first_name || 'patient'}_${data.last_name || ''}`.replace(/[^a-zA-Z0-9_-]+/g, '_');\nconst fileName = `registration_${safe}_${(data.timestamp || '').slice(0, 10)}.pdf`;\n\nreturn [\n  {\n    json: {\n      patient_id: $json.patient_id,\n      has_insurance_cards: $json.has_insurance_cards,\n      insurance_card_urls: $json.insurance_card_urls,\n      pdf_filename: fileName\n    },\n    binary: {\n      pdf: {\n        data: buffer.toString('base64'),\n        mimeType: 'application/pdf',\n        fileName: fileName,\n        fileExtension: 'pdf'\n      }\n    }\n  }\n];"
+   }
+  },
+  {
+   "id": "ccca0c62-2038-43aa-a590-fe8f542fa2a6",
+   "name": "DrChrono: Upload Registration PDF",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -560,
+    208
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://app.drchrono.com/api/documents",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "oAuth2Api",
+    "sendBody": true,
+    "contentType": "multipart-form-data",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "patient",
+       "value": "={{ $json.patient_id }}"
+      },
+      {
+       "name": "description",
+       "value": "Registration Intake Form"
+      },
+      {
+       "parameterType": "formBinaryData",
+       "name": "document",
+       "inputDataFieldName": "pdf"
+      },
+      {
+       "name": "doctor",
+       "value": "324569"
+      },
+      {
+       "name": "date",
+       "value": "={{ $now.format('yyyy-MM-dd') }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "credentials": {
+    "oAuth2Api": {
+     "id": "vCwf0HNhIwA3cFV1",
+     "name": "DRSNIP-CHRONO"
+    }
+   },
+   "continueOnFail": true
+  },
+  {
+   "id": "e70ec88d-3ee1-4c02-b14e-1a343b875755",
+   "name": "IF: PDF Upload Failed?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    350
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "pdf-upload-failed",
+       "leftValue": "={{ $json.error }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "cc2c2ca7-f141-4736-9ea2-aed7e69d8f86",
+   "name": "Sheets: PDF Fallback Log",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.4,
+   "position": [
+    -240,
+    480
+   ],
+   "parameters": {
+    "operation": "append",
+    "documentId": {
+     "__rl": true,
+     "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+     "mode": "list",
+     "cachedResultName": "DrSnip_Intake_Sheet"
+    },
+    "sheetName": {
+     "__rl": true,
+     "value": "PDF_Fallback",
+     "mode": "name"
+    },
+    "columns": {
+     "mappingMode": "defineBelow",
+     "value": {
+      "timestamp": "={{ new Date().toISOString() }}",
+      "patient_id": "={{ $('Resolve Patient ID').item.json.patient_id }}",
+      "type": "registration_pdf",
+      "filename": "={{ $('Generate Registration PDF').item.json.pdf_filename }}",
+      "error": "={{ $json.error || 'unknown' }}"
+     }
+    },
+    "options": {}
+   },
+   "credentials": {
+    "googleSheetsOAuth2Api": {
+     "id": "hQTs0UCcXWEtQ3j0",
+     "name": "Google Sheets account"
+    }
+   },
+   "continueOnFail": true
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Parse & Normalize",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse & Normalize": {
+   "main": [
+    [
+     {
+      "node": "Sheets: Audit Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sheets: Audit Log": {
+   "main": [
+    [
+     {
+      "node": "DrChrono: Search Patient",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "DrChrono: Search Patient": {
+   "main": [
+    [
+     {
+      "node": "IF: Patient Exists?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: Patient Exists?": {
+   "main": [
+    [
+     {
+      "node": "DrChrono: Update Patient",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "DrChrono: Create Patient",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "DrChrono: Update Patient": {
+   "main": [
+    [
+     {
+      "node": "Resolve Patient ID",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "DrChrono: Create Patient": {
+   "main": [
+    [
+     {
+      "node": "Resolve Patient ID",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: Has Document?": {
+   "main": [
+    [
+     {
+      "node": "Code in JavaScript",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond to Webhook",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "DrChrono: Upload Document": {
+   "main": [
+    [
+     {
+      "node": "IF: Upload Failed?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: Upload Failed?": {
+   "main": [
+    [
+     {
+      "node": "Sheets: Fallback Log",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond to Webhook",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sheets: Fallback Log": {
+   "main": [
+    [
+     {
+      "node": "Respond to Webhook",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Code in JavaScript": {
+   "main": [
+    [
+     {
+      "node": "Download File",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Valid File?": {
+   "main": [
+    [
+     {
+      "node": "Sheets: Fallback Log",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "DrChrono: Upload Document",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Download File": {
+   "main": [
+    [
+     {
+      "node": "Fix MIME",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fix MIME": {
+   "main": [
+    [
+     {
+      "node": "Valid File?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resolve Patient ID": {
+   "main": [
+    [
+     {
+      "node": "Generate Registration PDF",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Generate Registration PDF": {
+   "main": [
+    [
+     {
+      "node": "DrChrono: Upload Registration PDF",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "DrChrono: Upload Registration PDF": {
+   "main": [
+    [
+     {
+      "node": "IF: PDF Upload Failed?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: PDF Upload Failed?": {
+   "main": [
+    [
+     {
+      "node": "Sheets: PDF Fallback Log",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "IF: Has Document?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sheets: PDF Fallback Log": {
+   "main": [
+    [
+     {
+      "node": "IF: Has Document?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "binaryMode": "separate",
+  "timeSavedMode": "fixed",
+  "saveDataErrorExecution": "all",
+  "saveDataSuccessExecution": "all",
+  "saveManualExecutions": true,
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "pinData": {},
+ "versionId": "a6abc18d-b663-4db8-8b59-d0b40807c31f",
+ "activeVersionId": "a6abc18d-b663-4db8-8b59-d0b40807c31f",
+ "versionCounter": 628,
+ "triggerCount": 1,
+ "shared": [
+  {
+   "updatedAt": "2026-04-10T00:20:38.668Z",
+   "createdAt": "2026-04-10T00:20:38.668Z",
+   "role": "workflow:owner",
+   "workflowId": "6warkNFZSSzuasMB",
+   "projectId": "1eqm2b4PJgnu0Iij",
+   "project": {
+    "updatedAt": "2026-04-09T23:47:17.695Z",
+    "createdAt": "2026-04-09T23:44:37.753Z",
+    "id": "1eqm2b4PJgnu0Iij",
+    "name": "Jeffery Cho <it@drsnip.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "creatorId": "64aa4b99-d2b7-491e-954e-275050abd25c"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-05-09T02:29:42.397Z",
+  "createdAt": "2026-05-09T02:29:42.397Z",
+  "versionId": "a6abc18d-b663-4db8-8b59-d0b40807c31f",
+  "workflowId": "6warkNFZSSzuasMB",
+  "nodes": [
+   {
+    "parameters": {
+     "httpMethod": "POST",
+     "path": "job-form-submission",
+     "responseMode": "responseNode",
+     "options": {}
+    },
+    "id": "fe372f2b-7a75-44c2-8767-7a6e43d9d6fc",
+    "name": "Webhook",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 1.1,
+    "position": [
+     -2416,
+     208
+    ],
+    "webhookId": "job-form-submission",
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "functionCode": "// Parse & normalize Jotform payload for DrSnip Registration Form\n\nconst raw = items[0].json;\n\n// ---------- STEP 1: Extract source safely ----------\nlet src = {};\n\nif (raw.body?.rawRequest) {\n  try {\n    src = JSON.parse(raw.body.rawRequest);\n  } catch {\n    src = raw.body;\n  }\n} else if (raw.rawRequest) {\n  try {\n    src = JSON.parse(raw.rawRequest);\n  } catch {\n    src = raw;\n  }\n} else {\n  src = raw.body || raw;\n}\n\n// ---------- HELPERS ----------\nconst pick = (...keys) => {\n  for (const k of keys) {\n    if (src[k] !== undefined && src[k] !== null && String(src[k]).trim() !== '') {\n      return src[k];\n    }\n  }\n  return '';\n};\n\nconst normDob = () => {\n  const d = src.q8_q8_datetime6;\n  if (!d) return '';\n  if (typeof d === 'string') return d.slice(0, 10);\n  if (typeof d === 'object') {\n    const y = d.year;\n    const m = String(d.month || '').padStart(2, '0');\n    const day = String(d.day || '').padStart(2, '0');\n    if (y && m && day) return `${y}-${m}-${day}`;\n  }\n  return '';\n};\n\nconst parseAddress = () => {\n  const a = src.q9_q9_address7;\n  if (!a || typeof a !== 'object') {\n    return { street: '', city: '', state: '', zip: '' };\n  }\n  return {\n    street: [a.addr_line1, a.addr_line2].filter(Boolean).join(' '),\n    city: a.city || '',\n    state: a.state || '',\n    zip: a.postal || ''\n  };\n};\n\nconst parsePhone = () => {\n  const p = src.q10_q10_phone8;\n  if (p && typeof p === 'object') return p.full || '';\n  if (typeof p === 'string') return p;\n  return '';\n};\n\nconst parseInsuranceCardUrls = () => {\n  // Jotform exposes file upload answers under any key matching /fileupload/i\n  // (and the question number can shift if the form is edited). Scan all keys.\n  const out = [];\n  for (const key of Object.keys(src)) {\n    if (!/fileupload/i.test(key)) continue;\n    const v = src[key];\n    if (!v) continue;\n    const arr = Array.isArray(v) ? v : [v];\n    for (const item of arr) {\n      if (typeof item === 'string' && /^https?:\\/\\//.test(item)) {\n        out.push(item);\n      }\n    }\n  }\n  return out;\n};\n\n// Human-readable medical history question labels (Jotform q16-q28)\nconst Q_LABELS = {\n  q16: 'Have you ever had testicle abnormality, scrotal abnormality, hernia, infection, or tumor?',\n  q17: 'Have you ever had a serious injury to, or surgery of, the testicles or scrotal area?',\n  q18: 'Have you ever had AIDS, Chlamydia, Epididymitis, Gonorrhea, Hepatitis, or Prostatitis?',\n  q19: 'Do you have a kidney abnormality or abnormal kidney function?',\n  q20: 'Is there medication you take regularly or have you taken any medication in the last 2 weeks?',\n  q21: 'Have you had any surgeries?',\n  q22: 'Have you ever fainted or almost fainted during, or after, a medical procedure?',\n  q23: 'Do you have any allergies to a drug, medication, or anesthetic?',\n  q24: 'Have you had any major medical problems or do you have any chronic medical problems?',\n  q25: 'Do you, or does anyone in your family, have a tendency to bleed easily?',\n  q26: 'Have you had any complications or excessive pain or bleeding after surgery?',\n  q27: 'Do you think you are more sensitive to pain than the average person?',\n  q28: 'Are you currently taking any aspirin products, or anticipate taking aspirin in the five days leading up to your procedure?'\n};\n\n// Extract medical history yes/no fields (q16-q28 inclusive)\nconst parseMedicalHistory = () => {\n  const out = [];\n  for (const key of Object.keys(src)) {\n    const m = key.match(/^q(\\d+)_/);\n    if (!m) continue;\n    const n = parseInt(m[1], 10);\n    if (n < 16 || n > 28) continue;\n    const val = src[key];\n    let display;\n    if (typeof val === 'string') display = val;\n    else if (Array.isArray(val)) display = val.join(', ');\n    else if (val == null) display = '';\n    else if (typeof val === 'object') display = JSON.stringify(val);\n    else display = String(val);\n    const label = Q_LABELS['q' + n] || key;\n    out.push({ key, label, value: display });\n  }\n  // sort by question number for stable order\n  out.sort((a, b) => {\n    const na = parseInt((a.key.match(/^q(\\d+)_/) || [])[1] || '0', 10);\n    const nb = parseInt((b.key.match(/^q(\\d+)_/) || [])[1] || '0', 10);\n    return na - nb;\n  });\n  return out;\n};\n\n// ---------- CORE DATA ----------\nconst addr = parseAddress();\nconst insuranceCardUrls = parseInsuranceCardUrls();\nconst medicalHistory = parseMedicalHistory();\n\nconst submissionId =\n  raw.body?.submissionID ||\n  raw.submissionID ||\n  src.submissionID ||\n  src.submission_id ||\n  '';\n\nconst clean = {\n  submission_id: submissionId,\n  timestamp: new Date().toISOString(),\n\n  first_name: pick('q4_q4_textbox2'),\n  last_name: pick('q7_q7_textbox5'),\n  dob: normDob(),\n  email: pick('q13_q13_email11'),\n  phone: parsePhone(),\n\n  address_street: addr.street,\n  address_city: addr.city,\n  address_state: addr.state,\n  address_zip: addr.zip,\n\n  insurance_status: pick('q31_q31_radio29'),\n  insurance_provider: pick('q32_q32_textbox30'),\n  insurance_member_id: pick('q33_q33_textbox31'),\n  insurance_group_id: pick('q34_q34_textbox32'),\n\n  consent_hipaa: pick('q11_q11_radio9') === 'Yes',\n  consent_treatment: pick('q12_q12_radio10') === 'Yes',\n\n  office_location: pick('q3_q3_dropdown1'),\n  preferred_first_name: pick('q5_q5_textbox3'),\n  primary_care_physician: pick('q15_q15_textbox13'),\n  surgery_details: pick('q29_q29_textarea27'),\n\n  insurance_card_urls: insuranceCardUrls,\n  has_insurance_cards: insuranceCardUrls.length > 0,\n\n  medical_history: medicalHistory,\n\n  _debug_submission_id: submissionId\n};\n\nreturn [\n  {\n    json: {\n      ...clean,\n      original: clean\n    }\n  }\n];"
+    },
+    "id": "6412549c-c817-47db-933a-b0473592e7ab",
+    "name": "Parse & Normalize",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+     -2208,
+     208
+    ]
+   },
+   {
+    "parameters": {
+     "operation": "append",
+     "documentId": {
+      "__rl": true,
+      "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+      "mode": "list",
+      "cachedResultName": "DrSnip_Intake_Sheet",
+      "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI/edit?usp=drivesdk"
+     },
+     "sheetName": {
+      "__rl": true,
+      "value": 102925546,
+      "mode": "list",
+      "cachedResultName": "DrSnip_Intake_Sheet",
+      "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI/edit#gid=102925546"
+     },
+     "columns": {
+      "mappingMode": "autoMapInputData",
+      "value": {},
+      "matchingColumns": [],
+      "schema": [
+       {
+        "id": "timestamp",
+        "displayName": "timestamp",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "submission_id",
+        "displayName": "submission_id",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "first_name",
+        "displayName": "first_name",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "last_name",
+        "displayName": "last_name",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "dob",
+        "displayName": "dob",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "email",
+        "displayName": "email",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "phone",
+        "displayName": "phone",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "insurance_provider",
+        "displayName": "insurance_provider",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "insurance_member_id",
+        "displayName": "insurance_member_id",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "consent_hipaa",
+        "displayName": "consent_hipaa",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "address_street",
+        "displayName": "address_street",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "address_city",
+        "displayName": "address_city",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "address_state",
+        "displayName": "address_state",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "address_zip",
+        "displayName": "address_zip",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "insurance_group_id",
+        "displayName": "insurance_group_id",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "consent_treatment",
+        "displayName": "consent_treatment",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       },
+       {
+        "id": "insurance_card_url",
+        "displayName": "insurance_card_url",
+        "required": false,
+        "defaultMatch": false,
+        "display": true,
+        "type": "string",
+        "canBeUsedToMatch": true,
+        "removed": false
+       }
+      ],
+      "attemptToConvertTypes": false,
+      "convertFieldsToString": false
+     },
+     "options": {}
+    },
+    "id": "573ac6b2-6f38-45c2-9d93-76f1882db7a1",
+    "name": "Sheets: Audit Log",
+    "type": "n8n-nodes-base.googleSheets",
+    "typeVersion": 4.4,
+    "position": [
+     -1984,
+     208
+    ],
+    "alwaysOutputData": true,
+    "credentials": {
+     "googleSheetsOAuth2Api": {
+      "id": "hQTs0UCcXWEtQ3j0",
+      "name": "Google Sheets account"
+     }
+    },
+    "continueOnFail": true
+   },
+   {
+    "parameters": {
+     "url": "https://app.drchrono.com/api/patients",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "oAuth2Api",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "first_name",
+        "value": "={{  $('Parse & Normalize').item.json.first_name }}"
+       },
+       {
+        "name": "last_name",
+        "value": "={{ $('Parse & Normalize').item.json.last_name }}"
+       },
+       {
+        "name": "date_of_birth",
+        "value": "={{ $('Parse & Normalize').item.json.dob }}"
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "f88fb8c2-904a-4efa-8a14-12d4870f0a90",
+    "name": "DrChrono: Search Patient",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -1760,
+     208
+    ],
+    "credentials": {
+     "oAuth2Api": {
+      "id": "vCwf0HNhIwA3cFV1",
+      "name": "DRSNIP-CHRONO"
+     }
+    },
+    "continueOnFail": true
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "strict",
+       "version": 1
+      },
+      "conditions": [
+       {
+        "id": "exists-check",
+        "leftValue": "={{ $json.results ? $json.results.length : 0 }}",
+        "rightValue": 0,
+        "operator": {
+         "type": "number",
+         "operation": "gt"
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "id": "74791e36-3bbb-4ce9-81c2-8ec5d425ec2e",
+    "name": "IF: Patient Exists?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2,
+    "position": [
+     -1536,
+     208
+    ]
+   },
+   {
+    "parameters": {
+     "method": "PATCH",
+     "url": "=https://app.drchrono.com/api/patients/{{ $json.results[0].id }}",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "oAuth2Api",
+     "sendBody": true,
+     "bodyParameters": {
+      "parameters": [
+       {
+        "name": "nick_name",
+        "value": "={{ $('Parse & Normalize').item.json.preferred_first_name }}"
+       },
+       {
+        "name": "email",
+        "value": "={{ $('Parse & Normalize').item.json.email }}"
+       },
+       {
+        "name": "cell_phone",
+        "value": "={{ $('Parse & Normalize').item.json.phone }}"
+       },
+       {
+        "name": "address",
+        "value": "={{ $('Parse & Normalize').item.json.address_street }}"
+       },
+       {
+        "name": "city",
+        "value": "={{ $('Parse & Normalize').item.json.address_city }}"
+       },
+       {
+        "name": "state",
+        "value": "={{ $('Parse & Normalize').item.json.address_state }}"
+       },
+       {
+        "name": "zip_code",
+        "value": "={{ $('Parse & Normalize').item.json.address_zip }}"
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "6e5505e4-8979-40e4-ab55-a99b456be379",
+    "name": "DrChrono: Update Patient",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -1328,
+     80
+    ],
+    "credentials": {
+     "oAuth2Api": {
+      "id": "vCwf0HNhIwA3cFV1",
+      "name": "DRSNIP-CHRONO"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://app.drchrono.com/api/patients",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "oAuth2Api",
+     "sendBody": true,
+     "bodyParameters": {
+      "parameters": [
+       {
+        "name": "first_name",
+        "value": "={{ $('Parse & Normalize').item.json.first_name }}"
+       },
+       {
+        "name": "last_name",
+        "value": "={{ $('Parse & Normalize').item.json.last_name }}"
+       },
+       {
+        "name": "nick_name",
+        "value": "={{ $('Parse & Normalize').item.json.preferred_first_name }}"
+       },
+       {
+        "name": "date_of_birth",
+        "value": "={{ $('Parse & Normalize').item.json.dob }}"
+       },
+       {
+        "name": "email",
+        "value": "={{ $('Parse & Normalize').item.json.email }}"
+       },
+       {
+        "name": "cell_phone",
+        "value": "={{ $('Parse & Normalize').item.json.phone }}"
+       },
+       {
+        "name": "address",
+        "value": "={{ $('Parse & Normalize').item.json.address_street }}"
+       },
+       {
+        "name": "city",
+        "value": "={{ $('Parse & Normalize').item.json.address_city }}"
+       },
+       {
+        "name": "state",
+        "value": "={{ $('Parse & Normalize').item.json.address_state }}"
+       },
+       {
+        "name": "zip_code",
+        "value": "={{ $('Parse & Normalize').item.json.address_zip }}"
+       },
+       {
+        "name": "doctor",
+        "value": "324569"
+       },
+       {
+        "name": "gender",
+        "value": "Male"
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "a52a7c22-c36e-4384-90e0-2ce023d61b47",
+    "name": "DrChrono: Create Patient",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -1328,
+     320
+    ],
+    "credentials": {
+     "oAuth2Api": {
+      "id": "vCwf0HNhIwA3cFV1",
+      "name": "DRSNIP-CHRONO"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "functionCode": "// Pull DrChrono response from previous node\nconst drchrono = items[0].json;\n\n// Reach back to the original normalized payload (HTTP nodes strip it)\nconst original = $node[\"Parse & Normalize\"].json;\n\n// Search Patient response is the source of truth on the Update branch\n// (DrChrono PATCH /patients/{id} returns an empty body when no fields change)\nconst search = $node[\"DrChrono: Search Patient\"].json || {};\n\n// ---------- GET PATIENT ID ----------\nlet patient_id = null;\nif (drchrono.id) {\n  patient_id = drchrono.id;\n} else if (drchrono.results && drchrono.results[0] && drchrono.results[0].id) {\n  patient_id = drchrono.results[0].id;\n} else if (search.results && search.results[0] && search.results[0].id) {\n  patient_id = search.results[0].id;\n}\n\n// ---------- OUTPUT ----------\nreturn [\n  {\n    json: {\n      ...original,\n      patient_id,\n      has_insurance_cards: (original.insurance_card_urls || []).length > 0\n    }\n  }\n];"
+    },
+    "id": "20475188-5fdd-4158-8025-465ce615aecd",
+    "name": "Resolve Patient ID",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+     -880,
+     208
+    ]
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "strict",
+       "version": 1
+      },
+      "conditions": [
+       {
+        "id": "has-doc",
+        "leftValue": "={{ $('Resolve Patient ID').item.json.has_insurance_cards }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "id": "ab2de9d8-8cb9-475b-bde0-3111565e6ccf",
+    "name": "IF: Has Document?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2,
+    "position": [
+     -400,
+     208
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://app.drchrono.com/api/documents",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "oAuth2Api",
+     "sendBody": true,
+     "contentType": "multipart-form-data",
+     "bodyParameters": {
+      "parameters": [
+       {
+        "name": "patient",
+        "value": "={{ $json.patient_id }}"
+       },
+       {
+        "name": "description",
+        "value": "Insurance card (Jotform intake)"
+       },
+       {
+        "parameterType": "formBinaryData",
+        "name": "document",
+        "inputDataFieldName": "data"
+       },
+       {
+        "name": "doctor",
+        "value": "324569"
+       },
+       {
+        "name": "date",
+        "value": "={{ $now.format('yyyy-MM-dd') }}"
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "527131fe-d81f-4771-b822-6b712926938e",
+    "name": "DrChrono: Upload Document",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -80,
+     -208
+    ],
+    "credentials": {
+     "oAuth2Api": {
+      "id": "vCwf0HNhIwA3cFV1",
+      "name": "DRSNIP-CHRONO"
+     }
+    },
+    "continueOnFail": true
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "typeValidation": "loose"
+      },
+      "conditions": [
+       {
+        "id": "doc-failed",
+        "leftValue": "={{ $json.error }}",
+        "rightValue": "",
+        "operator": {
+         "type": "string",
+         "operation": "notEmpty",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "id": "a6b3c29c-a556-4b0c-a899-aa79b67ed6c5",
+    "name": "IF: Upload Failed?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2,
+    "position": [
+     208,
+     -208
+    ]
+   },
+   {
+    "parameters": {
+     "operation": "append",
+     "documentId": "={{ $vars.SHEETS_DOC_ID || 'REPLACE_WITH_SPREADSHEET_ID' }}",
+     "sheetName": "Fallback_Docs",
+     "columns": {
+      "mappingMode": "defineBelow",
+      "value": {
+       "timestamp": "={{ new Date().toISOString() }}",
+       "patient_id": "={{ $('Resolve Patient ID').item.json.patient_id }}",
+       "insurance_card_url": "={{ $('Resolve Patient ID').item.json.insurance_card_url }}",
+       "error": "={{ $json.error || 'unknown' }}"
+      }
+     },
+     "options": {}
+    },
+    "id": "1e9c84c2-127d-446b-8a29-fc89cc308915",
+    "name": "Sheets: Fallback Log",
+    "type": "n8n-nodes-base.googleSheets",
+    "typeVersion": 4.4,
+    "position": [
+     496,
+     -240
+    ],
+    "credentials": {
+     "googleSheetsOAuth2Api": {
+      "id": "hQTs0UCcXWEtQ3j0",
+      "name": "Google Sheets account"
+     }
+    },
+    "disabled": true
+   },
+   {
+    "parameters": {
+     "respondWith": "json",
+     "responseBody": "={{ { success: true, message: 'Submission processed' } }}",
+     "options": {}
+    },
+    "id": "5f58eaaf-c944-4146-a929-69ed85feaca5",
+    "name": "Respond to Webhook",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.1,
+    "position": [
+     512,
+     240
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "// Pull from Resolve Patient ID \u2014 direct $json here is the PDF-upload\n// response (insurance fields don't exist on it).\nconst rp = $('Resolve Patient ID').first().json;\nconst urls = rp.insurance_card_urls || [];\nconst patient_id = rp.patient_id;\n\nreturn urls.map((url, i) => ({\n  json: {\n    patient_id,\n    insurance_card_url: url,\n    doc_index: i + 1\n  }\n}));"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     -848,
+     -240
+    ],
+    "id": "269dadbb-22d9-47bc-9a4e-b646f2987bea",
+    "name": "Code in JavaScript"
+   },
+   {
+    "parameters": {
+     "url": "={{ $json.insurance_card_url }}",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "APIKEY",
+        "value": "c23de1a35351ef6d98541533b21fd9b0"
+       }
+      ]
+     },
+     "options": {
+      "batching": {
+       "batch": {
+        "batchSize": 2,
+        "batchInterval": 8000
+       }
+      },
+      "response": {
+       "response": {
+        "neverError": true,
+        "responseFormat": "file"
+       }
+      }
+     }
+    },
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.4,
+    "position": [
+     -656,
+     -256
+    ],
+    "id": "c163b3ca-ed3a-466d-93ca-edab6fea897c",
+    "name": "Download File"
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "strict",
+       "version": 3
+      },
+      "conditions": [
+       {
+        "id": "d9f9c2e7-f103-470e-afd7-358b6fafc02f",
+        "leftValue": "={{ $binary.data.mimeType }}",
+        "rightValue": "image/",
+        "operator": {
+         "type": "string",
+         "operation": "notStartsWith"
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     -320,
+     -288
+    ],
+    "id": "2539e62b-902c-4950-89a0-137cb7143daa",
+    "name": "Valid File?"
+   },
+   {
+    "parameters": {
+     "jsCode": "const MIME_MAP = {\n  jpg: 'image/jpeg',\n  jpeg: 'image/jpeg',\n  png: 'image/png',\n  gif: 'image/gif',\n  webp: 'image/webp',\n  heic: 'image/heic',\n  pdf: 'application/pdf'\n};\n\nconst items = $input.all();\n\nreturn items.map((item) => {\n  const bin = item.binary && item.binary.data;\n  if (!bin) return item;\n\n  const url = (item.json.insurance_card_url || '').toLowerCase();\n  const extFromUrl = url.split('?')[0].split('.').pop();\n  const ext = (bin.fileExtension || extFromUrl || '').toLowerCase();\n  const mime = MIME_MAP[ext] || bin.mimeType || 'application/octet-stream';\n  const name = bin.fileName || `insurance_card_${item.json.doc_index || 1}.${ext || 'jpg'}`;\n\n  return {\n    json: item.json,\n    binary: {\n      data: { ...bin, mimeType: mime, fileName: name }\n    }\n  };\n});"
+    },
+    "id": "aefb0d49-f7fa-4a19-bd1d-788753f4a41b",
+    "name": "Fix MIME",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     -496,
+     -288
+    ]
+   },
+   {
+    "id": "7558be02-0e29-40f0-8816-24bdd46c2cbc",
+    "name": "Generate Registration PDF",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     -720,
+     208
+    ],
+    "parameters": {
+     "jsCode": "// Generate a self-contained PDF of the registration form (no external deps).\n// HIPAA-safe: PDF is built in-process and never sent to a third-party renderer.\n\nconst data = $('Parse & Normalize').first().json;\n\n// ---------- Build content rows ----------\nconst rows = [];\nconst sec = (t) => rows.push({ type: 'section', text: t });\nconst kv = (k, v) => rows.push({\n  type: 'kv',\n  key: k,\n  value: String(v == null || v === '' ? '\u2014' : v)\n});\n\nsec('Patient Demographics');\nkv('Full Name', `${data.first_name || ''} ${data.last_name || ''}`.trim());\nkv('Preferred Name', data.preferred_first_name);\nkv('Date of Birth', data.dob);\nkv('Email', data.email);\nkv('Phone', data.phone);\nkv('Street', data.address_street);\nkv('City', data.address_city);\nkv('State', data.address_state);\nkv('ZIP', data.address_zip);\nkv('Office Location', data.office_location);\nkv('Primary Care Physician', data.primary_care_physician);\n\nsec('Insurance');\nkv('Insurance Status', data.insurance_status);\nkv('Provider', data.insurance_provider);\nkv('Member ID', data.insurance_member_id);\nkv('Group ID', data.insurance_group_id);\nkv('Insurance Cards Attached', (data.insurance_card_urls || []).length);\n\nsec('Consent');\nkv('HIPAA Consent', data.consent_hipaa ? 'Yes' : 'No');\nkv('Treatment Consent', data.consent_treatment ? 'Yes' : 'No');\n\nsec('Medical History');\nconst hist = data.medical_history || [];\nif (hist.length === 0) {\n  kv('(no responses captured)', '');\n} else {\n  for (const h of hist) kv(h.label || h.key, h.value);\n}\n\nsec('Surgery Details');\nkv('Notes', data.surgery_details || '\u2014');\n\nsec('Submission Metadata');\nkv('Submission ID', data.submission_id);\nkv('Timestamp', data.timestamp);\n\n// ---------- Hand-built minimal PDF ----------\nconst PAGE_W = 612;\nconst PAGE_H = 792;\nconst ML = 54, MR = 54, MT = 54, MB = 54;\nconst LEAD = 14;\nconst SZ_TITLE = 16, SZ_SECTION = 12, SZ_BODY = 10;\n\nconst escape = (s) => String(s)\n  .replace(/\\\\/g, '\\\\\\\\')\n  .replace(/\\(/g, '\\\\(')\n  .replace(/\\)/g, '\\\\)')\n  .replace(/[\\r\\n]+/g, ' ');\n\nconst charsPerLine = Math.floor((PAGE_W - ML - MR) / (SZ_BODY * 0.52));\nconst wrap = (s, width) => {\n  if (!s) return [''];\n  const words = String(s).split(/\\s+/);\n  const out = [];\n  let line = '';\n  for (const w of words) {\n    if (!line) line = w;\n    else if ((line + ' ' + w).length <= width) line = line + ' ' + w;\n    else { out.push(line); line = w; }\n  }\n  if (line) out.push(line);\n  return out;\n};\n\nconst pages = [];\nlet cur = [];\nlet y = PAGE_H - MT;\n\nconst pushPage = () => {\n  if (cur.length) pages.push(cur);\n  cur = [];\n  y = PAGE_H - MT;\n};\n\nconst writeLine = (text, size, font) => {\n  if (y - size < MB) pushPage();\n  cur.push({ text, size, font, x: ML, y });\n  y -= LEAD;\n};\n\nwriteLine('DrSnip - Patient Registration Intake', SZ_TITLE, 'F2');\nwriteLine(`Generated: ${new Date().toISOString().slice(0, 19)}Z`, SZ_BODY, 'F1');\ny -= 6;\n\nfor (const r of rows) {\n  if (r.type === 'section') {\n    y -= 6;\n    writeLine(r.text, SZ_SECTION, 'F2');\n  } else {\n    const text = `${r.key}: ${r.value}`;\n    for (const ln of wrap(text, charsPerLine)) writeLine(ln, SZ_BODY, 'F1');\n  }\n}\nif (cur.length) pages.push(cur);\n\n// Assemble PDF objects\nconst objects = [];\nconst add = (s) => { objects.push(s); return objects.length; };\n\nconst catalogId = add('PLACEHOLDER_CATALOG');\nconst pagesId = add('PLACEHOLDER_PAGES');\nconst helvId = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');\nconst helvBoldId = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');\n\nconst pageIds = [];\nfor (const p of pages) {\n  let stream = '';\n  for (const t of p) {\n    stream += `BT /${t.font} ${t.size} Tf ${t.x} ${t.y} Td (${escape(t.text)}) Tj ET\\n`;\n  }\n  const len = Buffer.byteLength(stream, 'binary');\n  const streamId = add(`<< /Length ${len} >>\\nstream\\n${stream}endstream`);\n  const pageId = add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 ${helvId} 0 R /F2 ${helvBoldId} 0 R >> >> /Contents ${streamId} 0 R >>`);\n  pageIds.push(pageId);\n}\n\nobjects[catalogId - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;\nobjects[pagesId - 1] = `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map(i => `${i} 0 R`).join(' ')}] >>`;\n\nlet pdf = '%PDF-1.4\\n%\\xE2\\xE3\\xCF\\xD3\\n';\nconst offsets = [];\nfor (let i = 0; i < objects.length; i++) {\n  offsets.push(Buffer.byteLength(pdf, 'binary'));\n  pdf += `${i + 1} 0 obj\\n${objects[i]}\\nendobj\\n`;\n}\nconst xrefStart = Buffer.byteLength(pdf, 'binary');\npdf += `xref\\n0 ${objects.length + 1}\\n0000000000 65535 f \\n`;\nfor (const off of offsets) {\n  pdf += `${String(off).padStart(10, '0')} 00000 n \\n`;\n}\npdf += `trailer\\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\\nstartxref\\n${xrefStart}\\n%%EOF`;\n\nconst buffer = Buffer.from(pdf, 'binary');\nconst safe = `${data.first_name || 'patient'}_${data.last_name || ''}`.replace(/[^a-zA-Z0-9_-]+/g, '_');\nconst fileName = `registration_${safe}_${(data.timestamp || '').slice(0, 10)}.pdf`;\n\nreturn [\n  {\n    json: {\n      patient_id: $json.patient_id,\n      has_insurance_cards: $json.has_insurance_cards,\n      insurance_card_urls: $json.insurance_card_urls,\n      pdf_filename: fileName\n    },\n    binary: {\n      pdf: {\n        data: buffer.toString('base64'),\n        mimeType: 'application/pdf',\n        fileName: fileName,\n        fileExtension: 'pdf'\n      }\n    }\n  }\n];"
+    }
+   },
+   {
+    "id": "ccca0c62-2038-43aa-a590-fe8f542fa2a6",
+    "name": "DrChrono: Upload Registration PDF",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -560,
+     208
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://app.drchrono.com/api/documents",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "oAuth2Api",
+     "sendBody": true,
+     "contentType": "multipart-form-data",
+     "bodyParameters": {
+      "parameters": [
+       {
+        "name": "patient",
+        "value": "={{ $json.patient_id }}"
+       },
+       {
+        "name": "description",
+        "value": "Registration Intake Form"
+       },
+       {
+        "parameterType": "formBinaryData",
+        "name": "document",
+        "inputDataFieldName": "pdf"
+       },
+       {
+        "name": "doctor",
+        "value": "324569"
+       },
+       {
+        "name": "date",
+        "value": "={{ $now.format('yyyy-MM-dd') }}"
+       }
+      ]
+     },
+     "options": {}
+    },
+    "credentials": {
+     "oAuth2Api": {
+      "id": "vCwf0HNhIwA3cFV1",
+      "name": "DRSNIP-CHRONO"
+     }
+    },
+    "continueOnFail": true
+   },
+   {
+    "id": "e70ec88d-3ee1-4c02-b14e-1a343b875755",
+    "name": "IF: PDF Upload Failed?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2,
+    "position": [
+     -400,
+     350
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "pdf-upload-failed",
+        "leftValue": "={{ $json.error }}",
+        "rightValue": "",
+        "operator": {
+         "type": "string",
+         "operation": "notEmpty",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    }
+   },
+   {
+    "id": "cc2c2ca7-f141-4736-9ea2-aed7e69d8f86",
+    "name": "Sheets: PDF Fallback Log",
+    "type": "n8n-nodes-base.googleSheets",
+    "typeVersion": 4.4,
+    "position": [
+     -240,
+     480
+    ],
+    "parameters": {
+     "operation": "append",
+     "documentId": {
+      "__rl": true,
+      "value": "1EOmhE2wcDW45MUHdF3ffLhzACRq7CBc_qlq4YkOfUbI",
+      "mode": "list",
+      "cachedResultName": "DrSnip_Intake_Sheet"
+     },
+     "sheetName": {
+      "__rl": true,
+      "value": "PDF_Fallback",
+      "mode": "name"
+     },
+     "columns": {
+      "mappingMode": "defineBelow",
+      "value": {
+       "timestamp": "={{ new Date().toISOString() }}",
+       "patient_id": "={{ $('Resolve Patient ID').item.json.patient_id }}",
+       "type": "registration_pdf",
+       "filename": "={{ $('Generate Registration PDF').item.json.pdf_filename }}",
+       "error": "={{ $json.error || 'unknown' }}"
+      }
+     },
+     "options": {}
+    },
+    "credentials": {
+     "googleSheetsOAuth2Api": {
+      "id": "hQTs0UCcXWEtQ3j0",
+      "name": "Google Sheets account"
+     }
+    },
+    "continueOnFail": true
+   }
+  ],
+  "connections": {
+   "Webhook": {
+    "main": [
+     [
+      {
+       "node": "Parse & Normalize",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Parse & Normalize": {
+    "main": [
+     [
+      {
+       "node": "Sheets: Audit Log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Sheets: Audit Log": {
+    "main": [
+     [
+      {
+       "node": "DrChrono: Search Patient",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "DrChrono: Search Patient": {
+    "main": [
+     [
+      {
+       "node": "IF: Patient Exists?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "IF: Patient Exists?": {
+    "main": [
+     [
+      {
+       "node": "DrChrono: Update Patient",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "DrChrono: Create Patient",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "DrChrono: Update Patient": {
+    "main": [
+     [
+      {
+       "node": "Resolve Patient ID",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "DrChrono: Create Patient": {
+    "main": [
+     [
+      {
+       "node": "Resolve Patient ID",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "IF: Has Document?": {
+    "main": [
+     [
+      {
+       "node": "Code in JavaScript",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond to Webhook",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "DrChrono: Upload Document": {
+    "main": [
+     [
+      {
+       "node": "IF: Upload Failed?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "IF: Upload Failed?": {
+    "main": [
+     [
+      {
+       "node": "Sheets: Fallback Log",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond to Webhook",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Sheets: Fallback Log": {
+    "main": [
+     [
+      {
+       "node": "Respond to Webhook",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Code in JavaScript": {
+    "main": [
+     [
+      {
+       "node": "Download File",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Valid File?": {
+    "main": [
+     [
+      {
+       "node": "Sheets: Fallback Log",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "DrChrono: Upload Document",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Download File": {
+    "main": [
+     [
+      {
+       "node": "Fix MIME",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Fix MIME": {
+    "main": [
+     [
+      {
+       "node": "Valid File?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Resolve Patient ID": {
+    "main": [
+     [
+      {
+       "node": "Generate Registration PDF",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Generate Registration PDF": {
+    "main": [
+     [
+      {
+       "node": "DrChrono: Upload Registration PDF",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "DrChrono: Upload Registration PDF": {
+    "main": [
+     [
+      {
+       "node": "IF: PDF Upload Failed?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "IF: PDF Upload Failed?": {
+    "main": [
+     [
+      {
+       "node": "Sheets: PDF Fallback Log",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "IF: Has Document?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Sheets: PDF Fallback Log": {
+    "main": [
+     [
+      {
+       "node": "IF: Has Document?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "authors": "Jeffery Cho",
+  "name": null,
+  "description": null,
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-05-09T02:29:42.469Z",
+    "id": 126,
+    "workflowId": "6warkNFZSSzuasMB",
+    "versionId": "a6abc18d-b663-4db8-8b59-d0b40807c31f",
+    "event": "activated",
+    "userId": "64aa4b99-d2b7-491e-954e-275050abd25c"
+   },
+   {
+    "createdAt": "2026-05-09T02:29:42.453Z",
+    "id": 125,
+    "workflowId": "6warkNFZSSzuasMB",
+    "versionId": "a6abc18d-b663-4db8-8b59-d0b40807c31f",
+    "event": "deactivated",
+    "userId": "64aa4b99-d2b7-491e-954e-275050abd25c"
+   }
+  ]
+ }
+}
