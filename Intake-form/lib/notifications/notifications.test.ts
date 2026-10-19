@@ -8,6 +8,7 @@
 
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
 import {
   isQuiet,
   renderDigest,
@@ -345,5 +346,13 @@ describe("sync_zero alarm (Train 4)", () => {
     assert.equal(shouldRecordSyncZero(streak(7), true), false);
     assert.equal(shouldRecordSyncZero(streak(5), false), false);
     assert.equal(shouldRecordSyncZero(undefined, false), false);
+  });
+});
+
+describe("Train 4 — a deliberately-off patientmail is not a digest problem", () => {
+  const SWEEP = readFileSync(new URL("../../api/internal/sweep.ts", import.meta.url), "utf8");
+  it("the problems query drops patientmail skips but keeps patientmail errors", () => {
+    assert.match(SWEEP, /AND NOT \(channel = 'patientmail' AND outcome = 'skipped'\)/);
+    assert.ok(!/channel = 'patientmail' AND outcome = 'error'/.test(SWEEP), "errors must not be filtered");
   });
 });

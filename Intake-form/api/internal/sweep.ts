@@ -81,11 +81,17 @@ async function collect(): Promise<DigestData> {
       WHERE n8n_status = 'manual_review'`,
   );
 
+  // A sender that is switched off on purpose is not a problem. App-side
+  // patientmail is a redundant secondary notifier (the staff email goes out
+  // through the n8n Gmail nodes); it runs with PATIENTMAIL_ENABLED=false
+  // (Train 4), so its `skipped` rows — `disabled`, and the older
+  // `no_recipient` — are excluded here. A patientmail ERROR still shows.
   const problems = await pool.query(
     `SELECT channel, outcome, detail, count(*)::int AS count
        FROM notification_events
       WHERE outcome <> 'sent'
         AND created_at > now() - interval '24 hours'
+        AND NOT (channel = 'patientmail' AND outcome = 'skipped')
       GROUP BY 1, 2, 3
       ORDER BY 4 DESC`,
   );
