@@ -41,6 +41,41 @@ export interface DigestData {
     detail: string | null;
     count: number;
   }>;
+  /** Hourly appointment-sync health. Absent when the sweep could not read it. */
+  syncZero?: SyncZeroStatus;
+}
+
+/**
+ * Train 4. The hourly incremental appointment sync returned 0 appointments on
+ * ~690 consecutive runs (2026-09-20 → 2026-10-19) while logging success, and
+ * nothing noticed. A single empty hour is normal; a run of them is the signal.
+ */
+export const SYNC_ZERO_THRESHOLD = 6;
+
+export interface SyncZeroStatus {
+  /** Consecutive most-recent successful incremental runs that saw 0 appointments. */
+  zeroStreak: number;
+  /** When the current streak began (its earliest run), or null when there is none. */
+  streakSince: Date | null;
+  /** Appointments seen by the latest successful incremental run, or null if none. */
+  lastSeen: number | null;
+}
+
+/** Pure: is the zero streak long enough to alarm? */
+export function syncZeroAlarming(s: SyncZeroStatus | undefined): boolean {
+  return !!s && s.zeroStreak >= SYNC_ZERO_THRESHOLD;
+}
+
+/**
+ * Pure: should the sweep write a `sync_zero` ledger row now? Once per streak —
+ * `alreadyRecordedForStreak` is true when a sync_zero row exists at or after
+ * the streak's first run.
+ */
+export function shouldRecordSyncZero(
+  s: SyncZeroStatus | undefined,
+  alreadyRecordedForStreak: boolean,
+): boolean {
+  return syncZeroAlarming(s) && !alreadyRecordedForStreak;
 }
 
 export interface RenderedDigest {
@@ -62,7 +97,8 @@ export function isQuiet(d: DigestData): boolean {
   return (
     d.stuck.length === 0 &&
     d.failed24h.length === 0 &&
-    d.notificationProblems24h.length === 0
+    d.notificationProblems24h.length === 0 &&
+    !syncZeroAlarming(d.syncZero)
   );
 }
 
@@ -130,6 +166,25 @@ export function renderDigest(d: DigestData): RenderedDigest {
     for (const p of d.notificationProblems24h) {
       lines.push(
         `  - ${p.count} x ${p.channel} ${p.outcome}${p.detail ? ` (${p.detail})` : ""}`,
+      );
+    }
+  }
+
+  // --- appointment sync -----------------------------------------------------
+  if (d.syncZero) {
+    lines.push("");
+    const z = d.syncZero;
+    if (syncZeroAlarming(z)) {
+      lines.push(
+        `Appointment sync: ALERT, ${z.zeroStreak} consecutive hourly runs saw 0 appointments` +
+          (z.streakSince ? ` (since ${z.streakSince.toISOString()})` : ""),
+        "  Outcome and journey figures stop moving until this clears. Check the",
+        "  `since` window the hourly workflow sends (jUNJrRWhZkogFhpX).",
+      );
+    } else {
+      lines.push(
+        `Appointment sync: ok, ${z.zeroStreak} empty ${plural(z.zeroStreak, "run", "runs")} in a row` +
+          (z.lastSeen === null ? "" : `, latest run saw ${z.lastSeen}`),
       );
     }
   }
