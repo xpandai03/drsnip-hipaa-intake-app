@@ -44,10 +44,10 @@ const LIVE: Card[] = [
     to: "/admin/outcomes",
     title: "Monthly outcomes",
     blurb:
-      "For patients who registered or sent an insurance inquiry in each month: how many have completed an appointment, and how many still have one scheduled — as of the latest appointment data.",
+      "For patients who registered or sent an insurance inquiry in each month: how many have converted, under the clinic's own definition — as of the latest appointment data.",
     answers: [
-      "Of June's registrations, how many have completed an appointment?",
-      "How many are still scheduled?",
+      "Of June's registrations, how many have converted?",
+      "How many canceled or did not show?",
       "How does each month compare so far?",
     ],
     icon: CalendarCheck,

@@ -1,23 +1,23 @@
-// Monthly outcomes — where each entry month's patients stand NOW.
+// Monthly outcomes — where each entry month's patients stand NOW, under the
+// client's own definition of "converted" (Jeffrey Cho, 2026-09-21;
+// outcome_status_rules v2).
 //
-// Answers one question: "for patients who registered (or sent an insurance
-// inquiry) in a given month, how many have completed an appointment, and how
-// many still have one scheduled?" It is a CURRENT-POSITION view by entry month.
-// It has no follow-up window; that question lives on Patient journeys.
+// For patients whose first registration (or insurance inquiry) fell in a given
+// month: how many have at least one appointment in the converted set, how many
+// only canceled or did not show, how many have only unclassified statuses, and
+// how many have no appointment at all. One count per patient.
 //
-// THE PAGE CALCULATES NOTHING. /api/reports/outcomes returns every count, every
-// label, every appointment-type name and every explanation, already protected.
-// The rules this component holds itself to (see outcomes-view.ts):
+// THE PAGE CALCULATES NOTHING. /api/reports/outcomes returns every count, the
+// converted share and every label, already protected. The rules this
+// component holds itself to (see outcomes-view.ts):
 //   * a withheld value renders as "Withheld" — never 0, never blank;
 //   * nothing is added up, divided, or derived from its neighbours;
-//   * a bar is drawn only when all four outcomes were published, so a missing
-//     segment can never be measured off the screen;
-//   * no rate, no percentage, no completed-plus-scheduled total.
+//   * a bar is drawn only when all four outcomes were published.
 
 import { useCallback, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearch } from "wouter";
-import { RefreshCw, AlertTriangle, Info } from "lucide-react";
+import { RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { PageHeader } from "./PageHeader";
 import { clinicTime } from "@/components/reporting/freshness";
@@ -25,7 +25,7 @@ import {
   COHORTS, BUCKET_KEYS, MAX_MONTHS,
   type OutcomesResponse, type MonthRow, type Count, type ViewState,
   cell, chartable, clinicMonth, isStale, monthLabel, monthOptions, newestFirst,
-  observationLabel, parseViewState, profilesByRole, rowNotice, toSearch, withheldReasons,
+  parseViewState, pctLabel, rowNotice, toSearch, withheldReasons,
 } from "./outcomes-view";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -34,13 +34,13 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-// Colours for the four outcomes. Unknown is deliberately NOT grey: grey is how
-// "withheld" reads, and the two must never be confused.
+// Colours for the four outcomes. Unclassified is deliberately NOT grey: grey is
+// how "withheld" reads, and the two must never be confused.
 const BAR: Record<(typeof BUCKET_KEYS)[number], string> = {
-  completed: "hsl(208 79% 26%)",
-  scheduled: "hsl(197 55% 48%)",
-  unknown: "hsl(38 80% 58%)",
-  neither: "hsl(210 14% 78%)",
+  converted: "hsl(208 79% 26%)",
+  not_converted: "hsl(4 62% 58%)",
+  unclassified_only: "hsl(38 80% 58%)",
+  no_appointment: "hsl(210 14% 78%)",
 };
 
 // ---------------------------------------------------------------------------
@@ -81,6 +81,17 @@ function Breakdown({ row }: { row: MonthRow }) {
         return n > 0 ? <span key={k} style={{ width: `${(n / covered) * 100}%`, background: BAR[k] }} /> : null;
       })}
     </div>
+  );
+}
+
+/** "412 · 64.7%" — the share comes from the server, never from this file. */
+function Converted({ row }: { row: MonthRow }) {
+  const p = pctLabel(row.converted_pct);
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <Num v={row.outcomes.converted} testId="converted-count" />
+      {p && <span className="text-xs text-muted-foreground tabular-nums" data-testid="converted-pct">{p}</span>}
+    </span>
   );
 }
 
@@ -143,117 +154,6 @@ function LoadError({ onRetry, detail }: { onRetry: () => void; detail?: string }
 }
 
 // ---------------------------------------------------------------------------
-/** The scope, read entirely from the response. No id or name lives in this file. */
-function WhatIsIncluded({ d }: { d: OutcomesResponse }) {
-  const groups = profilesByRole(d.definition.profiles);
-  const rules = d.definition.status_rules.rules;
-  const statusesFor = (key: string) => (rules[key] ?? []).map((s) => `“${s}”`).join(", ");
-  return (
-    <details className="rounded-lg border bg-card px-4 py-3" data-testid="what-is-included">
-      <summary className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        What is included?
-      </summary>
-      <div className="mt-3 space-y-4 text-sm">
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          <strong className="text-foreground">{d.definition.label}</strong> (version {d.definition.scope_version}
-          {d.definition.engineering_preview ? ", provisional" : ""}). {d.definition.description}
-        </p>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          {groups.map((g) => (
-            <section key={g.role} className="rounded-md border bg-muted/20 p-3" data-testid={`role-${g.role}`}>
-              <h3 className="text-xs font-semibold">{d.role_labels[g.role]?.label ?? g.role}</h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{d.role_labels[g.role]?.means}</p>
-              <ul className="mt-2 space-y-0.5 text-xs">
-                {g.profiles.map((p) => (
-                  <li key={p.profile_source_id ?? "none"}>
-                    {p.exact_name ?? (p.profile_source_id ? `Unnamed type ${p.profile_source_id}` : "No appointment type recorded")}
-                    {!p.is_stored && <span className="text-muted-foreground"> — no appointments recorded</span>}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-
-        <section>
-          <h3 className="text-xs font-semibold">What each appointment status establishes</h3>
-          <ul className="mt-1 space-y-1 text-xs leading-relaxed text-muted-foreground">
-            {d.status_explanations.map((s) => (
-              <li key={s.key}>
-                {s.key !== "other" && <strong className="text-foreground">{statusesFor(s.key)}: </strong>}
-                {s.key === "other" && <strong className="text-foreground">Anything else: </strong>}
-                {s.means}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
-          <li>{d.buckets.completed.means}</li>
-          <li>Recent months have had less time to progress than older ones; each row says how long its entrants have been observed.</li>
-          <li>
-            Appointment-type names were read from the practice&rsquo;s DrChrono settings
-            {d.definition.profiles[0]?.name_observed_on ? ` on ${String(d.definition.profiles[0].name_observed_on).slice(0, 10)}` : ""}.
-            They describe the types; they are not an approved reporting definition.
-          </li>
-        </ul>
-      </div>
-    </details>
-  );
-}
-
-/** A month's secondary figures. All overlapping; all from the server. */
-function MonthDetails({ row, d }: { row: MonthRow; d: OutcomesResponse }) {
-  const partitionWithheld = row.withheld.includes("partition_small_cell");
-  const line = (label: string, v: Count | boolean | undefined, key: string) =>
-    typeof v === "boolean" ? null : (
-      <li key={key} className="flex items-baseline justify-between gap-3">
-        <span>{label}</span>
-        <span className="shrink-0"><Num v={v ?? null} /></span>
-      </li>
-    );
-  return (
-    <details className="rounded-md border bg-card px-3 py-2" data-testid={`details-${row.entry_month}`}>
-      <summary className="cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {monthLabel(row.entry_month)} — details
-      </summary>
-      {partitionWithheld ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          This month&rsquo;s details are withheld because one of its outcomes is a small group; any
-          of them could be used to work it out.
-        </p>
-      ) : (
-        <div className="mt-2 grid gap-4 text-xs md:grid-cols-3">
-          <section>
-            <h4 className="font-semibold">Neither established</h4>
-            <ul className="mt-1 space-y-1 text-muted-foreground">
-              {line("No included appointment since entry", row.neither_breakdown.no_qualifying_record, "n1")}
-              {line("Had one; none completed or booked now", row.neither_breakdown.had_qualifying_record, "n2")}
-            </ul>
-          </section>
-          <section>
-            <h4 className="font-semibold">Why Unknown <span className="font-normal text-muted-foreground">(a patient can have several)</span></h4>
-            <ul className="mt-1 space-y-1 text-muted-foreground">
-              {Object.entries(d.unknown_reasons).map(([k, label]) => line(label, row.unknown_reasons[k], k))}
-            </ul>
-          </section>
-          <section>
-            <h4 className="font-semibold">Alongside <span className="font-normal text-muted-foreground">(overlapping)</span></h4>
-            <ul className="mt-1 space-y-1 text-muted-foreground">
-              {Object.entries(d.annotations)
-                // "Registered before the inquiry" only means something for the insurance cohort.
-                .filter(([k]) => k !== "registered_before_inquiry" || d.metric === "outcome_insurance")
-                .map(([k, label]) => line(label, row.annotations[k], k))}
-            </ul>
-          </section>
-        </div>
-      )}
-    </details>
-  );
-}
-
-// ---------------------------------------------------------------------------
 export default function Outcomes() {
   // The question being asked lives in the address, so a link reproduces it and
   // reload keeps it. pushState: each change is a new question, so Back returns
@@ -262,7 +162,6 @@ export default function Outcomes() {
   const current = clinicMonth();
   const view = useMemo(() => parseViewState(search, current), [search, current]);
   const months = useMemo(() => monthOptions(current), [current]);
-  const cohort = COHORTS.find((c) => c.id === view.cohort)!;
 
   const go = useCallback((next: ViewState) => {
     const qs = toSearch(next);
@@ -273,8 +172,7 @@ export default function Outcomes() {
   }, []);
 
   // A first visit (or a repaired bad link) writes the question it is actually
-  // showing into the address, so the link is shareable straight away. replace,
-  // not push: this is the same question, not a new one.
+  // showing into the address, so the link is shareable straight away.
   useEffect(() => {
     const qs = toSearch(view);
     if (qs !== new URLSearchParams(window.location.search).toString()) {
@@ -297,9 +195,9 @@ export default function Outcomes() {
     go({ ...view, from, to });
   };
 
-  const url = `/api/reports/outcomes?metric=${cohort.metric}&from=${view.from}&to=${view.to}`;
+  const url = `/api/reports/outcomes?form=${view.cohort}&from=${view.from}&to=${view.to}`;
   const q = useQuery({
-    queryKey: ["outcomes", cohort.metric, view.from, view.to],
+    queryKey: ["outcomes", view.cohort, view.from, view.to],
     queryFn: () => getJson<OutcomesResponse>(url),
     placeholderData: (prev) => prev,
     retry: 1,
@@ -310,6 +208,7 @@ export default function Outcomes() {
   const allEmpty = d !== undefined && rows.every((r) => r.status === "empty" || r.status === "not_started");
   const cutoff = d ? clinicTime(d.as_of.evidence_cutoff) : null;
   const stale = d ? isStale(d.as_of.evidence_age_minutes) : false;
+  const noun = view.cohort === "insurance" ? "insurance inquiry" : "registration";
 
   return (
     <AdminLayout>
@@ -317,10 +216,8 @@ export default function Outcomes() {
         <PageHeader
           eyebrow="Actual intake data"
           title="Monthly outcomes"
-          subtitle="For patients who registered or sent an insurance inquiry in each month: how many have completed an appointment, and how many still have one scheduled."
+          subtitle="For patients who registered or sent an insurance inquiry in each month: how many have converted — at least one appointment on their chart in the clinic's converted set."
         >
-          {/* ONE appointment-data timestamp on this page: the line above the
-              table, taken from the same response as the figures (0022). */}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="inline-flex items-center rounded-full border border-emerald-600/30 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
               Actual intake data
@@ -328,22 +225,21 @@ export default function Outcomes() {
           </div>
         </PageHeader>
 
-        {/* The definition's status, above everything it qualifies. */}
-        {d?.definition.engineering_preview && (
+        {d && (
           <div
-            className="mb-4 flex gap-2 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:bg-amber-950/30 dark:text-amber-100"
-            data-testid="provisional-banner"
+            className="mb-4 flex gap-2 rounded-lg border border-emerald-600/30 bg-emerald-50/60 px-3 py-2 text-xs leading-relaxed text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100"
+            data-testid="rules-banner"
             role="note"
           >
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <p>
-              <strong>Provisional reporting scope</strong> — counts include selected appointment
-              types. Review what is included below.
+              <strong>The clinic&rsquo;s definition</strong>
+              {d.rules.confirmed_on ? ` (${d.rules.confirmed_by ?? "client"}, ${d.rules.confirmed_on})` : ""}.{" "}
+              {d.rules.explanation}
             </p>
           </div>
         )}
 
-        {/* Controls: only combinations the endpoint answers. No follow-up window. */}
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div role="radiogroup" aria-label="Who entered in each month" className="flex rounded-md border bg-card p-0.5">
             {COHORTS.map((c) => (
@@ -386,21 +282,18 @@ export default function Outcomes() {
           </label>
           <p className="max-w-sm text-xs text-muted-foreground">
             Whole clinic months (Pacific), up to {MAX_MONTHS} at a time. A patient belongs to the month of
-            their first {view.cohort === "insurance" ? "insurance inquiry" : "registration"}.
+            their first {noun}.
           </p>
         </div>
 
-        {/* As-of line: the instant every figure below is true at. */}
         {d && (
           <p className="mb-3 text-sm" data-testid="data-complete-to">
-            <strong>
-              Appointment data complete to {cutoff ?? "— unavailable"}
-            </strong>
+            <strong>Appointment data complete to {cutoff ?? "— unavailable"}</strong>
             <span className="text-muted-foreground">
-              {cutoff ? " (Pacific) for every patient counted." : ""}
+              {cutoff ? " (Pacific). Updated hourly." : ""}
               {d.as_of.basis === "history_baseline"
                 ? " The hourly sync has not completed yet; this is the earliest full history read."
-                : cutoff ? " Updated hourly. “Currently scheduled” means booked for after this time." : ""}
+                : ""}
             </span>
           </p>
         )}
@@ -422,7 +315,6 @@ export default function Outcomes() {
           <TableSkeleton />
         ) : (
           <>
-
             {allEmpty && (
               <p className="mb-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground" data-testid="outcomes-empty">
                 No {view.cohort === "insurance" ? "insurance inquiries" : "registrations"} linked to a patient
@@ -430,9 +322,6 @@ export default function Outcomes() {
               </p>
             )}
 
-            {/* DESKTOP: the table. Below 1024px, beside the sidebar, eight columns do
-                not fit, so tablets get the cards too. The container scrolls inside
-                itself as a last resort — never the page. */}
             <div className="hidden overflow-x-auto rounded-lg border bg-card lg:block">
               <table className="w-full text-sm" data-testid="outcomes-table">
                 <caption className="sr-only">
@@ -441,12 +330,11 @@ export default function Outcomes() {
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th scope="col" className="px-3 py-2 font-medium">Entry month</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Patients counted</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Patients</th>
                     {BUCKET_KEYS.map((k) => (
                       <th key={k} scope="col" className="px-3 py-2 text-right font-medium">{d.buckets[k].label}</th>
                     ))}
                     <th scope="col" className="px-3 py-2 font-medium">Breakdown</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Observed</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -454,9 +342,14 @@ export default function Outcomes() {
                     const notice = rowNotice(r);
                     return (
                       <tr key={r.entry_month} className="border-b align-top last:border-0" data-testid={`row-${r.entry_month}`}>
-                        <th scope="row" className="px-3 py-2.5 text-left font-medium">{monthLabel(r.entry_month)}</th>
+                        <th scope="row" className="px-3 py-2.5 text-left font-medium">
+                          {monthLabel(r.entry_month)}
+                          {r.status === "ok" && !r.entry_period_complete && (
+                            <span className="block text-[11px] font-normal text-muted-foreground">month still open</span>
+                          )}
+                        </th>
                         {notice ? (
-                          <td colSpan={7} className="px-3 py-2.5 text-xs text-muted-foreground" data-testid="row-notice">
+                          <td colSpan={6} className="px-3 py-2.5 text-xs text-muted-foreground" data-testid="row-notice">
                             {notice}
                             {r.status === "empty" || r.status === "not_started" ? null : <CoverageNotes row={r} />}
                           </td>
@@ -468,11 +361,10 @@ export default function Outcomes() {
                             </td>
                             {BUCKET_KEYS.map((k) => (
                               <td key={k} className="px-3 py-2.5 text-right" data-testid={`cell-${k}`}>
-                                <Num v={r.outcomes[k]} />
+                                {k === "converted" ? <Converted row={r} /> : <Num v={r.outcomes[k]} />}
                               </td>
                             ))}
                             <td className="px-3 py-2.5 align-middle"><Breakdown row={r} /></td>
-                            <td className="px-3 py-2.5 text-xs text-muted-foreground">{observationLabel(r)}</td>
                           </>
                         )}
                       </tr>
@@ -482,7 +374,6 @@ export default function Outcomes() {
               </table>
             </div>
 
-            {/* PHONE / TABLET: one card per month, same data, no sideways scrolling. */}
             <ul className="grid gap-3 sm:grid-cols-2 lg:hidden" data-testid="outcomes-cards">
               {rows.map((r) => {
                 const notice = rowNotice(r);
@@ -504,12 +395,11 @@ export default function Outcomes() {
                           {BUCKET_KEYS.map((k) => (
                             <div key={k} className="flex items-baseline justify-between gap-2">
                               <dt className="text-muted-foreground">{d.buckets[k].label}</dt>
-                              <dd className="font-medium"><Num v={r.outcomes[k]} /></dd>
+                              <dd className="font-medium">{k === "converted" ? <Converted row={r} /> : <Num v={r.outcomes[k]} />}</dd>
                             </div>
                           ))}
                         </dl>
                         <div className="mt-2"><Breakdown row={r} /></div>
-                        <p className="mt-2 text-[11px] text-muted-foreground">{observationLabel(r)}</p>
                         <CoverageNotes row={r} />
                       </>
                     )}
@@ -518,7 +408,6 @@ export default function Outcomes() {
               })}
             </ul>
 
-            {/* Column key: one line each, from the server. The table comes first. */}
             <dl className="mt-4 space-y-1 text-xs" data-testid="bucket-glossary">
               {BUCKET_KEYS.map((k) => (
                 <div key={k} className="flex gap-1.5">
@@ -530,21 +419,7 @@ export default function Outcomes() {
                 </div>
               ))}
             </dl>
-            <details className="mt-2 rounded-md border bg-card px-3 py-2" data-testid="bucket-detail">
-              <summary className="cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                More about each column
-              </summary>
-              <dl className="mt-2 space-y-2 text-xs">
-                {BUCKET_KEYS.map((k) => (
-                  <div key={k}>
-                    <dt className="font-semibold">{d.buckets[k].label}</dt>
-                    <dd className="leading-relaxed text-muted-foreground">{d.buckets[k].detail}</dd>
-                  </div>
-                ))}
-              </dl>
-            </details>
 
-            {/* Why anything was withheld, once per month that had something withheld. */}
             {rows.some((r) => r.withheld.length > 0) && (
               <div className="mt-3 space-y-1 text-xs text-muted-foreground" data-testid="withheld-explained">
                 {rows.filter((r) => r.withheld.length > 0).map((r) => (
@@ -555,29 +430,19 @@ export default function Outcomes() {
               </div>
             )}
 
-            <section className="mt-5 space-y-2" aria-label="Month details">
-              {rows.filter((r) => r.status === "ok").map((r) => <MonthDetails key={r.entry_month} row={r} d={d} />)}
-            </section>
-
-            <div className="mt-5">
-              <WhatIsIncluded d={d} />
-            </div>
-
             <div className="mt-5 space-y-2 text-xs leading-relaxed text-muted-foreground" data-testid="counting-notes">
               <p>
                 <strong className="text-foreground">Each linked patient is counted once,</strong> in exactly one
-                column. {d.counts_what} {d.cohort_note}
+                column, in the month of their first {noun}. Every appointment on the chart counts, whatever its
+                type or date — including appointments made before the form.
               </p>
               <p>
                 Submissions that were never linked to a patient chart cannot be followed to an appointment. They
-                are shown beside each month as a separate count of submissions — not people — and are not in the
-                columns.
+                are shown beside each month as a count of submissions — not people — and are not in the columns.
               </p>
               <p>
                 Small groups are withheld inside the database, together with anything that would let them be
-                worked out. “Withheld” never means zero, and no bar is drawn for a month with a withheld value.
-                This view is separate from Patient journeys, which measures how quickly appointments were booked
-                within a fixed window.
+                worked out. &ldquo;Withheld&rdquo; never means zero.
               </p>
             </div>
           </>

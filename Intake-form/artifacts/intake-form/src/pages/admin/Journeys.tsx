@@ -549,7 +549,7 @@ export default function Journeys() {
         data-testid="link-monthly-outcomes"
         className="mb-5 flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm font-medium hover:border-[var(--sh-accent)] hover:bg-[var(--sh-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span>See completed appointments and current bookings by entry month</span>
+        <span>See conversion by entry month</span>
         <ArrowRight className="h-4 w-4 shrink-0 text-[var(--sh-muted)]" aria-hidden="true" />
       </Link>
 
