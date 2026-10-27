@@ -20,6 +20,7 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminConversion from "@/pages/admin/Conversion";
+import AdminConversionList from "@/pages/admin/ConversionList";
 import AdminUnscheduled from "@/pages/admin/Unscheduled";
 import AdminUnscheduledList from "@/pages/admin/UnscheduledList";
 import AdminDropOffs from "@/pages/admin/DropOffs";
@@ -131,6 +132,13 @@ function Router() {
       </Route>
 
       {/* Conversion by entry cohort with a cumulative fill (Train 4). */}
+      {/* The patients behind one count on Conversion by cohort (admin only). */}
+      <Route path="/admin/conversion/list">
+        <WithAuth>
+          <AdminConversionList />
+        </WithAuth>
+      </Route>
+
       <Route path="/admin/conversion">
         <WithAuth>
           <AdminConversion />
