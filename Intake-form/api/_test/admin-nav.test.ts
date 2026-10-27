@@ -64,13 +64,14 @@ describe("the mobile bottom bar fits", () => {
 describe("nothing is unreachable", () => {
   const routes = allNavRoutes();
 
-  it("reaches all twelve destinations, with no duplicates", () => {
+  it("reaches all thirteen destinations, with no duplicates", () => {
     // Five slot routes + seven children. More than the six the old
     // horizontally-scrolling strip exposed.
     // Monthly outcomes (2026-09) is the eleventh; Conversion by cohort
     // (Train 4) the twelfth — two taps on mobile: Reports, then the entry.
-    assert.equal(routes.length, 12);
-    assert.equal(new Set(routes).size, 12);
+    // Unscheduled at day 14 (2026-10-27) is the thirteenth, beside Conversion.
+    assert.equal(routes.length, 13);
+    assert.equal(new Set(routes).size, 13);
     const reports = PRIMARY_NAV.find((e) => e.id === "reports")!;
     assert.ok(reports.children!.some((c) => c.to === "/admin/conversion"));
   });
@@ -289,8 +290,9 @@ describe("real reporting is easy to find", () => {
     assert.equal(reports.children![0].demo, undefined);
     assert.equal(reports.children![1].to, "/admin/conversion");
     assert.equal(reports.children![1].demo, undefined);
-    assert.equal(reports.children![2].to, "/admin/journeys");
-    assert.equal(reports.children![2].demo, undefined);
+    assert.equal(reports.children![2].to, "/admin/unscheduled");
+    assert.equal(reports.children![3].to, "/admin/journeys");
+    assert.equal(reports.children![3].demo, undefined);
   });
 
   it("the demo is LAST under Reports and says so in its own label", () => {

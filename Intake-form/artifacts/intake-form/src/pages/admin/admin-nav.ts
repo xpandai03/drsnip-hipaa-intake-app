@@ -96,6 +96,7 @@ export const PRIMARY_NAV: NavEntry[] = [
     children: [
       { to: "/admin/outcomes", label: "Monthly outcomes" },
       { to: "/admin/conversion", label: "Conversion by cohort" },
+      { to: "/admin/unscheduled", label: "Unscheduled at day 14" },
       { to: "/admin/journeys", label: "Patient journeys" },
       { to: "/admin/dashboard", label: "Intake dashboard" },
       { to: "/admin/activity", label: "Activity" },

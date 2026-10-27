@@ -20,6 +20,7 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminConversion from "@/pages/admin/Conversion";
+import AdminUnscheduled from "@/pages/admin/Unscheduled";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -132,6 +133,13 @@ function Router() {
       <Route path="/admin/conversion">
         <WithAuth>
           <AdminConversion />
+        </WithAuth>
+      </Route>
+
+      {/* Registrations with nothing booked at day 14 (admin only; counts only). */}
+      <Route path="/admin/unscheduled">
+        <WithAuth>
+          <AdminUnscheduled />
         </WithAuth>
       </Route>
 
