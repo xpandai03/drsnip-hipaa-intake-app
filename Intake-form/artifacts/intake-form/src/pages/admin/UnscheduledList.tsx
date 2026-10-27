@@ -8,7 +8,7 @@
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, RefreshCw } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { useAuth } from "@/lib/auth-context";
 import { clinicTime } from "@/components/reporting/freshness";
@@ -89,6 +89,16 @@ export default function UnscheduledList() {
     return p.toString();
   }, [params, page]);
 
+  // The export takes the same bucket and cohort, never a page: it is every row.
+  const csvQs = useMemo(() => {
+    const p = new URLSearchParams();
+    for (const k of ["bucket", "month", "range"]) {
+      const v = params.get(k);
+      if (v !== null) p.set(k, v);
+    }
+    return p.toString();
+  }, [params]);
+
   const q = useQuery({
     queryKey: ["unscheduled-list", apiQs],
     queryFn: () => getJson<ListResponse>(`/api/admin/unscheduled/list?${apiQs}`),
@@ -124,7 +134,19 @@ export default function UnscheduledList() {
           </div>
         ) : (
           <>
-            <h1 className="text-xl font-semibold" data-testid="list-title">{listTitle(d)}</h1>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-xl font-semibold" data-testid="list-title">{listTitle(d)}</h1>
+              {d.total > 0 && (
+                <a
+                  href={`/api/admin/unscheduled/list.csv?${csvQs}`}
+                  download
+                  data-testid="export-csv"
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" /> Export CSV
+                </a>
+              )}
+            </div>
             {d.cohort.kind === "month" && !dayFourteenReached(d.cohort.month) && (
               <p className="mt-1 text-sm text-amber-800 dark:text-amber-200" data-testid="list-not-day14">
                 Some of these patients registered less than 14 days ago and have not reached day 14 yet.

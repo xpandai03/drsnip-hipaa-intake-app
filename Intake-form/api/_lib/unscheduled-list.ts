@@ -90,8 +90,10 @@ export function countQuery(p: ListParams) {
 SELECT count(*)::int AS total FROM b WHERE ${sql.raw(bucketColumn(p.bucket))} ${cohortFilter(p.cohort)}`;
 }
 
-export function listQuery(p: ListParams) {
+/** The list rows. `all` drops the page window (CSV export): same query, every row. */
+export function listQuery(p: ListParams, opts: { all?: boolean } = {}) {
   const offset = (p.page - 1) * PAGE_SIZE;
+  const window = opts.all ? sql`` : sql`LIMIT ${PAGE_SIZE} OFFSET ${offset}`;
   return sql`${sql.raw(DAY14_BUCKET_CTE)},
 sel AS (
   SELECT b.pid, b.entry_at FROM b WHERE ${sql.raw(bucketColumn(p.bucket))} ${cohortFilter(p.cohort)}
@@ -122,7 +124,7 @@ SELECT sel.pid AS chart_id,
   LEFT JOIN fs ON fs.pid = sel.pid
   LEFT JOIN la ON la.pid = sel.pid
  ORDER BY sel.entry_at, sel.pid
- LIMIT ${PAGE_SIZE} OFFSET ${offset}`;
+ ${window}`;
 }
 
 export const BUCKET_LABELS: Record<Bucket, string> = {

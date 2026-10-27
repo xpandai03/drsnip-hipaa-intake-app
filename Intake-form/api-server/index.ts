@@ -53,6 +53,7 @@ import reportsUnclassifiedCountHandler from "../api/reports/unclassified-count";
 import adminUnclassifiedCsvHandler from "../api/admin/unclassified-csv";
 import adminUnscheduledDay14Handler from "../api/admin/unscheduled-day14";
 import adminUnscheduledListHandler from "../api/admin/unscheduled-list";
+import adminUnscheduledListCsvHandler from "../api/admin/unscheduled-list-csv";
 import attendanceDraftHandler from "../api/attendance-mapping/draft";
 import attendancePreviewHandler from "../api/attendance-mapping/preview";
 import attendanceApproveHandler from "../api/attendance-mapping/approve";
@@ -130,6 +131,7 @@ app.all("/api/reports/outcomes", adapt(reportsOutcomesHandler));
 app.all("/api/reports/conversion-cohorts", adapt(reportsConversionCohortsHandler));
 app.all("/api/reports/unclassified-count", adapt(reportsUnclassifiedCountHandler));
 app.all("/api/admin/unscheduled-day14", adapt(adminUnscheduledDay14Handler));
+app.all("/api/admin/unscheduled/list.csv", adapt(adminUnscheduledListCsvHandler));
 app.all("/api/admin/unscheduled/list", adapt(adminUnscheduledListHandler));
 // Attendance definition review. Draft/preview are admin-gated; approve/withdraw
 // need the explicit approval capability (api/_lib/auth.ts).
