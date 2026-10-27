@@ -54,6 +54,20 @@ function Toggle<T extends string>({ label, value, options, onChange, testPrefix 
   );
 }
 
+/** Admin only: a published, non-zero count opens the patients behind it. */
+const FILL_BUCKETS = ["converted_by_end_of_period", "converted_by_plus1", "converted_by_plus2", "converted_by_plus3", "converted_now"] as const;
+function CellLink({ on, n, href, children }: { on: boolean; n: number | null; href: string; children: React.ReactNode }) {
+  if (!on || n === null || n <= 0) return <>{children}</>;
+  return (
+    <Link href={href} className="hover:underline focus-visible:underline focus-visible:outline-none" data-testid="cohort-cell-link">
+      {children}
+    </Link>
+  );
+}
+function listHref(view: ViewState, period: string, bucket: string): string {
+  return `/admin/conversion/list?form=${view.form}&grain=${view.grain}&period=${period}&bucket=${bucket}`;
+}
+
 function Fill({ c }: { c: PeriodRow["fill"][number] }) {
   const f = fillText(c);
   if (f.kind === "not_ended") return <span data-testid="fill-not-ended" aria-label="Period not ended" />;
@@ -236,10 +250,16 @@ export default function Conversion() {
                           <td colSpan={7} className="px-3 py-2 text-xs text-muted-foreground">{notice}</td>
                         ) : (
                           <>
-                            <td className="px-3 py-2 text-right tabular-nums" data-testid="forms">{(r.forms ?? 0).toLocaleString("en-US")}</td>
-                            <td className="px-3 py-2 text-right"><ConvertedNow r={r} /></td>
+                            <td className="px-3 py-2 text-right tabular-nums" data-testid="forms">
+                              <CellLink on={isAdmin} n={r.forms} href={listHref(view, r.period_start, "forms")}>{(r.forms ?? 0).toLocaleString("en-US")}</CellLink>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <CellLink on={isAdmin} n={r.converted_now.count} href={listHref(view, r.period_start, "converted_now")}><ConvertedNow r={r} /></CellLink>
+                            </td>
                             {r.fill.map((c, i) => (
-                              <td key={i} className="px-3 py-2 text-right" data-testid={`fill-${i}`}><Fill c={c} /></td>
+                              <td key={i} className="px-3 py-2 text-right" data-testid={`fill-${i}`}>
+                                <CellLink on={isAdmin} n={c.state === "value" ? c.count : null} href={listHref(view, r.period_start, FILL_BUCKETS[i])}><Fill c={c} /></CellLink>
+                              </td>
                             ))}
                           </>
                         )}
@@ -258,18 +278,26 @@ export default function Conversion() {
                   <li key={r.period_start} className="rounded-lg border bg-card p-3" data-testid={`card-${r.period_start}`}>
                     <div className="flex items-baseline justify-between gap-2">
                       <h3 className="text-sm font-semibold">{periodLabel(r.period_start, view.grain)}</h3>
-                      {!notice && <span className="text-xs text-muted-foreground">{(r.forms ?? 0).toLocaleString("en-US")} forms</span>}
+                      {!notice && (
+                        <span className="text-xs text-muted-foreground">
+                          <CellLink on={isAdmin} n={r.forms} href={listHref(view, r.period_start, "forms")}>{(r.forms ?? 0).toLocaleString("en-US")}</CellLink> forms
+                        </span>
+                      )}
                     </div>
                     {notice ? (
                       <p className="mt-1 text-xs text-muted-foreground">{notice}</p>
                     ) : (
                       <>
-                        <div className="mt-1 text-xs text-muted-foreground">Converted as of today: <ConvertedNow r={r} /></div>
+                        <div className="mt-1 text-xs text-muted-foreground">Converted as of today:{" "}
+                          <CellLink on={isAdmin} n={r.converted_now.count} href={listHref(view, r.period_start, "converted_now")}><ConvertedNow r={r} /></CellLink>
+                        </div>
                         <dl className="mt-2 grid grid-cols-5 gap-1 text-center text-xs">
                           {d.columns.map((col, i) => (
                             <div key={col}>
                               <dt className="text-[11px] text-muted-foreground">{col}</dt>
-                              <dd className="mt-0.5 min-h-[1.25rem]"><Fill c={r.fill[i]} /></dd>
+                              <dd className="mt-0.5 min-h-[1.25rem]">
+                                <CellLink on={isAdmin} n={r.fill[i].state === "value" ? r.fill[i].count : null} href={listHref(view, r.period_start, FILL_BUCKETS[i])}><Fill c={r.fill[i]} /></CellLink>
+                              </dd>
                             </div>
                           ))}
                         </dl>
