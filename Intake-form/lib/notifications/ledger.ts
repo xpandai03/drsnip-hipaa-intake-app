@@ -28,7 +28,10 @@ export type NotificationChannel =
   // Train 4: system-health alarms raised by the sweep (kind: sync_zero).
   | "sync"
   // Admin downloads (kind: export_unclassified). User id + row count only.
-  | "export";
+  | "export"
+  // Admin views of patient-level lists (kind: list_unscheduled). User id,
+  // bucket, cohort and row count only — never a patient identifier.
+  | "access";
 
 /** Who the send was aimed at, as a ROLE. Never an address. */
 export type RecipientClass = "staff" | "operator";

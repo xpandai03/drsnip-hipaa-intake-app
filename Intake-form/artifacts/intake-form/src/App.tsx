@@ -21,6 +21,7 @@ import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminConversion from "@/pages/admin/Conversion";
 import AdminUnscheduled from "@/pages/admin/Unscheduled";
+import AdminUnscheduledList from "@/pages/admin/UnscheduledList";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -133,6 +134,13 @@ function Router() {
       <Route path="/admin/conversion">
         <WithAuth>
           <AdminConversion />
+        </WithAuth>
+      </Route>
+
+      {/* The patients behind one count on the day-14 page (admin only). */}
+      <Route path="/admin/unscheduled/list">
+        <WithAuth>
+          <AdminUnscheduledList />
         </WithAuth>
       </Route>
 

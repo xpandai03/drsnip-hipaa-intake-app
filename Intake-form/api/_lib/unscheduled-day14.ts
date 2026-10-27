@@ -24,41 +24,67 @@
 // Only patients whose appointment history has been read (covered) are counted.
 // A month is "complete" once day 14 has passed for its last registrant.
 
-export const DAY14_MONTHS_SQL = `
-WITH c AS (
-  SELECT x.* FROM public.drsnip_conversion_classify('registration') x WHERE x.is_covered
+// ONE per-patient definition. The page's counts and the drill-down lists are
+// both read from this CTE, so a list can never disagree with the cell it came
+// from. Each bucket is a boolean column; every bucket implies is_covered.
+export const DAY14_BUCKET_CTE = `
+WITH d AS (
+  SELECT x.pid, x.entry_at, x.entry_month, x.is_covered, x.converted, x.has_appointment, x.has_not_converted,
+         (x.converted AND coalesce(x.conversion_at <= x.entry_at + interval '14 days', false)) AS by_d14
+    FROM public.drsnip_conversion_classify('registration') x
 ),
-d AS (
-  SELECT c.entry_month,
-         (c.converted AND coalesce(c.conversion_at <= c.entry_at + interval '14 days', false)) AS by_d14,
-         c.converted, c.has_appointment, c.has_not_converted
-    FROM c
+b AS (
+  SELECT d.pid, d.entry_at, d.entry_month, d.is_covered,
+         (d.is_covered AND NOT d.by_d14)                                              AS unscheduled_d14,
+         (d.is_covered AND d.converted AND NOT d.by_d14)                              AS booked_later,
+         (d.is_covered AND NOT d.converted)                                           AS never_booked,
+         (d.is_covered AND NOT d.converted AND NOT d.has_appointment)                 AS never_no_appt,
+         (d.is_covered AND NOT d.converted AND d.has_not_converted)                   AS never_canceled_noshow,
+         (d.is_covered AND NOT d.converted AND NOT d.has_not_converted
+            AND d.has_appointment)                                                    AS never_no_status,
+         (d.is_covered AND NOT d.converted
+            AND d.entry_at > now() - interval '30 days')                              AS right_now_unbooked,
+         (d.is_covered AND NOT d.converted AND d.entry_at > now() - interval '30 days'
+            AND d.entry_at < now() - interval '14 days')                              AS right_now_past_d14
+    FROM d
 )
-SELECT to_char(d.entry_month, 'YYYY-MM') AS form_month,
-       ((d.entry_month + interval '1 month' + interval '14 days')::timestamp
-          AT TIME ZONE 'America/Los_Angeles') <= now() AS complete,
-       count(*)::int                                                                  AS cohort,
-       count(*) FILTER (WHERE NOT d.by_d14)::int                                      AS unscheduled_d14,
-       count(*) FILTER (WHERE d.converted AND NOT d.by_d14)::int                      AS booked_later,
-       count(*) FILTER (WHERE NOT d.converted)::int                                   AS never,
-       count(*) FILTER (WHERE NOT d.converted AND NOT d.has_appointment)::int         AS never_no_appointment,
-       count(*) FILTER (WHERE NOT d.converted AND d.has_not_converted)::int           AS never_canceled_or_no_show,
-       count(*) FILTER (WHERE NOT d.converted AND NOT d.has_not_converted
-                          AND d.has_appointment)::int                                 AS never_no_status_only
-  FROM d
- WHERE d.entry_month >= DATE '2026-06-01'
- GROUP BY d.entry_month
- ORDER BY d.entry_month
 `;
 
-export const DAY14_RIGHT_NOW_SQL = `
-SELECT count(*)::int                                                                   AS registrations_30d,
-       count(*) FILTER (WHERE NOT x.is_covered)::int                                   AS not_yet_synced,
-       count(*) FILTER (WHERE x.is_covered AND NOT x.converted)::int                   AS nothing_booked_now,
-       count(*) FILTER (WHERE x.is_covered AND NOT x.converted
-                          AND x.entry_at < now() - interval '14 days')::int            AS past_day_14
-  FROM public.drsnip_conversion_classify('registration') x
- WHERE x.entry_at > now() - interval '30 days'
+/** Month buckets (one per table column) and the two "right now" buckets. */
+export const MONTH_BUCKETS = [
+  "unscheduled_d14", "booked_later", "never_booked", "never_no_appt", "never_canceled_noshow", "never_no_status",
+] as const;
+export const RIGHT_NOW_BUCKETS = ["right_now_unbooked", "right_now_past_d14"] as const;
+export type MonthBucket = (typeof MONTH_BUCKETS)[number];
+export type RightNowBucket = (typeof RIGHT_NOW_BUCKETS)[number];
+export type Bucket = MonthBucket | RightNowBucket;
+export const isBucket = (v: unknown): v is Bucket =>
+  (MONTH_BUCKETS as readonly string[]).includes(String(v)) || (RIGHT_NOW_BUCKETS as readonly string[]).includes(String(v));
+export const isMonthBucket = (v: Bucket): v is MonthBucket => (MONTH_BUCKETS as readonly string[]).includes(v);
+
+export const DAY14_MONTHS_SQL = DAY14_BUCKET_CTE + `
+SELECT to_char(b.entry_month, 'YYYY-MM') AS form_month,
+       ((b.entry_month + interval '1 month' + interval '14 days')::timestamp
+          AT TIME ZONE 'America/Los_Angeles') <= now() AS complete,
+       count(*)::int                                            AS cohort,
+       count(*) FILTER (WHERE b.unscheduled_d14)::int           AS unscheduled_d14,
+       count(*) FILTER (WHERE b.booked_later)::int              AS booked_later,
+       count(*) FILTER (WHERE b.never_booked)::int              AS never,
+       count(*) FILTER (WHERE b.never_no_appt)::int             AS never_no_appointment,
+       count(*) FILTER (WHERE b.never_canceled_noshow)::int     AS never_canceled_or_no_show,
+       count(*) FILTER (WHERE b.never_no_status)::int           AS never_no_status_only
+  FROM b
+ WHERE b.is_covered AND b.entry_month >= DATE '2026-06-01'
+ GROUP BY b.entry_month
+ ORDER BY b.entry_month
+`;
+
+export const DAY14_RIGHT_NOW_SQL = DAY14_BUCKET_CTE + `
+SELECT count(*) FILTER (WHERE b.entry_at > now() - interval '30 days')::int                    AS registrations_30d,
+       count(*) FILTER (WHERE b.entry_at > now() - interval '30 days' AND NOT b.is_covered)::int AS not_yet_synced,
+       count(*) FILTER (WHERE b.right_now_unbooked)::int                                         AS nothing_booked_now,
+       count(*) FILTER (WHERE b.right_now_past_d14)::int                                         AS past_day_14
+  FROM b
 `;
 
 // The hourly practice-wide sync, not the 10-minute catch-up: the catch-up

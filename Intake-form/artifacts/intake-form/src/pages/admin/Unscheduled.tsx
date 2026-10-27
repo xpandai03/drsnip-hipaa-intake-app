@@ -51,23 +51,40 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-function Row({ label, m, total = false }: { label: string; m: Month | Totals; total?: boolean }) {
+/** A count that opens the patients behind it. 0 is plain text. */
+function CountLink({ n, bucket, cohort }: { n: number; bucket: string; cohort: string }) {
+  if (n <= 0) return <>{num(n)}</>;
+  return (
+    <Link
+      href={`/admin/unscheduled/list?bucket=${bucket}${cohort ? `&${cohort}` : ""}`}
+      className="hover:underline focus-visible:underline focus-visible:outline-none"
+      data-testid={`link-${bucket}`}
+    >
+      {num(n)}
+    </Link>
+  );
+}
+
+function Row({ label, m, cohort, total = false }: { label: string; m: Month | Totals; cohort: string; total?: boolean }) {
   return (
     <tr className={`border-b last:border-0 ${total ? "bg-muted/40 font-semibold" : ""}`} data-testid={total ? "row-total" : `row-${label}`}>
       <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">{label}</th>
       <td className="px-3 py-2 text-right tabular-nums">{num(m.cohort)}</td>
       <td className="px-3 py-2 text-right tabular-nums">
-        {num(m.unscheduled_d14)} <span className="text-xs font-normal text-muted-foreground">{share(m.unscheduled_pct)}</span>
+        <CountLink n={m.unscheduled_d14} bucket="unscheduled_d14" cohort={cohort} />{" "}
+        <span className="text-xs font-normal text-muted-foreground">{share(m.unscheduled_pct)}</span>
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
-        {num(m.booked_later)} <span className="text-xs font-normal text-muted-foreground">{share(m.booked_later_pct)}</span>
+        <CountLink n={m.booked_later} bucket="booked_later" cohort={cohort} />{" "}
+        <span className="text-xs font-normal text-muted-foreground">{share(m.booked_later_pct)}</span>
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
-        {num(m.never)} <span className="text-xs font-normal text-muted-foreground">{share(m.never_pct)}</span>
+        <CountLink n={m.never} bucket="never_booked" cohort={cohort} />{" "}
+        <span className="text-xs font-normal text-muted-foreground">{share(m.never_pct)}</span>
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">{num(m.never_no_appointment)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{num(m.never_canceled_or_no_show)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{num(m.never_no_status_only)}</td>
+      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_no_appointment} bucket="never_no_appt" cohort={cohort} /></td>
+      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_canceled_or_no_show} bucket="never_canceled_noshow" cohort={cohort} /></td>
+      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_no_status_only} bucket="never_no_status" cohort={cohort} /></td>
     </tr>
   );
 }
@@ -100,9 +117,9 @@ function Report({ d }: { d: Day14Response }) {
           </thead>
           <tbody>
             {d.months.map((m) => (
-              <Row key={m.form_month} label={`${monthName(m.form_month)}${m.complete ? "" : " (day 14 not reached for everyone yet)"}`} m={m} />
+              <Row key={m.form_month} label={`${monthName(m.form_month)}${m.complete ? "" : " (day 14 not reached for everyone yet)"}`} m={m} cohort={`month=${m.form_month}`} />
             ))}
-            {t && <Row label={`${monthName(t.from_month)} – ${monthName(t.to_month)}`} m={t} total />}
+            {t && <Row label={`${monthName(t.from_month)} – ${monthName(t.to_month)}`} m={t} cohort={`range=${t.from_month}..${t.to_month}`} total />}
           </tbody>
         </table>
       </div>
@@ -117,8 +134,8 @@ function Report({ d }: { d: Day14Response }) {
         <h2 className="text-sm font-semibold">Right now</h2>
         <p className="mt-1 text-sm">
           Of <strong>{num(d.right_now.registrations_30d)}</strong> registrations in the last 30 days,{" "}
-          <strong>{num(d.right_now.nothing_booked_now)}</strong> have nothing booked yet.{" "}
-          <strong>{num(d.right_now.past_day_14)}</strong> of those registered more than 14 days ago.
+          <strong><CountLink n={d.right_now.nothing_booked_now} bucket="right_now_unbooked" cohort="" /></strong> have nothing booked yet.{" "}
+          <strong><CountLink n={d.right_now.past_day_14} bucket="right_now_past_d14" cohort="" /></strong> of those registered more than 14 days ago.
           {d.right_now.not_yet_synced > 0 && <> {num(d.right_now.not_yet_synced)} more are waiting for their appointment history to be read.</>}
         </p>
       </section>
@@ -137,7 +154,7 @@ function Report({ d }: { d: Day14Response }) {
         </p>
         <p>
           “Appointment with no status” means appointments exist on the chart but none has a status the clinic has
-          defined (most often a blank status). Only counts are shown on this page.
+          defined (most often a blank status). Select any count to see the patients behind it.
         </p>
       </div>
     </>
