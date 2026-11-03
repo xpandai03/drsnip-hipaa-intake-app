@@ -68,6 +68,7 @@ import internalSubmissionFilesHandler from "../api/internal/submission-files/[su
 import internalFileHandler from "../api/internal/files/[id]";
 import internalInsurancePdfHandler from "../api/internal/insurance-pdf/[submissionId]";
 import internalSweepHandler from "../api/internal/sweep";
+import { agentApi } from "../api/agent";
 
 const app = new Hono();
 
@@ -157,6 +158,10 @@ app.all("/api/internal/insurance-pdf/:submissionId", adapt(internalInsurancePdfH
 app.all("/api/internal/sweep", adapt(internalSweepHandler));
 
 // Unknown /api/* paths are genuine 404s — never fall through to the SPA.
+// Read-only agent API for Xpand's clinic agents (api/agent, docs/AGENT_API.md): its
+// own token, GET only, READ ONLY transactions. Before the /api/* 404 below.
+app.route("/api/agent", agentApi);
+
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // The one non-/api server route under /admin: the unclassified-appointment CSV
