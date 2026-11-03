@@ -25,6 +25,13 @@ When PR B is stacked on PR A:
 Fly deploys from the working tree, so it is entirely possible to ship something
 that exists nowhere in git.
 
+**Until the founder approves #72, every deploy goes from a tag built off the commit production runs, never from
+`main`.** `main` carries #72 (Conversion by cohort drill-down, merged 2026-10-27 after v101 shipped), which has not
+been deployed or approved. Production v102 is tag `agent-api-deploy-1` (4af5b6a, production's v101 commit, plus the
+read-only agent API). For the next deploy: branch from the tag production runs, make the change there, put it in a
+PR, tag the branch head (`<name>-deploy-<n>`), and `fly deploy` from a checkout of that tag. Record the tag and the
+rollback release in the PR. Lift this rule only when the founder approves #72.
+
 **Branch from the branch you are building on, not from `main`.** Train 3 was
 branched off `main` while Train 2 sat unmerged; `lib/lifecycle/` did not exist
 and the `submit.ts` edit landed on the pre-Train-2 version. Deploying that would
