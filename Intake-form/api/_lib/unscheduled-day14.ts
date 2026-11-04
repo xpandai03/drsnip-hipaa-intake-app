@@ -15,11 +15,10 @@
 //                      created within 14 days of the first registration (an
 //                      appointment made before the form counts as booked)
 //   booked later       converted, but only after day 14 (day 15 is "later")
-//   never booked       not converted as of today, split three ways:
+//   never booked       not converted as of today, split two ways:
 //     no appointment     no live appointment on the chart at all
 //     canceled/no-show   at least one canceled, late-canceled or no-show
-//     no status only     appointments exist but every one has a blank or
-//                        other unclassified status
+//   (rules v3: a patient whose appointments are all ignored is not counted.)
 //
 // Only patients whose appointment history has been read (covered) are counted.
 // A month is "complete" once day 14 has passed for its last registrant.
@@ -40,8 +39,6 @@ b AS (
          (d.is_covered AND NOT d.converted)                                           AS never_booked,
          (d.is_covered AND NOT d.converted AND NOT d.has_appointment)                 AS never_no_appt,
          (d.is_covered AND NOT d.converted AND d.has_not_converted)                   AS never_canceled_noshow,
-         (d.is_covered AND NOT d.converted AND NOT d.has_not_converted
-            AND d.has_appointment)                                                    AS never_no_status,
          (d.is_covered AND NOT d.converted
             AND d.entry_at > now() - interval '30 days')                              AS right_now_unbooked,
          (d.is_covered AND NOT d.converted AND d.entry_at > now() - interval '30 days'
@@ -52,7 +49,7 @@ b AS (
 
 /** Month buckets (one per table column) and the two "right now" buckets. */
 export const MONTH_BUCKETS = [
-  "unscheduled_d14", "booked_later", "never_booked", "never_no_appt", "never_canceled_noshow", "never_no_status",
+  "unscheduled_d14", "booked_later", "never_booked", "never_no_appt", "never_canceled_noshow",
 ] as const;
 export const RIGHT_NOW_BUCKETS = ["right_now_unbooked", "right_now_past_d14"] as const;
 export type MonthBucket = (typeof MONTH_BUCKETS)[number];
@@ -71,8 +68,7 @@ SELECT to_char(b.entry_month, 'YYYY-MM') AS form_month,
        count(*) FILTER (WHERE b.booked_later)::int              AS booked_later,
        count(*) FILTER (WHERE b.never_booked)::int              AS never,
        count(*) FILTER (WHERE b.never_no_appt)::int             AS never_no_appointment,
-       count(*) FILTER (WHERE b.never_canceled_noshow)::int     AS never_canceled_or_no_show,
-       count(*) FILTER (WHERE b.never_no_status)::int           AS never_no_status_only
+       count(*) FILTER (WHERE b.never_canceled_noshow)::int     AS never_canceled_or_no_show
   FROM b
  WHERE b.is_covered AND b.entry_month >= DATE '2026-06-01'
  GROUP BY b.entry_month
@@ -105,7 +101,6 @@ export type MonthRow = {
   never: number;
   never_no_appointment: number;
   never_canceled_or_no_show: number;
-  never_no_status_only: number;
 };
 
 export type RightNow = {
@@ -135,7 +130,6 @@ export function shapeDay14(rawMonths: Record<string, unknown>[], rawNow: Record<
         never: n(r.never),
         never_no_appointment: n(r.never_no_appointment),
         never_canceled_or_no_show: n(r.never_canceled_or_no_show),
-        never_no_status_only: n(r.never_no_status_only),
       };
       return {
         ...m,
@@ -161,7 +155,6 @@ export function shapeDay14(rawMonths: Record<string, unknown>[], rawNow: Record<
     never_pct: pct(sum("never"), sum("unscheduled_d14")),
     never_no_appointment: sum("never_no_appointment"),
     never_canceled_or_no_show: sum("never_canceled_or_no_show"),
-    never_no_status_only: sum("never_no_status_only"),
   };
 
   const rn = rawNow ?? {};

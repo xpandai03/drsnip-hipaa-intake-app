@@ -75,7 +75,7 @@ describe("access, logging and the link", () => {
   });
   it("the page shows the link and count to admins only, beside the toggles", () => {
     assert.match(PAGE, /\{isAdmin && <UnclassifiedExport \/>\}/);
-    assert.match(PAGE, /Download unclassified appointments \(CSV\)/);
+    assert.match(PAGE, /Download appointments with an ignored status \(CSV\)/);
     assert.match(PAGE, /\/api\/reports\/unclassified-count/);
     assert.ok(PAGE.indexOf("<UnclassifiedExport />") > PAGE.indexOf('testPrefix="grain"'));
   });
@@ -107,7 +107,7 @@ describe(`against Postgres (${live ? "live" : "skipped without CONVERSION_TEST_D
     await sub("9300001", "insurance", "2026-06-10T18:00:00Z");   // both forms -> registration
     await sub("9300002", "insurance", "2026-08-10T18:00:00Z");
     await appt("u1", "9300001", "", "2026-08-20T10:00:00Z");      // blank, no converted on chart -> "no"
-    await appt("u2", "9300002", "Arrived", "2026-08-05T10:00:00Z"); // unclassified, chart has a converted one -> "yes"
+    await appt("u2", "9300002", "MD In", "2026-08-05T10:00:00Z"); // ignored, chart has a converted one -> "yes" (Arrived converts since v3)
     await appt("c2", "9300002", "Complete", "2026-08-06T10:00:00Z");
     await appt("u3", "9300003", "", "2026-07-01T10:00:00Z");      // no linked form -> none, "no"
     await appt("d1", "9300003", "", "2026-07-02T10:00:00Z", true); // deleted: not listed
@@ -125,7 +125,7 @@ describe(`against Postgres (${live ? "live" : "skipped without CONVERSION_TEST_D
     assert.equal(u3.form_type, "none");
     assert.equal(u3.form_month, "");
     const u2 = r.find((x: { appointment_id: string }) => x.appointment_id === "u2");
-    assert.equal(u2.appointment_status, "Arrived");
+    assert.equal(u2.appointment_status, "MD In");
     assert.equal(u2.patient_has_other_converted_appt, "yes");
     assert.equal(u2.form_type, "insurance");
   });

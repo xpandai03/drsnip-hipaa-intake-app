@@ -87,7 +87,7 @@ export function monthLabel(m: string): string {
 // ---------------------------------------------------------------------------
 export type Count = number | null;
 
-export const BUCKET_KEYS = ["converted", "not_converted", "unclassified_only", "no_appointment"] as const;
+export const BUCKET_KEYS = ["converted", "not_converted", "no_appointment"] as const;
 export type BucketKey = (typeof BUCKET_KEYS)[number];
 
 export type MonthRow = {
@@ -142,7 +142,7 @@ export function pctLabel(v: number | null): string | null {
 }
 
 /**
- * A proportional bar is drawn ONLY when every one of the four outcomes was
+ * A proportional bar is drawn ONLY when every one of the three outcomes was
  * published and they account for the whole published cohort. Any withheld
  * outcome means no bar at all.
  */

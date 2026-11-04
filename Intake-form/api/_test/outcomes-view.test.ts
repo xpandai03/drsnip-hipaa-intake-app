@@ -31,7 +31,7 @@ const row = (o: Partial<MonthRow> & { outcomes?: Partial<MonthRow["outcomes"]> }
   converted_before_entry: 7,
   repeat_submitters: 6,
   ...o,
-  outcomes: { converted: 60, not_converted: 10, unclassified_only: 5, no_appointment: 25, ...(o.outcomes ?? {}) },
+  outcomes: { converted: 60, not_converted: 15, no_appointment: 25, ...(o.outcomes ?? {}) },
 });
 
 describe("URL state", () => {
@@ -75,7 +75,7 @@ describe("withheld stays withheld", () => {
     assert.equal(pctLabel(64.66), "64.7%");
   });
 
-  it("draws a bar only when all four outcomes are published and account for the cohort", () => {
+  it("draws a bar only when all three outcomes are published and account for the cohort", () => {
     assert.equal(chartable(row()), true);
     assert.equal(chartable(row({ outcomes: { not_converted: null } })), false);
     assert.equal(chartable(row({ outcomes: { no_appointment: 24 } })), false, "parts must add up");

@@ -24,7 +24,6 @@ type Month = {
   never_pct: number | null;
   never_no_appointment: number;
   never_canceled_or_no_show: number;
-  never_no_status_only: number;
 };
 type Totals = Omit<Month, "form_month" | "complete"> & {
   from_month: string;
@@ -84,7 +83,6 @@ function Row({ label, m, cohort, total = false }: { label: string; m: Month | To
       </td>
       <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_no_appointment} bucket="never_no_appt" cohort={cohort} /></td>
       <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_canceled_or_no_show} bucket="never_canceled_noshow" cohort={cohort} /></td>
-      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_no_status_only} bucket="never_no_status" cohort={cohort} /></td>
     </tr>
   );
 }
@@ -112,7 +110,6 @@ function Report({ d }: { d: Day14Response }) {
               <th scope="col" className="px-3 py-2 text-right font-medium">…never booked</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Never booked: no appointment</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Never booked: canceled or no-show</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Never booked: appointment with no status</th>
             </tr>
           </thead>
           <tbody>
@@ -148,13 +145,13 @@ function Report({ d }: { d: Day14Response }) {
         <p>
           Each person is counted once, from the day of their first registration. “Booked” uses the clinic&rsquo;s own
           definition (the same one as <Link href="/admin/conversion" className="underline">Conversion by cohort</Link>):
-          an appointment on their chart that is complete, signed, procedure not performed, checked in, ready in a room,
-          in session, scheduled, confirmed or rescheduled. The booking date is when that appointment was created; one
+          an appointment on their chart that is complete, signed no review, procedure not performed, checked in,
+          checked in online, arrived, ready or in a room, in session, scheduled, confirmed or rescheduled. The booking date is when that appointment was created; one
           made before the registration counts as booked by day 14.
         </p>
         <p>
-          “Appointment with no status” means appointments exist on the chart but none has a status the clinic has
-          defined (most often a blank status). Select any count to see the patients behind it.
+          A blank or any other status is ignored: a patient whose appointments all have an ignored status is not
+          counted. Select any count to see the patients behind it.
         </p>
       </div>
     </>
