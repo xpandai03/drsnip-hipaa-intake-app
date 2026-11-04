@@ -1,7 +1,10 @@
-// CSV export of the Not booked patient list (admin only). Same columns as the
-// list on screen, nothing else:
-//   Patient, Source, Registered, Days since, Most recent appointment, Status,
-//   Submission URL, DrChrono chart ID, DrChrono chart URL
+// CSV export of a patient list (admin only). Same columns as the list on
+// screen, nothing else. Two layouts:
+//   Not booked (default): Patient, Source, Registered, Days since, Most recent
+//     appointment, Status, Submission URL, DrChrono chart ID, DrChrono chart URL
+//   Conversion (convertedOn): Patient, First registered | First inquiry, Days
+//     since, Most recent appointment, Submission URL, DrChrono chart ID,
+//     DrChrono chart URL, Converted on
 //
 // Safety: RFC 4180 quoting; any cell starting with = + - @ TAB or CR is
 // prefixed with a single quote so a spreadsheet never evaluates it; UTF-8
@@ -20,19 +23,32 @@ export const PATIENT_CSV_COLUMNS = [
   "DrChrono chart URL",
 ] as const;
 
+export const CONVERSION_CSV_COLUMNS = [
+  "Patient",
+  "First registered",
+  "Days since",
+  "Most recent appointment",
+  "Submission URL",
+  "DrChrono chart ID",
+  "DrChrono chart URL",
+  "Converted on",
+] as const;
+
 export type PatientListRow = {
+  /** Conversion lists only: the created date of the first converted appointment. */
+  converted_on?: string | null;
   chart_id: string | null;
   submission_id: string | null;
   name: string;
-  /** Marketing source on the first registration; null when it carried none. */
-  source: string | null;
+  /** Not booked lists: marketing source on the first registration; null when it carried none. */
+  source?: string | null;
   registered_on: string;
   days_since: number;
   has_appointment: boolean;
   latest_status: string | null;
   latest_date: string | null;
-  /** True: canceled, late-canceled or no-show. False: no appointment. */
-  canceled_noshow: boolean;
+  /** Not booked lists. True: canceled, late-canceled or no-show. False: no appointment. */
+  canceled_noshow?: boolean;
 };
 
 /** Neutralise spreadsheet formulas, then quote per RFC 4180. */
@@ -59,22 +75,36 @@ export function consoleBaseUrl(): string {
   return (raw && raw.length > 0 ? raw : "https://intake.drsnip.com").replace(/\/+$/, "");
 }
 
-export function buildPatientListCsv(rows: PatientListRow[], base: string = consoleBaseUrl()): string {
-  const lines = [PATIENT_CSV_COLUMNS.map(csvCell).join(",")];
+export type CsvOptions = {
+  /** Conversion layout: header for the first-form date; insurance lists say "First inquiry". */
+  firstLabel?: string;
+  /** The conversion layout (CONVERSION_CSV_COLUMNS). Without it, the Not booked layout. */
+  convertedOn?: boolean;
+};
+
+export function buildPatientListCsv(rows: PatientListRow[], base: string = consoleBaseUrl(), opts: CsvOptions = {}): string {
+  const conversion = opts.convertedOn === true;
+  const header: string[] = conversion ? [...CONVERSION_CSV_COLUMNS] : [...PATIENT_CSV_COLUMNS];
+  if (conversion && opts.firstLabel) header[1] = opts.firstLabel;
+  const lines = [header.map(csvCell).join(",")];
   for (const r of rows) {
-    lines.push([
-      r.name,
-      r.source ?? "—",
-      r.registered_on,
-      r.days_since,
-      appointmentText(r),
-      r.canceled_noshow ? "Canceled or no show" : "No appointment",
-      r.submission_id ? `${base}/admin/submissions/${r.submission_id}` : "",
-      r.chart_id ?? "",
-      chartUrl(r.chart_id),
-    ].map(csvCell).join(","));
+    const submission = r.submission_id ? `${base}/admin/submissions/${r.submission_id}` : "";
+    const cells: unknown[] = conversion
+      ? [r.name, r.registered_on, r.days_since, appointmentText(r), submission, r.chart_id ?? "", chartUrl(r.chart_id), r.converted_on ?? ""]
+      : [
+          r.name,
+          r.source ?? "—",
+          r.registered_on,
+          r.days_since,
+          appointmentText(r),
+          r.canceled_noshow ? "Canceled or no show" : "No appointment",
+          submission,
+          r.chart_id ?? "",
+          chartUrl(r.chart_id),
+        ];
+    lines.push(cells.map(csvCell).join(","));
   }
-  return "﻿" + lines.join("\r\n") + "\r\n";
+  return "\ufeff" + lines.join("\r\n") + "\r\n";
 }
 
 /** drsnip-<bucket>-<cohort>-<YYYYMMDD-HHmm>.csv — no patient data, Pacific time. */

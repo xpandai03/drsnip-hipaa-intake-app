@@ -17,6 +17,7 @@ import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
 import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminReports from "@/pages/admin/Reports";
+import AdminConversionList from "@/pages/admin/ConversionList";
 import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminConversion from "@/pages/admin/Conversion";
@@ -134,6 +135,13 @@ function Router() {
       <Route path="/admin/conversion">
         <WithAuth>
           <AdminConversion />
+        </WithAuth>
+      </Route>
+
+      {/* The patients behind one count on Conversion by cohort (admin only). */}
+      <Route path="/admin/conversion/list">
+        <WithAuth>
+          <AdminConversionList />
         </WithAuth>
       </Route>
 

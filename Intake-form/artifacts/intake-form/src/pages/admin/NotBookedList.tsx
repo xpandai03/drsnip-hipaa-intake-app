@@ -1,10 +1,11 @@
-// The patients behind one count on "Not booked". Admin only.
+// The patients behind one count on "Not booked" or "Conversion by cohort".
+// Admin only. One page component serves both sources.
 //
-// Minimum necessary: name, marketing source, first registration date and days
-// since, most recent appointment, why they are not booked (canceled or no show
-// / no appointment), a link to the submission in this console, and the
-// DrChrono chart. The rows come from the same definition as the counts, so the
-// total here equals the number that was clicked.
+// Minimum necessary: name, first registration date and days since, most
+// recent appointment, a link to the submission in this console, and the
+// DrChrono chart. Not booked lists add the marketing source and why the
+// patient is not booked (canceled or no show / no appointment); conversion
+// lists add "Converted on".
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -16,21 +17,25 @@ import { clinicTime } from "@/components/reporting/freshness";
 
 type Cohort = { kind: "month"; month: string } | { kind: "range"; from: string; to: string } | { kind: "none" };
 type ListRow = {
-  chart_id: string;
+  chart_id: string | null;
   submission_id: string | null;
   name: string;
-  source: string | null;
+  /** Not booked lists only. */
+  source?: string | null;
   registered_on: string;
   days_since: number;
   has_appointment: boolean;
   latest_status: string | null;
   latest_date: string | null;
-  status: "Canceled or no show" | "No appointment";
+  converted_on?: string | null;
+  /** Not booked lists only. */
+  status?: "Canceled or no show" | "No appointment";
 };
 type ListResponse = {
+  title?: string;
   bucket: string;
-  bucket_label: string;
-  cohort: Cohort;
+  bucket_label?: string;
+  cohort?: Cohort;
   total: number;
   page: number;
   page_size: number;
@@ -44,7 +49,9 @@ const monthName = (m: string) => `${LONG[Number(m.slice(5, 7)) - 1]} ${m.slice(0
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** "June 2026: not booked, no appointment (57)" */
-export function listTitle(d: Pick<ListResponse, "cohort" | "bucket_label" | "total">): string {
+export function listTitle(d: Pick<ListResponse, "cohort" | "bucket_label" | "total" | "title">): string {
+  if (d.title) return d.title;
+  if (!d.cohort || !d.bucket_label) return `${d.total.toLocaleString("en-US")} patients`;
   const who = d.cohort.kind === "month" ? monthName(d.cohort.month)
     : d.cohort.kind === "range" ? `${monthName(d.cohort.from)} – ${monthName(d.cohort.to)}` : "";
   return who ? `${who}: ${d.bucket_label} (${d.total.toLocaleString("en-US")})`
@@ -67,7 +74,52 @@ function Appointment({ r }: { r: ListRow }) {
   );
 }
 
+/** Where a patient list comes from. One page component serves every source. */
+export type ListSource = {
+  id: string;
+  api: string;
+  csv: string;
+  /** Query keys passed through to the API (never "page" — that is ours). */
+  keys: readonly string[];
+  back: (params: URLSearchParams) => { href: string; label: string };
+  /** Conversion lists show "Converted on". */
+  convertedOn: boolean;
+  /** Label for the first-form date column. */
+  firstLabel: (params: URLSearchParams) => string;
+  /** Not booked lists: the Source and Status columns, and the note for a month still running. */
+  notBooked: boolean;
+};
+
+export const NOT_BOOKED_SOURCE: ListSource = {
+  id: "not-booked",
+  api: "/api/admin/not-booked/list",
+  csv: "/api/admin/not-booked/list.csv",
+  keys: ["bucket", "month", "range"],
+  back: () => ({ href: "/admin/not-booked", label: "Not booked" }),
+  convertedOn: false,
+  firstLabel: () => "Registered",
+  notBooked: true,
+};
+
+export const CONVERSION_SOURCE: ListSource = {
+  id: "conversion",
+  api: "/api/admin/conversion/list",
+  csv: "/api/admin/conversion/list.csv",
+  keys: ["form", "grain", "period", "bucket"],
+  back: (p) => ({
+    href: `/admin/conversion?form=${p.get("form") === "insurance" ? "insurance" : "registration"}&grain=${p.get("grain") === "week" ? "week" : "month"}`,
+    label: "Conversion by cohort",
+  }),
+  convertedOn: true,
+  firstLabel: (p) => (p.get("form") === "insurance" ? "First inquiry" : "First registered"),
+  notBooked: false,
+};
+
 export default function NotBookedList() {
+  return <PatientListPage source={NOT_BOOKED_SOURCE} />;
+}
+
+export function PatientListPage({ source }: { source: ListSource }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const search = useSearch();
@@ -84,38 +136,39 @@ export default function NotBookedList() {
 
   const apiQs = useMemo(() => {
     const p = new URLSearchParams();
-    for (const k of ["bucket", "month", "range"]) {
+    for (const k of source.keys) {
       const v = params.get(k);
       if (v !== null) p.set(k, v);
     }
     p.set("page", String(page));
     return p.toString();
-  }, [params, page]);
+  }, [params, page, source]);
 
   // The export takes the same bucket and cohort, never a page: it is every row.
   const csvQs = useMemo(() => {
     const p = new URLSearchParams();
-    for (const k of ["bucket", "month", "range"]) {
+    for (const k of source.keys) {
       const v = params.get(k);
       if (v !== null) p.set(k, v);
     }
     return p.toString();
-  }, [params]);
+  }, [params, source]);
 
   const q = useQuery({
-    queryKey: ["not-booked-list", apiQs],
-    queryFn: () => getJson<ListResponse>(`/api/admin/not-booked/list?${apiQs}`),
+    queryKey: [`${source.id}-list`, apiQs],
+    queryFn: () => getJson<ListResponse>(`${source.api}?${apiQs}`),
     enabled: isAdmin,
     placeholderData: (prev) => prev,
     retry: 1,
   });
   const d = q.data;
+  const back = source.back(params);
 
   return (
     <AdminLayout>
-      <div data-testid="not-booked-list-page">
-        <Link href="/admin/not-booked" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline" data-testid="back-link">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Not booked
+      <div data-testid={`${source.id}-list-page`}>
+        <Link href={back.href} className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline" data-testid="back-link">
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {back.label}
         </Link>
 
         {!isAdmin ? (
@@ -141,7 +194,7 @@ export default function NotBookedList() {
               <h1 className="text-xl font-semibold" data-testid="list-title">{listTitle(d)}</h1>
               {d.total > 0 && (
                 <a
-                  href={`/api/admin/not-booked/list.csv?${csvQs}`}
+                  href={`${source.csv}?${csvQs}`}
                   download
                   data-testid="export-csv"
                   className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -150,13 +203,13 @@ export default function NotBookedList() {
                 </a>
               )}
             </div>
-            {d.cohort.kind === "month" && !monthEnded(d.cohort.month) && (
+            {source.notBooked && d.cohort?.kind === "month" && !monthEnded(d.cohort.month) && (
               <p className="mt-1 text-sm text-amber-800 dark:text-amber-200" data-testid="list-month-running">
                 This month is still running: some of these patients registered only recently.
               </p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
-              Oldest registration first. Each patient appears once, under their first registration.
+              Oldest first. Each patient appears once, under their first {source.firstLabel(params) === "First inquiry" ? "insurance inquiry" : "registration"}.
             </p>
 
             <div className="mt-4 overflow-x-auto rounded-lg border bg-card">
@@ -164,24 +217,27 @@ export default function NotBookedList() {
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th scope="col" className="px-3 py-2 font-medium">Patient</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Source</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Registered</th>
+                    {source.notBooked && <th scope="col" className="px-3 py-2 font-medium">Source</th>}
+                    <th scope="col" className="px-3 py-2 font-medium">{source.firstLabel(params)}</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Days since</th>
                     <th scope="col" className="px-3 py-2 font-medium">Most recent appointment</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Status</th>
+                    {source.notBooked && <th scope="col" className="px-3 py-2 font-medium">Status</th>}
                     <th scope="col" className="px-3 py-2 font-medium">Submission</th>
                     <th scope="col" className="px-3 py-2 font-medium">DrChrono chart</th>
+                    {source.convertedOn && <th scope="col" className="px-3 py-2 font-medium">Converted on</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {d.rows.map((r) => (
-                    <tr key={r.chart_id} className="border-b last:border-0" data-testid="list-row">
+                    <tr key={r.chart_id ?? r.submission_id ?? r.registered_on} className="border-b last:border-0" data-testid="list-row">
                       <td className="px-3 py-2 font-medium">{r.name || <span className="text-muted-foreground">(no name)</span>}</td>
-                      <td className="px-3 py-2" data-testid="cell-source">{r.source ?? <span className="text-muted-foreground">—</span>}</td>
+                      {source.notBooked && (
+                        <td className="px-3 py-2" data-testid="cell-source">{r.source ?? <span className="text-muted-foreground">—</span>}</td>
+                      )}
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.registered_on}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.days_since}</td>
                       <td className="px-3 py-2"><Appointment r={r} /></td>
-                      <td className="whitespace-nowrap px-3 py-2" data-testid="cell-status">{r.status}</td>
+                      {source.notBooked && <td className="whitespace-nowrap px-3 py-2" data-testid="cell-status">{r.status ?? ""}</td>}
                       <td className="px-3 py-2">
                         {r.submission_id ? (
                           <Link href={`/admin/submissions/${r.submission_id}`} className="text-primary hover:underline">Open</Link>
@@ -189,9 +245,12 @@ export default function NotBookedList() {
                       </td>
                       <td className="px-3 py-2 tabular-nums">
                         {/* Same chart URL the submission detail modal uses. */}
-                        <a href={`https://app.drchrono.com/chart/${r.chart_id}/documents`} target="_blank" rel="noopener noreferrer"
-                          className="text-primary hover:underline">{r.chart_id}</a>
+                        {r.chart_id ? (
+                          <a href={`https://app.drchrono.com/chart/${r.chart_id}/documents`} target="_blank" rel="noopener noreferrer"
+                            className="text-primary hover:underline">{r.chart_id}</a>
+                        ) : <span className="text-muted-foreground">—</span>}
                       </td>
+                      {source.convertedOn && <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.converted_on ?? ""}</td>}
                     </tr>
                   ))}
                 </tbody>
