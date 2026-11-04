@@ -1,24 +1,25 @@
-// Drill-down behind every count on "Unscheduled at day 14" (admin only).
+// Drill-down behind every count on "Not booked" (admin only).
 //
 // The rows come from the SAME per-patient bucket CTE the page counts
-// (DAY14_BUCKET_CTE in ./unscheduled-day14), so a list total always equals the
-// cell it was opened from. Nothing here redefines "booked".
+// (NOT_BOOKED_CTE in ./not-booked), so a list total always equals the cell it
+// was opened from. Nothing here redefines "booked".
 //
-// Minimum necessary: per patient, the name as stored on their first
-// registration, that registration's date (Pacific) and age in days, their most
-// recent appointment's status and date, the submission id (for the console
+// Minimum necessary: per patient, the name and marketing source as stored on
+// their first registration, that registration's date (Pacific) and age in
+// days, their most recent appointment's status and date, whether they canceled
+// or no-showed or have no appointment, the submission id (for the console
 // link) and the DrChrono chart id. No phone, email, DOB, address, insurance or
 // clinical field is selected.
 
 import { sql } from "@workspace/db";
 import {
-  DAY14_BUCKET_CTE,
+  NOT_BOOKED_CTE,
   MONTH_BUCKETS,
   RIGHT_NOW_BUCKETS,
   isBucket,
   isMonthBucket,
   type Bucket,
-} from "./unscheduled-day14";
+} from "./not-booked";
 
 export const PAGE_SIZE = 100;
 export const FIRST_MONTH = "2026-06";
@@ -86,7 +87,7 @@ function cohortFilter(c: Cohort) {
 }
 
 export function countQuery(p: ListParams) {
-  return sql`${sql.raw(DAY14_BUCKET_CTE)}
+  return sql`${sql.raw(NOT_BOOKED_CTE)}
 SELECT count(*)::int AS total FROM b WHERE ${sql.raw(bucketColumn(p.bucket))} ${cohortFilter(p.cohort)}`;
 }
 
@@ -94,13 +95,13 @@ SELECT count(*)::int AS total FROM b WHERE ${sql.raw(bucketColumn(p.bucket))} ${
 export function listQuery(p: ListParams, opts: { all?: boolean } = {}) {
   const offset = (p.page - 1) * PAGE_SIZE;
   const window = opts.all ? sql`` : sql`LIMIT ${PAGE_SIZE} OFFSET ${offset}`;
-  return sql`${sql.raw(DAY14_BUCKET_CTE)},
+  return sql`${sql.raw(NOT_BOOKED_CTE)},
 sel AS (
-  SELECT b.pid, b.entry_at FROM b WHERE ${sql.raw(bucketColumn(p.bucket))} ${cohortFilter(p.cohort)}
+  SELECT b.pid, b.entry_at, b.canceled_noshow FROM b WHERE ${sql.raw(bucketColumn(p.bucket))} ${cohortFilter(p.cohort)}
 ),
 fs AS (
   SELECT DISTINCT ON (s.n8n_patient_id) s.n8n_patient_id::text AS pid, s.id::text AS submission_id,
-         s.first_name, s.last_name
+         s.first_name, s.last_name, s.source
     FROM public.submissions s JOIN sel ON sel.pid = s.n8n_patient_id::text
    WHERE s.form_type = 'registration'
    ORDER BY s.n8n_patient_id, s.created_at, s.id
@@ -114,12 +115,14 @@ la AS (
 SELECT sel.pid AS chart_id,
        fs.submission_id,
        btrim(coalesce(fs.first_name, '') || ' ' || coalesce(fs.last_name, '')) AS name,
+       nullif(btrim(fs.source), '') AS source,
        to_char(sel.entry_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS registered_on,
        floor(extract(epoch FROM now() - sel.entry_at) / 86400)::int AS days_since,
        (la.pid IS NOT NULL) AS has_appointment,
        la.current_status AS latest_status,
        -- scheduled_time is DrChrono's Pacific wall-clock stored as UTC (0023 header).
-       to_char(la.scheduled_time AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS latest_date
+       to_char(la.scheduled_time AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS latest_date,
+       sel.canceled_noshow
   FROM sel
   LEFT JOIN fs ON fs.pid = sel.pid
   LEFT JOIN la ON la.pid = sel.pid
@@ -128,15 +131,45 @@ SELECT sel.pid AS chart_id,
 }
 
 export const BUCKET_LABELS: Record<Bucket, string> = {
-  unscheduled_d14: "nothing booked by day 14",
-  booked_later: "nothing booked by day 14, booked later",
-  never_booked: "nothing booked by day 14, never booked",
-  never_no_appt: "never booked, no appointment",
-  never_canceled_noshow: "never booked, canceled or no-show",
-  right_now_unbooked: "registered in the last 30 days, nothing booked yet",
-  right_now_past_d14: "registered in the last 30 days, nothing booked, more than 14 days ago",
+  not_booked: "not booked",
+  canceled_noshow: "not booked, canceled or no show",
+  no_appointment: "not booked, no appointment",
+  right_now_not_booked: "registered in the last 30 days, not booked yet",
 };
+
+/** The Status column: why a not-booked patient is not booked. */
+export function statusLabel(canceledNoShow: boolean): "Canceled or no show" | "No appointment" {
+  return canceledNoShow ? "Canceled or no show" : "No appointment";
+}
 
 export function cohortKey(c: Cohort): string {
   return c.kind === "month" ? c.month : c.kind === "range" ? `${c.from}..${c.to}` : "last-30-days";
+}
+
+// The report used to live at /admin/unscheduled with different bucket names.
+// A bookmarked list or CSV link still works: the buckets with an equivalent
+// map to it, and every other old bucket opens the whole not-booked list for
+// the same month or range (or the last 30 days when it had neither).
+const LEGACY_BUCKETS: Record<string, Bucket> = {
+  never_booked: "not_booked",
+  never_no_appt: "no_appointment",
+  never_canceled_noshow: "canceled_noshow",
+  right_now_unbooked: "right_now_not_booked",
+};
+
+/** Pure: an old list query string, rewritten for the Not booked list. */
+export function legacyListSearch(q: Record<string, unknown>): string {
+  const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);
+  const out = new URLSearchParams();
+  const month = one(q.month);
+  const range = one(q.range);
+  const page = one(q.page);
+  const bucket = String(one(q.bucket) ?? "");
+  const hasCohort = typeof month === "string" || typeof range === "string";
+  const mapped = isBucket(bucket) ? bucket : LEGACY_BUCKETS[bucket];
+  out.set("bucket", mapped ?? (hasCohort ? "not_booked" : "right_now_not_booked"));
+  if (typeof month === "string") out.set("month", month);
+  else if (typeof range === "string") out.set("range", range);
+  if (typeof page === "string") out.set("page", page);
+  return out.toString();
 }

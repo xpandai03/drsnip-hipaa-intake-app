@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { PATIENT_CSV_COLUMNS, buildPatientListCsv, csvCell, csvFilename } from "../_lib/patient-csv";
-import { countQuery, listQuery, parseListParams } from "../_lib/unscheduled-list";
-import { MONTH_BUCKETS, RIGHT_NOW_BUCKETS } from "../_lib/unscheduled-day14";
+import { countQuery, listQuery, parseListParams } from "../_lib/not-booked-list";
+import { MONTH_BUCKETS, RIGHT_NOW_BUCKETS } from "../_lib/not-booked";
 import { makeReq, makeRes } from "./harness";
 
 const requireFromDb = createRequire(createRequire(import.meta.url).resolve("@workspace/db"));
@@ -15,19 +15,19 @@ const requireFromDb = createRequire(createRequire(import.meta.url).resolve("@wor
 const { PgDialect } = requireFromDb("drizzle-orm/pg-core") as { PgDialect: new () => { sqlToQuery: (q: any) => { sql: string; params: unknown[] } } };
 
 const row = (o: Record<string, unknown> = {}) => ({
-  chart_id: "123", submission_id: "abc", name: "Syn Patient", registered_on: "2026-06-03", days_since: 146,
-  has_appointment: false, latest_status: null, latest_date: null, ...o,
+  chart_id: "123", submission_id: "abc", name: "Syn Patient", source: null, registered_on: "2026-06-03", days_since: 146,
+  has_appointment: false, latest_status: null, latest_date: null, canceled_noshow: false, ...o,
 });
 
 describe("CSV shape and safety", () => {
-  it("has exactly the seven columns, in order, after a UTF-8 BOM", () => {
+  it("has exactly the nine columns, in order, after a UTF-8 BOM", () => {
     const csv = buildPatientListCsv([row()], "https://console.example");
     assert.ok(csv.startsWith("﻿"));
     const lines = csv.slice(1).trimEnd().split("\r\n");
     assert.equal(lines[0], PATIENT_CSV_COLUMNS.join(","));
-    assert.deepEqual([...PATIENT_CSV_COLUMNS], ["Patient", "First registered", "Days since", "Most recent appointment",
-      "Submission URL", "DrChrono chart ID", "DrChrono chart URL"]);
-    assert.equal(lines[1], "Syn Patient,2026-06-03,146,No appointment,https://console.example/admin/submissions/abc,123,https://app.drchrono.com/chart/123/documents");
+    assert.deepEqual([...PATIENT_CSV_COLUMNS], ["Patient", "Source", "Registered", "Days since", "Most recent appointment",
+      "Status", "Submission URL", "DrChrono chart ID", "DrChrono chart URL"]);
+    assert.equal(lines[1], "Syn Patient,—,2026-06-03,146,No appointment,No appointment,https://console.example/admin/submissions/abc,123,https://app.drchrono.com/chart/123/documents");
   });
   it("neutralises formulas and quotes per RFC 4180", () => {
     for (const v of ["=1+1", "+1", "-1", "@SUM(A1)", "\t=x", "\r=x"]) assert.ok(csvCell(v).replace(/^"/, "").startsWith("'"), JSON.stringify(v));
@@ -39,27 +39,28 @@ describe("CSV shape and safety", () => {
   });
   it("formats the appointment like the page and leaves a missing chart blank", () => {
     const csv = buildPatientListCsv([
-      row({ has_appointment: true, latest_status: "Cancelled", latest_date: "2026-07-01" }),
+      row({ has_appointment: true, latest_status: "Cancelled", latest_date: "2026-07-01", canceled_noshow: true, source: "google" }),
       row({ has_appointment: true, latest_status: "", latest_date: "2026-07-02" }),
       row({ chart_id: null, submission_id: null }),
     ], "https://c");
     const lines = csv.slice(1).trimEnd().split("\r\n");
-    assert.match(lines[1], /,Cancelled · 2026-07-01,/);
+    assert.match(lines[1], /^Syn Patient,google,2026-06-03,146,Cancelled · 2026-07-01,Canceled or no show,/);
     assert.match(lines[2], /,No status · 2026-07-02,/);
     assert.ok(lines[3].endsWith(",,,"), "no submission URL, chart id or chart URL");
   });
   it("names the file without patient data", () => {
-    const f = csvFilename("never_no_appt", "2026-06..2026-09", new Date("2026-10-27T18:05:00Z"));
-    assert.equal(f, "drsnip-never_no_appt-2026-06-to-2026-09-20261027-1105.csv");
-    assert.match(csvFilename("right_now_past_d14", "last-30-days"), /^drsnip-right_now_past_d14-last-30-days-\d{8}-\d{4}\.csv$/);
+    const f = csvFilename("no_appointment", "2026-06..2026-09", new Date("2026-10-27T18:05:00Z"));
+    assert.equal(f, "drsnip-no_appointment-2026-06-to-2026-09-20261027-1105.csv");
+    assert.match(csvFilename("right_now_not_booked", "last-30-days"), /^drsnip-right_now_not_booked-last-30-days-\d{8}-\d{4}\.csv$/);
+    for (const b of [...MONTH_BUCKETS, ...RIGHT_NOW_BUCKETS]) assert.ok(!/d14/.test(csvFilename(b, "2026-06")), b);
   });
 });
 
 describe("route", () => {
   it("signed out gets 401", async () => {
-    const { default: handler } = await import("../admin/unscheduled-list-csv");
+    const { default: handler } = await import("../admin/not-booked-list-csv");
     const res = makeRes();
-    await handler(makeReq({ method: "GET", query: { bucket: "never_no_appt", month: "2026-06" } } as never), res);
+    await handler(makeReq({ method: "GET", query: { bucket: "no_appointment", month: "2026-06" } } as never), res);
     assert.equal(res.statusCode, 401);
   });
 });
@@ -121,7 +122,7 @@ describe(`every-row parity against Postgres (${live ? "live" : "skipped"})`, { s
   });
 
   it("an '=' name is exported neutralised", async () => {
-    const p = parseListParams({ bucket: "unscheduled_d14", range: "2026-06..2026-09" }, "2026-10") as never;
+    const p = parseListParams({ bucket: "not_booked", range: "2026-06..2026-09" }, "2026-10") as never;
     const csv = buildPatientListCsv((await run(listQuery(p, { all: true }))).rows, "https://c");
     assert.ok(!/(^|,)=cmd/m.test(csv), "no raw formula cell");
     assert.match(csv, /(^|,)'=cmd/m);
@@ -130,7 +131,7 @@ describe(`every-row parity against Postgres (${live ? "live" : "skipped"})`, { s
 
 describe(`access control and the export log (${live ? "live" : "skipped"})`, { skip: !live }, () => {
   it("viewer 403, bad params 400, admin 200 CSV with one export row and no patient identifier", async () => {
-    const { default: handler } = await import("../admin/unscheduled-list-csv");
+    const { default: handler } = await import("../admin/not-booked-list-csv");
     const { createSession, SESSION_COOKIE_NAME } = await import("../_lib/auth");
     const { Client } = loadPg();
     const app = new Client({ connectionString: APPDB });
@@ -150,18 +151,18 @@ describe(`access control and the export log (${live ? "live" : "skipped"})`, { s
         await handler(makeReq({ method: "GET", cookie: `${SESSION_COOKIE_NAME}=${sid}`, query } as never), res);
         return res as typeof res & { body?: string };
       };
-      assert.equal((await call(viewerSid, { bucket: "never_no_appt", month: "2026-06" })).statusCode, 403);
+      assert.equal((await call(viewerSid, { bucket: "no_appointment", month: "2026-06" })).statusCode, 403);
       assert.equal((await call(adminSid, { bucket: "nope", month: "2026-06" })).statusCode, 400);
-      assert.equal((await call(adminSid, { bucket: "never_no_appt", month: "2026-13" })).statusCode, 400);
-      const ok = await call(adminSid, { bucket: "never_no_appt", month: "2026-06" });
+      assert.equal((await call(adminSid, { bucket: "no_appointment", month: "2026-13" })).statusCode, 400);
+      const ok = await call(adminSid, { bucket: "no_appointment", month: "2026-06" });
       assert.equal(ok.statusCode, 200);
-      assert.ok(String(ok.body).startsWith("\uFEFF" + "Patient,First registered"));
+      assert.ok(String(ok.body).startsWith("\uFEFF" + "Patient,Source,Registered,Days since,Most recent appointment,Status,"));
       assert.match(String(ok.headers["content-type"] ?? ok.headers["Content-Type"]), /text\/csv/);
-      assert.match(String(ok.headers["content-disposition"] ?? ok.headers["Content-Disposition"]), /filename="drsnip-never_no_appt-2026-06-\d{8}-\d{4}\.csv"/);
+      assert.match(String(ok.headers["content-disposition"] ?? ok.headers["Content-Disposition"]), /filename="drsnip-no_appointment-2026-06-\d{8}-\d{4}\.csv"/);
       const log = (await app.query(`SELECT channel, detail, submission_id FROM notification_events WHERE kind = 'export_patient_list' ORDER BY created_at DESC LIMIT 1`)).rows[0];
       assert.equal(log.channel, "export");
       assert.equal(log.submission_id, null);
-      assert.match(log.detail, new RegExp(`^user=${ids[0]} bucket=never_no_appt cohort=2026-06 rows=\\d+$`));
+      assert.match(log.detail, new RegExp(`^user=${ids[0]} bucket=no_appointment cohort=2026-06 rows=\\d+$`));
     } finally {
       await app.query(`DELETE FROM notification_events WHERE kind = 'export_patient_list' AND detail LIKE ANY ($1::text[])`, [ids.map((i) => `user=${i}%`)]);
       await app.query(`DELETE FROM sessions WHERE user_id = ANY($1::uuid[])`, [ids]);

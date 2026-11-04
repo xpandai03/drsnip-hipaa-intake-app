@@ -51,9 +51,10 @@ import reportsOutcomesHandler from "../api/reports/outcomes";
 import reportsConversionCohortsHandler from "../api/reports/conversion-cohorts";
 import reportsUnclassifiedCountHandler from "../api/reports/unclassified-count";
 import adminUnclassifiedCsvHandler from "../api/admin/unclassified-csv";
-import adminUnscheduledDay14Handler from "../api/admin/unscheduled-day14";
-import adminUnscheduledListHandler from "../api/admin/unscheduled-list";
-import adminUnscheduledListCsvHandler from "../api/admin/unscheduled-list-csv";
+import adminNotBookedHandler from "../api/admin/not-booked";
+import adminNotBookedListHandler from "../api/admin/not-booked-list";
+import adminNotBookedListCsvHandler from "../api/admin/not-booked-list-csv";
+import { legacyRedirect } from "../api/admin/not-booked-legacy";
 import attendanceDraftHandler from "../api/attendance-mapping/draft";
 import attendancePreviewHandler from "../api/attendance-mapping/preview";
 import attendanceApproveHandler from "../api/attendance-mapping/approve";
@@ -131,9 +132,14 @@ app.all("/api/reports/attendance", adapt(reportsAttendanceHandler));
 app.all("/api/reports/outcomes", adapt(reportsOutcomesHandler));
 app.all("/api/reports/conversion-cohorts", adapt(reportsConversionCohortsHandler));
 app.all("/api/reports/unclassified-count", adapt(reportsUnclassifiedCountHandler));
-app.all("/api/admin/unscheduled-day14", adapt(adminUnscheduledDay14Handler));
-app.all("/api/admin/unscheduled/list.csv", adapt(adminUnscheduledListCsvHandler));
-app.all("/api/admin/unscheduled/list", adapt(adminUnscheduledListHandler));
+app.all("/api/admin/not-booked", adapt(adminNotBookedHandler));
+app.all("/api/admin/not-booked/list.csv", adapt(adminNotBookedListCsvHandler));
+app.all("/api/admin/not-booked/list", adapt(adminNotBookedListHandler));
+// The report's old address (/admin/unscheduled): bookmarks redirect, query kept.
+app.all("/api/admin/unscheduled/list.csv", adapt(legacyRedirect("csv")));
+app.all("/api/admin/unscheduled/list", adapt(legacyRedirect("api-list")));
+app.all("/admin/unscheduled/list", adapt(legacyRedirect("list")));
+app.all("/admin/unscheduled", adapt(legacyRedirect("page")));
 // Attendance definition review. Draft/preview are admin-gated; approve/withdraw
 // need the explicit approval capability (api/_lib/auth.ts).
 app.all("/api/attendance-mapping/draft", adapt(attendanceDraftHandler));

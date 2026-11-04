@@ -50,6 +50,9 @@ export function makeRes(): MockResponse {
   res.getHeader = function (name: string) {
     return (this as MockResponse).headers[name];
   };
+  res.end = function () {
+    return this as MockResponse;
+  };
   return res as MockResponse;
 }
 

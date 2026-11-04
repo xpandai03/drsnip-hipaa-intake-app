@@ -1,6 +1,6 @@
-// GET /api/admin/unscheduled/list.csv?bucket=&month=|range= — admin only.
+// GET /api/admin/not-booked/list.csv?bucket=&month=|range= — admin only.
 //
-// Every row of one "Unscheduled at day 14" list as CSV (not just a page). The
+// Every row of one "Not booked" list as CSV (not just a page). The
 // SAME list query as the on-screen list, without the page window, through
 // reportQuery() (5s timeout, JIT off). Each export writes one access row
 // (kind export_patient_list): user id, bucket, cohort, row count. No patient
@@ -11,7 +11,7 @@ import { requireAdmin } from "../_lib/auth";
 import { sqlState } from "../_lib/reporting";
 import { reportQuery } from "../_lib/report-query";
 import { record as recordNotification } from "../../lib/notifications/ledger";
-import { cohortKey, listQuery, parseListParams } from "../_lib/unscheduled-list";
+import { cohortKey, listQuery, parseListParams } from "../_lib/not-booked-list";
 import { buildPatientListCsv, csvFilename, type PatientListRow } from "../_lib/patient-csv";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -30,14 +30,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       chart_id: (r.chart_id as string | null) ?? null,
       submission_id: (r.submission_id as string | null) ?? null,
       name: String(r.name ?? ""),
+      source: (r.source as string | null) ?? null,
       registered_on: String(r.registered_on),
       days_since: Number(r.days_since),
       has_appointment: Boolean(r.has_appointment),
       latest_status: (r.latest_status as string | null) ?? null,
       latest_date: (r.latest_date as string | null) ?? null,
+      canceled_noshow: Boolean(r.canceled_noshow),
     }));
   } catch (err) {
-    console.error("[admin/unscheduled-list-csv] query failed", sqlState(err) ?? "unknown");
+    console.error("[admin/not-booked-list-csv] query failed", sqlState(err) ?? "unknown");
     return res.status(500).json({ error: "export failed" });
   }
 

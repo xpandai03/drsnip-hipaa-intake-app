@@ -1,6 +1,6 @@
-// CSV export of a patient list (admin only). Same columns as the list on
-// screen, nothing else:
-//   Patient, First registered, Days since, Most recent appointment,
+// CSV export of the Not booked patient list (admin only). Same columns as the
+// list on screen, nothing else:
+//   Patient, Source, Registered, Days since, Most recent appointment, Status,
 //   Submission URL, DrChrono chart ID, DrChrono chart URL
 //
 // Safety: RFC 4180 quoting; any cell starting with = + - @ TAB or CR is
@@ -10,9 +10,11 @@
 
 export const PATIENT_CSV_COLUMNS = [
   "Patient",
-  "First registered",
+  "Source",
+  "Registered",
   "Days since",
   "Most recent appointment",
+  "Status",
   "Submission URL",
   "DrChrono chart ID",
   "DrChrono chart URL",
@@ -22,11 +24,15 @@ export type PatientListRow = {
   chart_id: string | null;
   submission_id: string | null;
   name: string;
+  /** Marketing source on the first registration; null when it carried none. */
+  source: string | null;
   registered_on: string;
   days_since: number;
   has_appointment: boolean;
   latest_status: string | null;
   latest_date: string | null;
+  /** True: canceled, late-canceled or no-show. False: no appointment. */
+  canceled_noshow: boolean;
 };
 
 /** Neutralise spreadsheet formulas, then quote per RFC 4180. */
@@ -58,9 +64,11 @@ export function buildPatientListCsv(rows: PatientListRow[], base: string = conso
   for (const r of rows) {
     lines.push([
       r.name,
+      r.source ?? "—",
       r.registered_on,
       r.days_since,
       appointmentText(r),
+      r.canceled_noshow ? "Canceled or no show" : "No appointment",
       r.submission_id ? `${base}/admin/submissions/${r.submission_id}` : "",
       r.chart_id ?? "",
       chartUrl(r.chart_id),

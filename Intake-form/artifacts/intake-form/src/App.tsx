@@ -20,8 +20,8 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminConversion from "@/pages/admin/Conversion";
-import AdminUnscheduled from "@/pages/admin/Unscheduled";
-import AdminUnscheduledList from "@/pages/admin/UnscheduledList";
+import AdminNotBooked from "@/pages/admin/NotBooked";
+import AdminNotBookedList from "@/pages/admin/NotBookedList";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -137,17 +137,18 @@ function Router() {
         </WithAuth>
       </Route>
 
-      {/* The patients behind one count on the day-14 page (admin only). */}
-      <Route path="/admin/unscheduled/list">
+      {/* The patients behind one count on the Not booked page (admin only). */}
+      <Route path="/admin/not-booked/list">
         <WithAuth>
-          <AdminUnscheduledList />
+          <AdminNotBookedList />
         </WithAuth>
       </Route>
 
-      {/* Registrations with nothing booked at day 14 (admin only; counts only). */}
-      <Route path="/admin/unscheduled">
+      {/* Registrations with nothing booked as of today (admin only; counts only).
+          The old /admin/unscheduled address redirects here on the server. */}
+      <Route path="/admin/not-booked">
         <WithAuth>
-          <AdminUnscheduled />
+          <AdminNotBooked />
         </WithAuth>
       </Route>
 

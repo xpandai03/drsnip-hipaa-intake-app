@@ -1,7 +1,8 @@
-// The patients behind one count on "Unscheduled at day 14". Admin only.
+// The patients behind one count on "Not booked". Admin only.
 //
-// Minimum necessary: name, first registration date and days since, most
-// recent appointment, a link to the submission in this console, and the
+// Minimum necessary: name, marketing source, first registration date and days
+// since, most recent appointment, why they are not booked (canceled or no show
+// / no appointment), a link to the submission in this console, and the
 // DrChrono chart. The rows come from the same definition as the counts, so the
 // total here equals the number that was clicked.
 
@@ -18,11 +19,13 @@ type ListRow = {
   chart_id: string;
   submission_id: string | null;
   name: string;
+  source: string | null;
   registered_on: string;
   days_since: number;
   has_appointment: boolean;
   latest_status: string | null;
   latest_date: string | null;
+  status: "Canceled or no show" | "No appointment";
 };
 type ListResponse = {
   bucket: string;
@@ -40,7 +43,7 @@ const LONG = ["January", "February", "March", "April", "May", "June", "July", "A
 const monthName = (m: string) => `${LONG[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** "June 2026: never booked, no appointment (57)" */
+/** "June 2026: not booked, no appointment (57)" */
 export function listTitle(d: Pick<ListResponse, "cohort" | "bucket_label" | "total">): string {
   const who = d.cohort.kind === "month" ? monthName(d.cohort.month)
     : d.cohort.kind === "range" ? `${monthName(d.cohort.from)} – ${monthName(d.cohort.to)}` : "";
@@ -64,7 +67,7 @@ function Appointment({ r }: { r: ListRow }) {
   );
 }
 
-export default function UnscheduledList() {
+export default function NotBookedList() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const search = useSearch();
@@ -100,8 +103,8 @@ export default function UnscheduledList() {
   }, [params]);
 
   const q = useQuery({
-    queryKey: ["unscheduled-list", apiQs],
-    queryFn: () => getJson<ListResponse>(`/api/admin/unscheduled/list?${apiQs}`),
+    queryKey: ["not-booked-list", apiQs],
+    queryFn: () => getJson<ListResponse>(`/api/admin/not-booked/list?${apiQs}`),
     enabled: isAdmin,
     placeholderData: (prev) => prev,
     retry: 1,
@@ -110,9 +113,9 @@ export default function UnscheduledList() {
 
   return (
     <AdminLayout>
-      <div data-testid="unscheduled-list-page">
-        <Link href="/admin/unscheduled" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline" data-testid="back-link">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Unscheduled at day 14
+      <div data-testid="not-booked-list-page">
+        <Link href="/admin/not-booked" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline" data-testid="back-link">
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Not booked
         </Link>
 
         {!isAdmin ? (
@@ -138,7 +141,7 @@ export default function UnscheduledList() {
               <h1 className="text-xl font-semibold" data-testid="list-title">{listTitle(d)}</h1>
               {d.total > 0 && (
                 <a
-                  href={`/api/admin/unscheduled/list.csv?${csvQs}`}
+                  href={`/api/admin/not-booked/list.csv?${csvQs}`}
                   download
                   data-testid="export-csv"
                   className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -147,9 +150,9 @@ export default function UnscheduledList() {
                 </a>
               )}
             </div>
-            {d.cohort.kind === "month" && !dayFourteenReached(d.cohort.month) && (
-              <p className="mt-1 text-sm text-amber-800 dark:text-amber-200" data-testid="list-not-day14">
-                Some of these patients registered less than 14 days ago and have not reached day 14 yet.
+            {d.cohort.kind === "month" && !monthEnded(d.cohort.month) && (
+              <p className="mt-1 text-sm text-amber-800 dark:text-amber-200" data-testid="list-month-running">
+                This month is still running: some of these patients registered only recently.
               </p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
@@ -161,9 +164,11 @@ export default function UnscheduledList() {
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th scope="col" className="px-3 py-2 font-medium">Patient</th>
-                    <th scope="col" className="px-3 py-2 font-medium">First registered</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Source</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Registered</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Days since</th>
                     <th scope="col" className="px-3 py-2 font-medium">Most recent appointment</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Status</th>
                     <th scope="col" className="px-3 py-2 font-medium">Submission</th>
                     <th scope="col" className="px-3 py-2 font-medium">DrChrono chart</th>
                   </tr>
@@ -172,9 +177,11 @@ export default function UnscheduledList() {
                   {d.rows.map((r) => (
                     <tr key={r.chart_id} className="border-b last:border-0" data-testid="list-row">
                       <td className="px-3 py-2 font-medium">{r.name || <span className="text-muted-foreground">(no name)</span>}</td>
+                      <td className="px-3 py-2" data-testid="cell-source">{r.source ?? <span className="text-muted-foreground">—</span>}</td>
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.registered_on}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.days_since}</td>
                       <td className="px-3 py-2"><Appointment r={r} /></td>
+                      <td className="whitespace-nowrap px-3 py-2" data-testid="cell-status">{r.status}</td>
                       <td className="px-3 py-2">
                         {r.submission_id ? (
                           <Link href={`/admin/submissions/${r.submission_id}`} className="text-primary hover:underline">Open</Link>
@@ -216,13 +223,13 @@ export default function UnscheduledList() {
 }
 
 /**
- * True once day 14 has passed for the month's last registrant: the same rule
- * the counts use (month end + 14 days). Approximate to the hour across DST,
- * which only affects the wording of a note.
+ * True once the month has ended on the clinic calendar: the same rule the
+ * counts use for "complete". Approximate to the hour across DST, which only
+ * affects the wording of a note.
  */
-export function dayFourteenReached(month: string, now: Date = new Date()): boolean {
+export function monthEnded(month: string, now: Date = new Date()): boolean {
   const y = Number(month.slice(0, 4));
   const m = Number(month.slice(5, 7));
   const nextMonthStartPacific = Date.UTC(y, m, 1, 8); // 00:00 PST ≈ 08:00 UTC
-  return now.getTime() >= nextMonthStartPacific + 14 * 86400000;
+  return now.getTime() >= nextMonthStartPacific;
 }

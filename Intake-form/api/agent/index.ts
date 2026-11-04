@@ -25,7 +25,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
-import { DAY14_BUCKET_CTE } from "../_lib/unscheduled-day14";
+import { NOT_BOOKED_CTE } from "../_lib/not-booked";
 import { RESOLVED_LOCATION_SQL } from "../_lib/location";
 
 /** The patient's name as the console's lists show it (first registration's, or the form's own). */
@@ -62,11 +62,11 @@ export const AGENT_QUERIES = {
      WHERE submissions.n8n_status = 'manual_review'
      ORDER BY submissions.created_at DESC
      LIMIT 51`,
-  // The console's own "Unscheduled at day 14 / right now, past day 14" list (DAY14_BUCKET_CTE): registered in the
-  // last 30 days, past day 14, nothing converted. Same fields as its drill-down (../_lib/unscheduled-list.ts).
-  unscheduled: `${DAY14_BUCKET_CTE},
+  // The console's own "Not booked: right now" list (NOT_BOOKED_CTE): registered in the last 30 days, nothing
+  // booked as of today. Same fields as its drill-down (../_lib/not-booked-list.ts). The path keeps its old name.
+  unscheduled: `${NOT_BOOKED_CTE},
 sel AS (
-  SELECT b.pid, b.entry_at FROM b WHERE b.right_now_past_d14
+  SELECT b.pid, b.entry_at FROM b WHERE b.right_now_not_booked
 ),
 fs AS (
   SELECT DISTINCT ON (s.n8n_patient_id) s.n8n_patient_id::text AS pid, s.first_name, s.last_name
