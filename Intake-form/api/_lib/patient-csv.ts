@@ -19,6 +19,8 @@ export const PATIENT_CSV_COLUMNS = [
 ] as const;
 
 export type PatientListRow = {
+  /** Conversion lists only: the created date of the first converted appointment. */
+  converted_on?: string | null;
   chart_id: string | null;
   submission_id: string | null;
   name: string;
@@ -53,10 +55,20 @@ export function consoleBaseUrl(): string {
   return (raw && raw.length > 0 ? raw : "https://intake.drsnip.com").replace(/\/+$/, "");
 }
 
-export function buildPatientListCsv(rows: PatientListRow[], base: string = consoleBaseUrl()): string {
-  const lines = [PATIENT_CSV_COLUMNS.map(csvCell).join(",")];
+export type CsvOptions = {
+  /** Header for the first-form date; insurance lists say "First inquiry". */
+  firstLabel?: string;
+  /** Conversion lists add one column, "Converted on". */
+  convertedOn?: boolean;
+};
+
+export function buildPatientListCsv(rows: PatientListRow[], base: string = consoleBaseUrl(), opts: CsvOptions = {}): string {
+  const header: string[] = [...PATIENT_CSV_COLUMNS];
+  if (opts.firstLabel) header[1] = opts.firstLabel;
+  if (opts.convertedOn) header.push("Converted on");
+  const lines = [header.map(csvCell).join(",")];
   for (const r of rows) {
-    lines.push([
+    const cells: unknown[] = [
       r.name,
       r.registered_on,
       r.days_since,
@@ -64,7 +76,9 @@ export function buildPatientListCsv(rows: PatientListRow[], base: string = conso
       r.submission_id ? `${base}/admin/submissions/${r.submission_id}` : "",
       r.chart_id ?? "",
       chartUrl(r.chart_id),
-    ].map(csvCell).join(","));
+    ];
+    if (opts.convertedOn) cells.push(r.converted_on ?? "");
+    lines.push(cells.map(csvCell).join(","));
   }
   return "﻿" + lines.join("\r\n") + "\r\n";
 }
