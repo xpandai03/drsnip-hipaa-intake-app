@@ -10,7 +10,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import {
   PRIMARY_NAV,
   activeLabel,
@@ -336,4 +336,32 @@ describe("real reporting is easy to find", () => {
       "the old activate-to-reveal behaviour is back",
     );
   });
+});
+
+// J6 (2026-10-27): nothing the console renders or exports says "day 14",
+// "14 days", "booked later" or "never booked", and no code identifier carries
+// "d14". Tests and comments are exempt; everything else in client and server
+// source is checked.
+describe("no day-14 wording anywhere in the console", () => {
+  const roots = ["../../artifacts/intake-form/src", "../../api", "../../api-server", "../../lib/metrics", "../../lib/notifications"];
+  const files: string[] = [];
+  const walk = (u: URL) => {
+    for (const name of readdirSync(u)) {
+      if (name === "node_modules" || name === "_test" || name === "dist") continue;
+      const child = new URL(`${name}${statSync(new URL(name, u)).isDirectory() ? "/" : ""}`, u);
+      if (statSync(child).isDirectory()) walk(child);
+      else if (/\.(ts|tsx)$/.test(name)) files.push(child.pathname);
+    }
+  };
+  for (const r of roots) walk(new URL(`${r}/`, import.meta.url));
+  const code = (src: string) => src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\{\s*\/\*)/.test(l)).map((l) => l.replace(/\s\/\/.*$/, "")).join("\n");
+  it("scans a real file set", () => assert.ok(files.length > 100, String(files.length)));
+  for (const banned of [/day 14/i, /14 days/i, /booked later/i, /never booked/i, /d14/i]) {
+    it(`no ${banned}`, () => {
+      const hits = files.filter((f) => banned.test(code(readFileSync(f, "utf8"))));
+      assert.deepEqual(hits, []);
+    });
+  }
 });

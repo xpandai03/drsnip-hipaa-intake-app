@@ -88,7 +88,9 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-const WINDOWS = [7, 14, 30] as const;
+// 2026-10-27: no 14-day option anywhere in the console. 7 / 30, default 30;
+// a 60-day option waits on the SQL window check (0026).
+const WINDOWS = [7, 30] as const;
 
 /** Pacific day string, without dragging a date library in. */
 function clinicDay(d: Date): string {
@@ -476,7 +478,7 @@ export default function Journeys() {
   // The tab, the entry period and the follow-up window are all part of the
   // question being asked, so all three belong in the address. Before this, a
   // link to "the insurance journey for August on a 30-day window" did not
-  // exist: every link landed on the registration tab, all history, 14 days, and
+  // exist: every link landed on the registration tab, all history, 30 days, and
   // the recipient had to be told which controls to set. Reload and Back now
   // work too.
   const search = useSearch();
@@ -487,7 +489,7 @@ export default function Journeys() {
     ? (params.get("period") as (typeof PERIODS)[number]["id"])
     : "all";
   const windowParam = Number(params.get("window"));
-  const windowDays = WINDOWS.includes(windowParam as (typeof WINDOWS)[number]) ? windowParam : 14;
+  const windowDays = WINDOWS.includes(windowParam as (typeof WINDOWS)[number]) ? windowParam : 30;
 
   // replaceState, not pushState: changing a filter is refining one question,
   // not asking a new one, so Back should leave the page rather than walk every

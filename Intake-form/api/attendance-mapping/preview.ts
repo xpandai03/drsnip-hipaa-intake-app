@@ -53,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const metric = String(b.metric ?? "");
   if (!METRICS.includes(metric)) return res.status(400).json({ error: "invalid metric" });
-  const windowDays = Number(b.window ?? 14);
+  const windowDays = Number(b.window ?? 30);
   if (!WINDOWS.includes(windowDays)) return res.status(400).json({ error: "invalid window" });
   const from = String(b.from ?? "");
   const to = String(b.to ?? "");

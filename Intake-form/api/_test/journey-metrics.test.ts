@@ -134,7 +134,7 @@ describe("negative claims are bounded by what was actually searched", () => {
   it("a sweep-only patient licenses only the horizon-bounded claim", () => {
     const s = boundedNegativeClaim("history_not_retrieved", horizon, "2026-09-20T00:00Z");
     assert.match(s, /2000-01-01 and 2028-03-31/);
-    assert.match(s, /does NOT establish that the patient has never booked/);
+    assert.match(s, /does NOT establish that the patient has not booked/);
   });
 
   it("only complete history can answer a creation-time window exactly", () => {

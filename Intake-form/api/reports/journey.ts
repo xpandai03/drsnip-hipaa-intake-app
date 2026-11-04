@@ -1,4 +1,4 @@
-// GET /api/reports/journey?metric=<m>&from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|14|30
+// GET /api/reports/journey?metric=<m>&from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|30 (default 30; 14 still answers)
 //
 // Aggregate-only patient-journey metrics. Auth-guarded, like every other
 // reporting route.
@@ -24,6 +24,7 @@ import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-
 import {
   JOURNEY_METRICS,
   SUPPORTED_WINDOWS,
+  DEFAULT_WINDOW,
   isJourneyMetric,
   describeMetric,
   type JourneyMetricId,
@@ -81,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const windowRaw = firstOf(req.query.window);
-  const windowDays = windowRaw === undefined ? 14 : Number(windowRaw);
+  const windowDays = windowRaw === undefined ? DEFAULT_WINDOW : Number(windowRaw);
   if (!SUPPORTED_WINDOWS.includes(windowDays as (typeof SUPPORTED_WINDOWS)[number])) {
     return res.status(400).json({ error: "invalid window", allowed: SUPPORTED_WINDOWS });
   }

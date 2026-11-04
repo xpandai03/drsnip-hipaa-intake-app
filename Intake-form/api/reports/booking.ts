@@ -1,5 +1,5 @@
 // GET /api/reports/booking?metric=booking_registration|booking_insurance
-//                          &from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|14|30
+//                          &from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|30 (default 30; 14 still answers)
 //
 // Appointment-record evidence for an entry cohort. Auth-guarded, aggregate
 // only, and — like /api/reports/journey — it never touches a PHI table: it
@@ -18,7 +18,7 @@ import { reportQuery } from "../_lib/report-query";
 import { requireAuth } from "../_lib/auth";
 import { firstOf, sqlState } from "../_lib/reporting";
 import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
-import { BOOKING_METRICS, SUPPORTED_WINDOWS } from "../../lib/metrics/registry";
+import { BOOKING_METRICS, DEFAULT_WINDOW, SUPPORTED_WINDOWS } from "../../lib/metrics/registry";
 import {
   CURRENT_MAPPING,
   attendanceIsApproved,
@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const spec = BOOKING_METRICS[metric as keyof typeof BOOKING_METRICS];
 
-  const windowDays = req.query.window === undefined ? 14 : Number(firstOf(req.query.window));
+  const windowDays = req.query.window === undefined ? DEFAULT_WINDOW : Number(firstOf(req.query.window));
   if (!SUPPORTED_WINDOWS.includes(windowDays as (typeof SUPPORTED_WINDOWS)[number])) {
     return res.status(400).json({ error: "invalid window", allowed: SUPPORTED_WINDOWS });
   }
