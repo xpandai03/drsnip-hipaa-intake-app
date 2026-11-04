@@ -42,7 +42,7 @@ describe("metric registry is a closed allow-list", () => {
   });
 
   it("supports only fixed follow-up windows", () => {
-    assert.deepEqual([...SUPPORTED_WINDOWS], [7, 14, 30]);
+    assert.deepEqual([...SUPPORTED_WINDOWS], [7, 14, 30, 60]);
   });
 
   it("no label claims booking, arrival or attendance", () => {

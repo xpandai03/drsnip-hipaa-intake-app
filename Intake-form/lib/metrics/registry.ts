@@ -7,10 +7,9 @@ import { ATTENDANCE_UNAVAILABLE_REASON } from "./attendance-mapping.js";
 // "form submitted" and "record found" are what the data supports. Nothing here
 // says "booked", "arrived" or "attended", because none of those is established.
 
-// The console offers 7 and 30 days (2026-10-27: no "14 days" anywhere). 14 is
-// still accepted so an old link answers. A 60-day option needs the SQL window
-// check widened (0026, not applied yet).
-export const SUPPORTED_WINDOWS = [7, 14, 30] as const;
+// The console offers 7, 30 and 60 days (2026-10-27: no "14 days" anywhere). 14
+// is still accepted so an old link answers. 60 needs migration 0027 applied.
+export const SUPPORTED_WINDOWS = [7, 14, 30, 60] as const;
 export const DEFAULT_WINDOW = 30;
 
 export type JourneyMetricId =

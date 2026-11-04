@@ -22,7 +22,7 @@ import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-
 import { ATTENDANCE_REVIEW_PROMPT } from "../../lib/metrics/attendance-contract";
 
 const METRICS = ["attendance_registration", "attendance_insurance"] as const;
-const WINDOWS = [7, 14, 30]; // the console offers 7 / 30; 14 answers old links
+const WINDOWS = [7, 14, 30, 60]; // the console offers 7 / 30 / 60; 14 answers old links
 
 type Row = {
   status: string;
