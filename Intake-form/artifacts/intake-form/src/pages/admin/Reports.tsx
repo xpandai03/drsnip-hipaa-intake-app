@@ -73,7 +73,7 @@ const LIVE: Card[] = [
       "Whether people who registered went on to submit the consultation form, with a collapsed diagnostic of when appointment records were created.",
     answers: [
       "How many sent the consultation form afterwards?",
-      "Within 14 days, compared across periods?",
+      "Within 30 days, compared across periods?",
     ],
     icon: LineChart,
     testId: "reports-card-registration",
