@@ -55,6 +55,7 @@ import adminNotBookedHandler from "../api/admin/not-booked";
 import adminNotBookedListHandler from "../api/admin/not-booked-list";
 import adminNotBookedListCsvHandler from "../api/admin/not-booked-list-csv";
 import { legacyRedirect } from "../api/admin/not-booked-legacy";
+import adminComebackWindowHandler from "../api/admin/comeback-window";
 import attendanceDraftHandler from "../api/attendance-mapping/draft";
 import attendancePreviewHandler from "../api/attendance-mapping/preview";
 import attendanceApproveHandler from "../api/attendance-mapping/approve";
@@ -135,6 +136,7 @@ app.all("/api/reports/unclassified-count", adapt(reportsUnclassifiedCountHandler
 app.all("/api/admin/not-booked", adapt(adminNotBookedHandler));
 app.all("/api/admin/not-booked/list.csv", adapt(adminNotBookedListCsvHandler));
 app.all("/api/admin/not-booked/list", adapt(adminNotBookedListHandler));
+app.all("/api/admin/comeback-window", adapt(adminComebackWindowHandler));
 // The report's old address (/admin/unscheduled): bookmarks redirect, query kept.
 app.all("/api/admin/unscheduled/list.csv", adapt(legacyRedirect("csv")));
 app.all("/api/admin/unscheduled/list", adapt(legacyRedirect("api-list")));

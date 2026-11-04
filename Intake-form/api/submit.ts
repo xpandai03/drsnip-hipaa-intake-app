@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
 import { db, eq, or, registrationPartials, sql, submissions } from "@workspace/db";
+import { recordPartialConversions } from "./_lib/partials";
 import {
   callN8nConsultation,
   callN8nInsurance,
@@ -364,9 +365,17 @@ async function clearRegistrationPartial(
         sql`lower(trim(${registrationPartials.email})) = ${email}`,
       );
     if (clauses.length === 0) return;
-    await db
+    const cleared = await db
       .delete(registrationPartials)
-      .where(clauses.length === 1 ? clauses[0] : or(...clauses));
+      .where(clauses.length === 1 ? clauses[0] : or(...clauses))
+      .returning({
+        partialId: registrationPartials.partialId,
+        createdAt: registrationPartials.createdAt,
+        updatedAt: registrationPartials.updatedAt,
+      });
+    // J5: when each cleared partial was first seen (timestamps only). Never
+    // throws; still inside this fire-and-forget call.
+    await recordPartialConversions(cleared, partialId);
   } catch (err) {
     console.error(
       "submit: registration partial cleanup failed",
