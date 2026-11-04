@@ -41,6 +41,7 @@ import appointmentBackfillWindows from "../lib/db/migrations/0013_appointment_ba
 // while the rest of 0020 (functions and grants to drsnip_metrics_fn) stays a
 // by-hand migration like 0012a and 0014-0019.
 import approvalCapabilityColumn from "../lib/db/migrations/0020a_approval_capability_column.sql";
+import registrationPartialConversions from "../lib/db/migrations/0026_registration_partial_conversions.sql";
 import seedAdmin from "../scripts/seed-admin.sql";
 
 const STEPS: Array<{ name: string; sql: string }> = [
@@ -59,6 +60,7 @@ const STEPS: Array<{ name: string; sql: string }> = [
   { name: "0012_appointment_sync", sql: appointmentSync },
   { name: "0013_appointment_backfill_windows", sql: appointmentBackfillWindows },
   { name: "0020a_approval_capability_column", sql: approvalCapabilityColumn },
+  { name: "0026_registration_partial_conversions", sql: registrationPartialConversions },
   { name: "seed-admin", sql: seedAdmin },
 ];
 
