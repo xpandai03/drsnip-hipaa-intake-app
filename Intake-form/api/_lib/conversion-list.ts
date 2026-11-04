@@ -12,7 +12,7 @@
 // address, insurance or clinical field.
 
 import { sql } from "@workspace/db";
-import { PAGE_SIZE } from "./unscheduled-list";
+import { PAGE_SIZE } from "./not-booked-list";
 
 export const CONVERSION_BUCKETS = [
   "forms",

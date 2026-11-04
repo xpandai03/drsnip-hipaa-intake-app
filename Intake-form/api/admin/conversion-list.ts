@@ -11,8 +11,8 @@ import { requireAdmin } from "../_lib/auth";
 import { sqlState } from "../_lib/reporting";
 import { reportQuery } from "../_lib/report-query";
 import { record as recordNotification } from "../../lib/notifications/ledger";
-import { PAGE_SIZE } from "../_lib/unscheduled-list";
-import { DAY14_AS_OF_SQL } from "../_lib/unscheduled-day14";
+import { PAGE_SIZE } from "../_lib/not-booked-list";
+import { NOT_BOOKED_AS_OF_SQL } from "../_lib/not-booked";
 import {
   conversionCohortKey,
   conversionCountQuery,
@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const [count, rows, asOf] = await Promise.all([
       reportQuery<{ total: number }>(conversionCountQuery(p)),
       reportQuery(conversionListQuery(p)),
-      reportQuery(sql.raw(DAY14_AS_OF_SQL)),
+      reportQuery(sql.raw(NOT_BOOKED_AS_OF_SQL)),
     ]);
     const total = Number(count.rows[0]?.total ?? 0);
     await recordNotification({

@@ -1,8 +1,8 @@
-// GET /api/admin/unscheduled/list?bucket=&month=YYYY-MM | &range=YYYY-MM..YYYY-MM [&page=N]
+// GET /api/admin/not-booked/list?bucket=&month=YYYY-MM | &range=YYYY-MM..YYYY-MM [&page=N]
 //
-// Admin only. The patients behind one count on "Unscheduled at day 14", 100 per
-// page, oldest registration first, with the total. Same bucket CTE as the
-// counts (api/_lib/unscheduled-day14.ts), so the total equals the cell.
+// Admin only. The patients behind one count on "Not booked", 100 per page,
+// oldest registration first, with the total. Same bucket CTE as the counts
+// (api/_lib/not-booked.ts), so the total equals the cell.
 //
 // HIPAA: every successful call writes one access row to notification_events
 // (channel 'access', kind 'list_unscheduled'): user id, bucket, cohort, total
@@ -20,8 +20,9 @@ import {
   countQuery,
   listQuery,
   parseListParams,
-} from "../_lib/unscheduled-list";
-import { DAY14_AS_OF_SQL } from "../_lib/unscheduled-day14";
+  statusLabel,
+} from "../_lib/not-booked-list";
+import { NOT_BOOKED_AS_OF_SQL } from "../_lib/not-booked";
 import { sql } from "@workspace/db";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -39,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const [count, rows, asOf] = await Promise.all([
       reportQuery<{ total: number }>(countQuery(p)),
       reportQuery(listQuery(p)),
-      reportQuery(sql.raw(DAY14_AS_OF_SQL)),
+      reportQuery(sql.raw(NOT_BOOKED_AS_OF_SQL)),
     ]);
     const total = Number(count.rows[0]?.total ?? 0);
     await recordNotification({
@@ -64,15 +65,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         chart_id: String(r.chart_id),
         submission_id: (r.submission_id as string | null) ?? null,
         name: String(r.name ?? ""),
+        source: (r.source as string | null) ?? null,
         registered_on: String(r.registered_on),
         days_since: Number(r.days_since),
         has_appointment: Boolean(r.has_appointment),
         latest_status: r.has_appointment ? (String(r.latest_status ?? "").trim() || null) : null,
         latest_date: (r.latest_date as string | null) ?? null,
+        status: statusLabel(Boolean(r.canceled_noshow)),
       })),
     });
   } catch (err) {
-    console.error("[admin/unscheduled-list] query failed", sqlState(err) ?? "unknown");
+    console.error("[admin/not-booked-list] query failed", sqlState(err) ?? "unknown");
     return res.status(500).json({ error: "list failed" });
   }
 }

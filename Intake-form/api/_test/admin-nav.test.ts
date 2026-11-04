@@ -69,7 +69,7 @@ describe("nothing is unreachable", () => {
     // horizontally-scrolling strip exposed.
     // Monthly outcomes (2026-09) is the eleventh; Conversion by cohort
     // (Train 4) the twelfth — two taps on mobile: Reports, then the entry.
-    // Unscheduled at day 14 (2026-10-27) is the thirteenth, beside Conversion.
+    // Not booked (2026-10-27) is the thirteenth, beside Conversion.
     assert.equal(routes.length, 13);
     assert.equal(new Set(routes).size, 13);
     const reports = PRIMARY_NAV.find((e) => e.id === "reports")!;
@@ -290,7 +290,7 @@ describe("real reporting is easy to find", () => {
     assert.equal(reports.children![0].demo, undefined);
     assert.equal(reports.children![1].to, "/admin/conversion");
     assert.equal(reports.children![1].demo, undefined);
-    assert.equal(reports.children![2].to, "/admin/unscheduled");
+    assert.equal(reports.children![2].to, "/admin/not-booked");
     assert.equal(reports.children![3].to, "/admin/journeys");
     assert.equal(reports.children![3].demo, undefined);
   });

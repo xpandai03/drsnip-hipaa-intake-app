@@ -17,12 +17,12 @@ import AdminSubmissions from "@/pages/admin/Submissions";
 import AdminActivity from "@/pages/admin/Activity";
 import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminReports from "@/pages/admin/Reports";
+import AdminConversionList from "@/pages/admin/ConversionList";
 import AdminJourneys from "@/pages/admin/Journeys";
 import AdminOutcomes from "@/pages/admin/Outcomes";
 import AdminConversion from "@/pages/admin/Conversion";
-import AdminConversionList from "@/pages/admin/ConversionList";
-import AdminUnscheduled from "@/pages/admin/Unscheduled";
-import AdminUnscheduledList from "@/pages/admin/UnscheduledList";
+import AdminNotBooked from "@/pages/admin/NotBooked";
+import AdminNotBookedList from "@/pages/admin/NotBookedList";
 import AdminDropOffs from "@/pages/admin/DropOffs";
 import AdminSources from "@/pages/admin/Sources";
 import AdminAskAI from "@/pages/admin/AskAI";
@@ -132,6 +132,12 @@ function Router() {
       </Route>
 
       {/* Conversion by entry cohort with a cumulative fill (Train 4). */}
+      <Route path="/admin/conversion">
+        <WithAuth>
+          <AdminConversion />
+        </WithAuth>
+      </Route>
+
       {/* The patients behind one count on Conversion by cohort (admin only). */}
       <Route path="/admin/conversion/list">
         <WithAuth>
@@ -139,23 +145,18 @@ function Router() {
         </WithAuth>
       </Route>
 
-      <Route path="/admin/conversion">
+      {/* The patients behind one count on the Not booked page (admin only). */}
+      <Route path="/admin/not-booked/list">
         <WithAuth>
-          <AdminConversion />
+          <AdminNotBookedList />
         </WithAuth>
       </Route>
 
-      {/* The patients behind one count on the day-14 page (admin only). */}
-      <Route path="/admin/unscheduled/list">
+      {/* Registrations with nothing booked as of today (admin only; counts only).
+          The old /admin/unscheduled address redirects here on the server. */}
+      <Route path="/admin/not-booked">
         <WithAuth>
-          <AdminUnscheduledList />
-        </WithAuth>
-      </Route>
-
-      {/* Registrations with nothing booked at day 14 (admin only; counts only). */}
-      <Route path="/admin/unscheduled">
-        <WithAuth>
-          <AdminUnscheduled />
+          <AdminNotBooked />
         </WithAuth>
       </Route>
 

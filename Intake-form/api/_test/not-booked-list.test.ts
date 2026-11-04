@@ -1,13 +1,15 @@
-// Drill-down lists behind "Unscheduled at day 14": count parity, access
-// control, parameter validation and the access log. Synthetic fixtures only.
+// Drill-down lists behind "Not booked": count parity, access control,
+// parameter validation, legacy redirects and the access log. Synthetic
+// fixtures only.
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { readFileSync } from "node:fs";
-import { countQuery, listQuery, parseListParams, PAGE_SIZE, cohortKey } from "../_lib/unscheduled-list";
-import { DAY14_MONTHS_SQL, DAY14_RIGHT_NOW_SQL, MONTH_BUCKETS, RIGHT_NOW_BUCKETS } from "../_lib/unscheduled-day14";
+import { countQuery, listQuery, parseListParams, PAGE_SIZE, cohortKey, legacyListSearch, statusLabel } from "../_lib/not-booked-list";
+import { NOT_BOOKED_MONTHS_SQL, NOT_BOOKED_RIGHT_NOW_SQL, MONTH_BUCKETS, RIGHT_NOW_BUCKETS } from "../_lib/not-booked";
+import { legacyRedirect, legacyTarget } from "../admin/not-booked-legacy";
 import { makeReq, makeRes } from "./harness";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
@@ -22,45 +24,83 @@ describe("parameters are allow-listed", () => {
   it("accepts every month bucket with a month or the totals range, and the right-now buckets bare", () => {
     for (const b of MONTH_BUCKETS) { ok({ bucket: b, month: "2026-06" }); ok({ bucket: b, range: "2026-06..2026-09" }); }
     for (const b of RIGHT_NOW_BUCKETS) ok({ bucket: b });
-    assert.equal((ok({ bucket: "never_no_appt", month: "2026-07", page: "3" }) as { page: number }).page, 3);
+    assert.equal((ok({ bucket: "no_appointment", month: "2026-07", page: "3" }) as { page: number }).page, 3);
   });
   it("rejects anything else", () => {
     bad({});
-    bad({ bucket: "never_no_appt" });                                   // month bucket without a cohort
-    bad({ bucket: "never_no_appt", month: "2026-06", range: "2026-06..2026-09" });
+    bad({ bucket: "no_appointment" });                                   // month bucket without a cohort
+    bad({ bucket: "no_appointment", month: "2026-06", range: "2026-06..2026-09" });
     bad({ bucket: "drop table", month: "2026-06" });
-    bad({ bucket: "never_no_appt", month: "2026-05" });                 // before the first month
-    bad({ bucket: "never_no_appt", month: "2026-11" });                 // after the current month
-    bad({ bucket: "never_no_appt", month: "2026-6" });
-    bad({ bucket: "never_no_appt", month: "2026-06'; --" });
-    bad({ bucket: "never_no_appt", range: "2026-09..2026-06" });
-    bad({ bucket: "right_now_past_d14", month: "2026-06" });            // right-now takes no cohort
-    bad({ bucket: "never_no_appt", month: "2026-06", page: "0" });
-    bad({ bucket: "never_no_appt", month: "2026-06", page: "x" });
+    bad({ bucket: "no_appointment", month: "2026-05" });                 // before the first month
+    bad({ bucket: "no_appointment", month: "2026-11" });                 // after the current month
+    bad({ bucket: "no_appointment", month: "2026-6" });
+    bad({ bucket: "no_appointment", month: "2026-06'; --" });
+    bad({ bucket: "no_appointment", range: "2026-09..2026-06" });
+    bad({ bucket: "right_now_not_booked", month: "2026-06" });          // right-now takes no cohort
+    bad({ bucket: "no_appointment", month: "2026-06", page: "0" });
+    bad({ bucket: "no_appointment", month: "2026-06", page: "x" });
   });
   it("the bucket reaches SQL only as an allow-listed column; months only as bound parameters", () => {
     const d = new PgDialect();
-    const q = d.sqlToQuery(listQuery(ok({ bucket: "never_no_appt", month: "2026-06" }) as never));
-    assert.match(q.sql, /WHERE b\.never_no_appt AND b\.entry_month = \$1::date/);
+    const q = d.sqlToQuery(listQuery(ok({ bucket: "no_appointment", month: "2026-06" }) as never));
+    assert.match(q.sql, /WHERE b\.no_appointment AND b\.entry_month = \$1::date/);
     assert.deepEqual(q.params.slice(0, 1), ["2026-06-01"]);
   });
   it("selects no contact, birth, insurance or clinical field", () => {
-    const src = read("../_lib/unscheduled-list.ts").split("export function listQuery")[1];
+    const src = read("../_lib/not-booked-list.ts").split("export function listQuery")[1];
     for (const f of ["phone", "email", "date_of_birth", "address", "insurance", "raw_payload", "clinical", "reason"]) {
       assert.ok(!new RegExp(`\\b(s|a)\\.${f}`).test(src), f);
     }
   });
 });
 
+describe("the Status column and the old address", () => {
+  it("says why a patient is not booked", () => {
+    assert.equal(statusLabel(true), "Canceled or no show");
+    assert.equal(statusLabel(false), "No appointment");
+  });
+  it("maps old list and CSV links to the same view, query kept", () => {
+    assert.equal(legacyListSearch({ bucket: "never_booked", month: "2026-07" }), "bucket=not_booked&month=2026-07");
+    assert.equal(legacyListSearch({ bucket: "never_no_appt", range: "2026-06..2026-09", page: "2" }), "bucket=no_appointment&range=2026-06..2026-09&page=2");
+    assert.equal(legacyListSearch({ bucket: "never_canceled_noshow", month: "2026-08" }), "bucket=canceled_noshow&month=2026-08");
+    assert.equal(legacyListSearch({ bucket: "right_now_unbooked" }), "bucket=right_now_not_booked");
+    // Old buckets with no equivalent open the whole not-booked list for the same cohort.
+    assert.equal(legacyListSearch({ bucket: "booked_later", month: "2026-07" }), "bucket=not_booked&month=2026-07");
+    assert.equal(legacyListSearch({ bucket: "anything" }), "bucket=right_now_not_booked");
+    assert.equal(legacyTarget("csv", { bucket: "never_booked", month: "2026-07" }), "/api/admin/not-booked/list.csv?bucket=not_booked&month=2026-07");
+    assert.equal(legacyTarget("list", { bucket: "never_booked", month: "2026-07" }), "/admin/not-booked/list?bucket=not_booked&month=2026-07");
+    assert.equal(legacyTarget("page", { anything: "x" }), "/admin/not-booked");
+  });
+  it("every mapped search parses as a valid list request", () => {
+    for (const q of [{ bucket: "never_booked", month: "2026-07" }, { bucket: "right_now_unbooked" }, { bucket: "booked_later", range: "2026-06..2026-09" }]) {
+      const parsed = parseListParams(Object.fromEntries(new URLSearchParams(legacyListSearch(q))), "2026-10");
+      assert.ok(!("error" in parsed), JSON.stringify(q));
+    }
+  });
+  it("redirects with a 302 and reads nothing", async () => {
+    const res = makeRes();
+    await legacyRedirect("csv")(makeReq({ method: "GET", query: { bucket: "never_booked", month: "2026-07" } } as never), res);
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers["Location"], "/api/admin/not-booked/list.csv?bucket=not_booked&month=2026-07");
+  });
+  it("the server registers the old paths before the SPA fallback", () => {
+    const server = read("../../api-server/index.ts");
+    for (const path of ['"/admin/unscheduled"', '"/admin/unscheduled/list"', '"/api/admin/unscheduled/list.csv"']) {
+      const i = server.indexOf(path);
+      assert.ok(i > 0 && i < server.indexOf("serveStatic({ root: STATIC_ROOT })"), path);
+    }
+  });
+});
+
 describe("route contract", () => {
   it("signed out gets 401", async () => {
-    const { default: handler } = await import("../admin/unscheduled-list");
+    const { default: handler } = await import("../admin/not-booked-list");
     const res = makeRes();
-    await handler(makeReq({ method: "GET", query: { bucket: "never_no_appt", month: "2026-06" } } as never), res);
+    await handler(makeReq({ method: "GET", query: { bucket: "no_appointment", month: "2026-06" } } as never), res);
     assert.equal(res.statusCode, 401);
   });
   it("logs access with ids and counts only", () => {
-    const h = read("../admin/unscheduled-list.ts");
+    const h = read("../admin/not-booked-list.ts");
     assert.match(h, /kind: "list_unscheduled"/);
     assert.match(h, /detail: `user=\$\{auth\.user\.id\} bucket=\$\{p\.bucket\} cohort=\$\{cohortKey\(p\.cohort\)\} rows=\$\{total\} page=\$\{p\.page\}`/);
   });
@@ -112,12 +152,11 @@ describe(`count parity against Postgres (${live ? "live" : "skipped without CONV
   after(async () => { await c?.query("ROLLBACK"); await c?.end(); });
 
   it("every bucket's list total equals the page's count, for every month, the totals row and right now", async () => {
-    const months = (await c.query(DAY14_MONTHS_SQL)).rows as Record<string, number | string | boolean>[];
-    const now = (await c.query(DAY14_RIGHT_NOW_SQL)).rows[0];
+    const months = (await c.query(NOT_BOOKED_MONTHS_SQL)).rows as Record<string, number | string | boolean>[];
+    const now = (await c.query(NOT_BOOKED_RIGHT_NOW_SQL)).rows[0];
     assert.ok(months.length >= 4, "fixture spans several months");
     const col: Record<string, string> = {
-      unscheduled_d14: "unscheduled_d14", booked_later: "booked_later", never_booked: "never", never_no_appt: "never_no_appointment",
-      never_canceled_noshow: "never_canceled_or_no_show",
+      not_booked: "not_booked", canceled_noshow: "canceled_or_no_show", no_appointment: "no_appointment",
     };
     const complete = months.filter((m) => m.complete).map((m) => String(m.form_month));
     const cases: { q: Record<string, string>; expect: number }[] = [];
@@ -128,8 +167,7 @@ describe(`count parity against Postgres (${live ? "live" : "skipped without CONV
         cases.push({ q: { bucket: b, range: `${complete[0]}..${complete[complete.length - 1]}` }, expect: sum });
       }
     }
-    cases.push({ q: { bucket: "right_now_unbooked" }, expect: Number(now.nothing_booked_now) });
-    cases.push({ q: { bucket: "right_now_past_d14" }, expect: Number(now.past_day_14) });
+    cases.push({ q: { bucket: "right_now_not_booked" }, expect: Number(now.not_booked_now) });
     const current = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit" }).format(new Date()).slice(0, 7);
     let nonZero = 0;
     for (const k of cases) {
@@ -147,15 +185,15 @@ describe(`count parity against Postgres (${live ? "live" : "skipped without CONV
       assert.equal(rows, k.expect, `rows ${JSON.stringify(k.q)}`);
       if (k.expect > 0) nonZero += 1;
     }
-    assert.ok(nonZero >= 20, `the fixture exercises most cells (${nonZero} non-empty)`);
+    assert.ok(nonZero >= 12, `the fixture exercises most cells (${nonZero} non-empty)`);
   });
 
   it("list rows carry only the agreed fields, oldest registration first", async () => {
-    const p = parseListParams({ bucket: "unscheduled_d14", month: "2026-06" }, "2026-10") as never;
+    const p = parseListParams({ bucket: "not_booked", month: "2026-06" }, "2026-10") as never;
     const r = (await run(listQuery(p))).rows;
     assert.ok(r.length > 0);
     assert.deepEqual(Object.keys(r[0]).sort(),
-      ["chart_id", "days_since", "has_appointment", "latest_date", "latest_status", "name", "registered_on", "submission_id"]);
+      ["canceled_noshow", "chart_id", "days_since", "has_appointment", "latest_date", "latest_status", "name", "registered_on", "source", "submission_id"]);
     const dates = r.map((x: { registered_on: string }) => x.registered_on);
     assert.deepEqual(dates, [...dates].sort());
   });
@@ -163,7 +201,7 @@ describe(`count parity against Postgres (${live ? "live" : "skipped without CONV
 
 describe(`access control, validation and the access log (${live ? "live" : "skipped"})`, { skip: !live }, () => {
   it("viewer 403, bad params 400, admin 200 with one access row and no patient identifier in it", async () => {
-    const { default: handler } = await import("../admin/unscheduled-list");
+    const { default: handler } = await import("../admin/not-booked-list");
     const { createSession, SESSION_COOKIE_NAME } = await import("../_lib/auth");
     const { Client } = loadPg();
     const app = new Client({ connectionString: APPDB });
@@ -181,18 +219,18 @@ describe(`access control, validation and the access log (${live ? "live" : "skip
         await handler(makeReq({ method: "GET", cookie: `${SESSION_COOKIE_NAME}=${sid}`, query } as never), res);
         return res;
       };
-      assert.equal((await call(viewerSid, { bucket: "never_no_appt", month: "2026-06" })).statusCode, 403);
+      assert.equal((await call(viewerSid, { bucket: "no_appointment", month: "2026-06" })).statusCode, 403);
       assert.equal((await call(adminSid, { bucket: "nope", month: "2026-06" })).statusCode, 400);
-      assert.equal((await call(adminSid, { bucket: "never_no_appt" })).statusCode, 400);
+      assert.equal((await call(adminSid, { bucket: "no_appointment" })).statusCode, 400);
       const before = Number((await app.query(`SELECT count(*) FROM notification_events WHERE kind = 'list_unscheduled'`)).rows[0].count);
-      const ok = await call(adminSid, { bucket: "never_no_appt", month: "2026-06" });
+      const ok = await call(adminSid, { bucket: "no_appointment", month: "2026-06" });
       assert.equal(ok.statusCode, 200);
       const log = (await app.query(`SELECT channel, outcome, detail, submission_id FROM notification_events WHERE kind = 'list_unscheduled' ORDER BY created_at DESC LIMIT 1`)).rows[0];
       const after = Number((await app.query(`SELECT count(*) FROM notification_events WHERE kind = 'list_unscheduled'`)).rows[0].count);
       assert.equal(after, before + 1, "exactly one access row per call");
       assert.equal(log.channel, "access");
       assert.equal(log.submission_id, null);
-      assert.match(log.detail, new RegExp(`^user=${ids[0]} bucket=never_no_appt cohort=2026-06 rows=\\d+ page=1$`));
+      assert.match(log.detail, new RegExp(`^user=${ids[0]} bucket=no_appointment cohort=2026-06 rows=\\d+ page=1$`));
     } finally {
       await app.query(`DELETE FROM notification_events WHERE kind = 'list_unscheduled' AND detail LIKE ANY ($1::text[])`, [ids.map((i) => `user=${i}%`)]);
       await app.query(`DELETE FROM sessions WHERE user_id = ANY($1::uuid[])`, [ids]);

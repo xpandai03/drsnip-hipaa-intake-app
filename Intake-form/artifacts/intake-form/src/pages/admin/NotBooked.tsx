@@ -1,8 +1,8 @@
-// Unscheduled at day 14 — registrations with nothing booked two weeks after the
-// patient first registered, and what happened to them afterwards.
+// Not booked — registrations whose patient has nothing booked as of today, by
+// the month they registered, split into canceled or no show / no appointment.
 //
 // Admin only, counts only. THE PAGE CALCULATES NOTHING: every count, share and
-// the headline come from /api/admin/unscheduled-day14.
+// the headline come from /api/admin/not-booked.
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -16,25 +16,21 @@ type Month = {
   form_month: string;
   complete: boolean;
   cohort: number;
-  unscheduled_d14: number;
-  unscheduled_pct: number | null;
-  booked_later: number;
-  booked_later_pct: number | null;
-  never: number;
-  never_pct: number | null;
-  never_no_appointment: number;
-  never_canceled_or_no_show: number;
+  not_booked: number;
+  not_booked_pct: number | null;
+  canceled_or_no_show: number;
+  no_appointment: number;
 };
 type Totals = Omit<Month, "form_month" | "complete"> & {
   from_month: string;
   to_month: string;
   months: number;
-  avg_unscheduled_per_month: number;
+  avg_not_booked_per_month: number;
 };
-type Day14Response = {
+type NotBookedResponse = {
   months: Month[];
   totals: Totals | null;
-  right_now: { registrations_30d: number; not_yet_synced: number; nothing_booked_now: number; past_day_14: number };
+  right_now: { registrations_30d: number; not_yet_synced: number; not_booked_now: number };
   data_as_of: string | null;
   headline: string | null;
 };
@@ -55,7 +51,7 @@ function CountLink({ n, bucket, cohort }: { n: number; bucket: string; cohort: s
   if (n <= 0) return <>{num(n)}</>;
   return (
     <Link
-      href={`/admin/unscheduled/list?bucket=${bucket}${cohort ? `&${cohort}` : ""}`}
+      href={`/admin/not-booked/list?bucket=${bucket}${cohort ? `&${cohort}` : ""}`}
       className="hover:underline focus-visible:underline focus-visible:outline-none"
       data-testid={`link-${bucket}`}
     >
@@ -70,84 +66,73 @@ function Row({ label, m, cohort, total = false }: { label: string; m: Month | To
       <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">{label}</th>
       <td className="px-3 py-2 text-right tabular-nums">{num(m.cohort)}</td>
       <td className="px-3 py-2 text-right tabular-nums">
-        <CountLink n={m.unscheduled_d14} bucket="unscheduled_d14" cohort={cohort} />{" "}
-        <span className="text-xs font-normal text-muted-foreground">{share(m.unscheduled_pct)}</span>
+        <CountLink n={m.not_booked} bucket="not_booked" cohort={cohort} />{" "}
+        <span className="text-xs font-normal text-muted-foreground">{share(m.not_booked_pct)}</span>
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">
-        <CountLink n={m.booked_later} bucket="booked_later" cohort={cohort} />{" "}
-        <span className="text-xs font-normal text-muted-foreground">{share(m.booked_later_pct)}</span>
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">
-        <CountLink n={m.never} bucket="never_booked" cohort={cohort} />{" "}
-        <span className="text-xs font-normal text-muted-foreground">{share(m.never_pct)}</span>
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_no_appointment} bucket="never_no_appt" cohort={cohort} /></td>
-      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.never_canceled_or_no_show} bucket="never_canceled_noshow" cohort={cohort} /></td>
+      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.canceled_or_no_show} bucket="canceled_noshow" cohort={cohort} /></td>
+      <td className="px-3 py-2 text-right tabular-nums"><CountLink n={m.no_appointment} bucket="no_appointment" cohort={cohort} /></td>
     </tr>
   );
 }
 
-function Report({ d }: { d: Day14Response }) {
+function Report({ d }: { d: NotBookedResponse }) {
   const asOf = clinicTime(d.data_as_of);
   const t = d.totals;
   return (
     <>
       {d.headline && (
-        <p className="mb-4 rounded-lg border bg-card px-4 py-3 text-lg font-semibold" data-testid="day14-headline">
+        <p className="mb-4 rounded-lg border bg-card px-4 py-3 text-lg font-semibold" data-testid="not-booked-headline">
           {d.headline}
         </p>
       )}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full text-sm" data-testid="day14-table">
-          <caption className="sr-only">Registrations by month, and how many had nothing booked 14 days after registering.</caption>
+        <table className="w-full text-sm" data-testid="not-booked-table">
+          <caption className="sr-only">Registrations by month, and how many have nothing booked as of today.</caption>
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
               <th scope="col" className="px-3 py-2 font-medium">Registered in</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Registrations</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Nothing booked by day 14</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">…booked later</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">…never booked</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Never booked: no appointment</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Never booked: canceled or no-show</th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">Not booked</th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">Canceled or no show</th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">No appointment</th>
             </tr>
           </thead>
           <tbody>
             {d.months.map((m) => (
-              <Row key={m.form_month} label={`${monthName(m.form_month)}${m.complete ? "" : " (day 14 not reached for everyone yet)"}`} m={m} cohort={`month=${m.form_month}`} />
+              <Row key={m.form_month} label={`${monthName(m.form_month)}${m.complete ? "" : " (this month so far)"}`} m={m} cohort={`month=${m.form_month}`} />
             ))}
             {t && <Row label={`${monthName(t.from_month)} – ${monthName(t.to_month)}`} m={t} cohort={`range=${t.from_month}..${t.to_month}`} total />}
           </tbody>
         </table>
       </div>
       {t && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid="day14-average">
-          On average {num(t.avg_unscheduled_per_month)} registrations a month had nothing booked by day 14 ({monthName(t.from_month)} to {monthName(t.to_month)}).
-          “Booked later” and “never booked” are shares of the people with nothing booked by day 14.
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="not-booked-average">
+          On average {num(t.avg_not_booked_per_month)} registrations a month have not booked ({monthName(t.from_month)} to {monthName(t.to_month)}).
+          “Canceled or no show” and “No appointment” split the “Not booked” count.
         </p>
       )}
 
-      <section className="mt-6 rounded-lg border bg-card p-4" data-testid="day14-right-now">
+      <section className="mt-6 rounded-lg border bg-card p-4" data-testid="not-booked-right-now">
         <h2 className="text-sm font-semibold">Right now</h2>
         <p className="mt-1 text-sm">
           Of <strong>{num(d.right_now.registrations_30d)}</strong> registrations in the last 30 days,{" "}
-          <strong><CountLink n={d.right_now.nothing_booked_now} bucket="right_now_unbooked" cohort="" /></strong> have nothing booked yet.{" "}
-          <strong><CountLink n={d.right_now.past_day_14} bucket="right_now_past_d14" cohort="" /></strong> of those registered more than 14 days ago.
+          <strong><CountLink n={d.right_now.not_booked_now} bucket="right_now_not_booked" cohort="" /></strong> have not booked yet.
           {d.right_now.not_yet_synced > 0 && <> {num(d.right_now.not_yet_synced)} more are waiting for their appointment history to be read.</>}
         </p>
       </section>
 
-      <p className="mt-4 text-sm" data-testid="day14-as-of">
+      <p className="mt-4 text-sm" data-testid="not-booked-as-of">
         <strong>Data as of {asOf ?? "— unavailable"}</strong>{asOf ? " (Pacific)" : ""}.
       </p>
 
       <div className="mt-4 space-y-2 text-xs leading-relaxed text-muted-foreground">
         <p>
-          Each person is counted once, from the day of their first registration. “Booked” uses the clinic&rsquo;s own
+          Each person is counted once, in the month of their first registration. “Booked” uses the clinic&rsquo;s own
           definition (the same one as <Link href="/admin/conversion" className="underline">Conversion by cohort</Link>):
           an appointment on their chart that is complete, signed no review, procedure not performed, checked in,
-          checked in online, arrived, ready or in a room, in session, scheduled, confirmed or rescheduled. The booking date is when that appointment was created; one
-          made before the registration counts as booked by day 14.
+          checked in online, arrived, ready or in a room, in session, scheduled, confirmed or rescheduled. Anyone
+          without one is not booked.
         </p>
         <p>
           A blank or any other status is ignored: a patient whose appointments all have an ignored status is not
@@ -158,30 +143,30 @@ function Report({ d }: { d: Day14Response }) {
   );
 }
 
-export default function Unscheduled() {
+export default function NotBooked() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const q = useQuery({
-    queryKey: ["unscheduled-day14"],
-    queryFn: () => getJson<Day14Response>("/api/admin/unscheduled-day14"),
+    queryKey: ["not-booked"],
+    queryFn: () => getJson<NotBookedResponse>("/api/admin/not-booked"),
     enabled: isAdmin,
     retry: 1,
   });
 
   return (
     <AdminLayout>
-      <div data-testid="unscheduled-page">
+      <div data-testid="not-booked-page">
         <PageHeader
           eyebrow="Actual intake data"
-          title="Unscheduled at day 14"
-          subtitle="Registrations with nothing booked two weeks after the patient first registered, and what happened to them afterwards."
+          title="Not booked"
+          subtitle="Registrations whose patient has nothing booked as of today, by the month they registered."
         />
         {!isAdmin ? (
-          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground" data-testid="day14-admin-only">
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground" data-testid="not-booked-admin-only">
             This page is available to admins only.
           </p>
         ) : q.isError ? (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert" data-testid="day14-error">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert" data-testid="not-booked-error">
             <p className="font-medium">This report could not be loaded.</p>
             <button type="button" onClick={() => { void q.refetch(); }}
               className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted">
@@ -189,7 +174,7 @@ export default function Unscheduled() {
             </button>
           </div>
         ) : !q.data ? (
-          <div className="h-40 animate-pulse rounded-lg border bg-card" role="status" aria-busy="true" data-testid="day14-loading">
+          <div className="h-40 animate-pulse rounded-lg border bg-card" role="status" aria-busy="true" data-testid="not-booked-loading">
             <span className="sr-only">Loading.</span>
           </div>
         ) : (

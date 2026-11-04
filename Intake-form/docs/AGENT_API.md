@@ -27,7 +27,7 @@ What Xpand's clinic agents (the `xpand-drsnip-agents` app, Fly org it-snip) read
 | `GET /api/agent/submissions?days=14` (1 to 60) | Recent submissions, newest first: `submission_id, created_at, form_type, n8n_status, name, location` | 50 |
 | `GET /api/agent/submission?id=<uuid>` | One submission: the fields above, plus `chart_id` and `days_since` | 1 |
 | `GET /api/agent/manual-review` | Submissions in manual review, newest first: `submission_id, created_at, form_type, name, location, days_waiting`. No candidates and no response body. | 50 |
-| `GET /api/agent/unscheduled` | The console's "Unscheduled at day 14: right now, past day 14" list (the same `DAY14_BUCKET_CTE`): registered in the last 30 days, past day 14, nothing booked. Fields: `chart_id, name, registered_on, days_since, has_appointment, latest_status, latest_date`. | 100 |
+| `GET /api/agent/unscheduled` | The console's "Not booked: right now" list (the same `NOT_BOOKED_CTE`): registered in the last 30 days, nothing booked as of today. Until 2026-11-04 this was "past day 14" only; the path keeps its name. Fields: `chart_id, name, registered_on, days_since, has_appointment, latest_status, latest_date`. | 100 |
 | `GET /api/agent/appointments?chart_id=<id>` | A chart's appointments, newest first: `date, time, status, type_id` | 20 |
 | `GET /api/agent/cohorts?grain=month\|week` | `drsnip_conversion_cohorts('registration', grain)`, counts only, with small cells withheld by the function: `period_start, period_end, row_status, period_complete, forms, not_covered, converted_now, fill_p0..p3, fill_later, withheld` | 120 |
 

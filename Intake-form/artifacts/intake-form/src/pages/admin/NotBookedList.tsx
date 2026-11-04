@@ -1,9 +1,11 @@
-// The patients behind one count on "Unscheduled at day 14". Admin only.
+// The patients behind one count on "Not booked" or "Conversion by cohort".
+// Admin only. One page component serves both sources.
 //
 // Minimum necessary: name, first registration date and days since, most
 // recent appointment, a link to the submission in this console, and the
-// DrChrono chart. The rows come from the same definition as the counts, so the
-// total here equals the number that was clicked.
+// DrChrono chart. Not booked lists add the marketing source and why the
+// patient is not booked (canceled or no show / no appointment); conversion
+// lists add "Converted on".
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,12 +20,16 @@ type ListRow = {
   chart_id: string | null;
   submission_id: string | null;
   name: string;
+  /** Not booked lists only. */
+  source?: string | null;
   registered_on: string;
   days_since: number;
   has_appointment: boolean;
   latest_status: string | null;
   latest_date: string | null;
   converted_on?: string | null;
+  /** Not booked lists only. */
+  status?: "Canceled or no show" | "No appointment";
 };
 type ListResponse = {
   title?: string;
@@ -42,7 +48,7 @@ const LONG = ["January", "February", "March", "April", "May", "June", "July", "A
 const monthName = (m: string) => `${LONG[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** "June 2026: never booked, no appointment (57)" */
+/** "June 2026: not booked, no appointment (57)" */
 export function listTitle(d: Pick<ListResponse, "cohort" | "bucket_label" | "total" | "title">): string {
   if (d.title) return d.title;
   if (!d.cohort || !d.bucket_label) return `${d.total.toLocaleString("en-US")} patients`;
@@ -80,19 +86,19 @@ export type ListSource = {
   convertedOn: boolean;
   /** Label for the first-form date column. */
   firstLabel: (params: URLSearchParams) => string;
-  /** The day-14 note for a month whose day 14 has not passed. */
-  dayFourteenNote: boolean;
+  /** Not booked lists: the Source and Status columns, and the note for a month still running. */
+  notBooked: boolean;
 };
 
-export const UNSCHEDULED_SOURCE: ListSource = {
-  id: "unscheduled",
-  api: "/api/admin/unscheduled/list",
-  csv: "/api/admin/unscheduled/list.csv",
+export const NOT_BOOKED_SOURCE: ListSource = {
+  id: "not-booked",
+  api: "/api/admin/not-booked/list",
+  csv: "/api/admin/not-booked/list.csv",
   keys: ["bucket", "month", "range"],
-  back: () => ({ href: "/admin/unscheduled", label: "Unscheduled at day 14" }),
+  back: () => ({ href: "/admin/not-booked", label: "Not booked" }),
   convertedOn: false,
-  firstLabel: () => "First registered",
-  dayFourteenNote: true,
+  firstLabel: () => "Registered",
+  notBooked: true,
 };
 
 export const CONVERSION_SOURCE: ListSource = {
@@ -106,11 +112,11 @@ export const CONVERSION_SOURCE: ListSource = {
   }),
   convertedOn: true,
   firstLabel: (p) => (p.get("form") === "insurance" ? "First inquiry" : "First registered"),
-  dayFourteenNote: false,
+  notBooked: false,
 };
 
-export default function UnscheduledList() {
-  return <PatientListPage source={UNSCHEDULED_SOURCE} />;
+export default function NotBookedList() {
+  return <PatientListPage source={NOT_BOOKED_SOURCE} />;
 }
 
 export function PatientListPage({ source }: { source: ListSource }) {
@@ -160,7 +166,7 @@ export function PatientListPage({ source }: { source: ListSource }) {
 
   return (
     <AdminLayout>
-      <div data-testid="unscheduled-list-page">
+      <div data-testid={`${source.id}-list-page`}>
         <Link href={back.href} className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline" data-testid="back-link">
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {back.label}
         </Link>
@@ -197,9 +203,9 @@ export function PatientListPage({ source }: { source: ListSource }) {
                 </a>
               )}
             </div>
-            {source.dayFourteenNote && d.cohort?.kind === "month" && !dayFourteenReached(d.cohort.month) && (
-              <p className="mt-1 text-sm text-amber-800 dark:text-amber-200" data-testid="list-not-day14">
-                Some of these patients registered less than 14 days ago and have not reached day 14 yet.
+            {source.notBooked && d.cohort?.kind === "month" && !monthEnded(d.cohort.month) && (
+              <p className="mt-1 text-sm text-amber-800 dark:text-amber-200" data-testid="list-month-running">
+                This month is still running: some of these patients registered only recently.
               </p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
@@ -211,9 +217,11 @@ export function PatientListPage({ source }: { source: ListSource }) {
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th scope="col" className="px-3 py-2 font-medium">Patient</th>
+                    {source.notBooked && <th scope="col" className="px-3 py-2 font-medium">Source</th>}
                     <th scope="col" className="px-3 py-2 font-medium">{source.firstLabel(params)}</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Days since</th>
                     <th scope="col" className="px-3 py-2 font-medium">Most recent appointment</th>
+                    {source.notBooked && <th scope="col" className="px-3 py-2 font-medium">Status</th>}
                     <th scope="col" className="px-3 py-2 font-medium">Submission</th>
                     <th scope="col" className="px-3 py-2 font-medium">DrChrono chart</th>
                     {source.convertedOn && <th scope="col" className="px-3 py-2 font-medium">Converted on</th>}
@@ -223,9 +231,13 @@ export function PatientListPage({ source }: { source: ListSource }) {
                   {d.rows.map((r) => (
                     <tr key={r.chart_id ?? r.submission_id ?? r.registered_on} className="border-b last:border-0" data-testid="list-row">
                       <td className="px-3 py-2 font-medium">{r.name || <span className="text-muted-foreground">(no name)</span>}</td>
+                      {source.notBooked && (
+                        <td className="px-3 py-2" data-testid="cell-source">{r.source ?? <span className="text-muted-foreground">—</span>}</td>
+                      )}
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.registered_on}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.days_since}</td>
                       <td className="px-3 py-2"><Appointment r={r} /></td>
+                      {source.notBooked && <td className="whitespace-nowrap px-3 py-2" data-testid="cell-status">{r.status ?? ""}</td>}
                       <td className="px-3 py-2">
                         {r.submission_id ? (
                           <Link href={`/admin/submissions/${r.submission_id}`} className="text-primary hover:underline">Open</Link>
@@ -270,13 +282,13 @@ export function PatientListPage({ source }: { source: ListSource }) {
 }
 
 /**
- * True once day 14 has passed for the month's last registrant: the same rule
- * the counts use (month end + 14 days). Approximate to the hour across DST,
- * which only affects the wording of a note.
+ * True once the month has ended on the clinic calendar: the same rule the
+ * counts use for "complete". Approximate to the hour across DST, which only
+ * affects the wording of a note.
  */
-export function dayFourteenReached(month: string, now: Date = new Date()): boolean {
+export function monthEnded(month: string, now: Date = new Date()): boolean {
   const y = Number(month.slice(0, 4));
   const m = Number(month.slice(5, 7));
   const nextMonthStartPacific = Date.UTC(y, m, 1, 8); // 00:00 PST ≈ 08:00 UTC
-  return now.getTime() >= nextMonthStartPacific + 14 * 86400000;
+  return now.getTime() >= nextMonthStartPacific;
 }
