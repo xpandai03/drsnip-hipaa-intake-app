@@ -27,10 +27,13 @@ that exists nowhere in git.
 
 **Until the founder approves #72, every deploy goes from a tag built off the commit production runs, never from
 `main`.** `main` carries #72 (Conversion by cohort drill-down, merged 2026-10-27 after v101 shipped), which has not
-been deployed or approved. Production v102 is tag `agent-api-deploy-1` (4af5b6a, production's v101 commit, plus the
-read-only agent API). For the next deploy: branch from the tag production runs, make the change there, put it in a
-PR, tag the branch head (`<name>-deploy-<n>`), and `fly deploy` from a checkout of that tag. Record the tag and the
-rollback release in the PR. Lift this rule only when the founder approves #72.
+been deployed or approved. **Production v106 is tag `train-b-j5`** (2026-11-04: `agent-api-deploy-1` + Train A
+`train-a-j2` / `train-a-j1` / `train-a-j6` + Train B). `main` is that plus #72 and docs, nothing else
+(`git diff --stat train-b-j5 origin/main`). Deploying the stale `agent-api-deploy-1` would roll Train A and B back.
+For the next deploy: branch from the tag production runs, make the change there, put it in a PR, tag the branch
+head, and `fly deploy` from a `git archive` of that tag. Record the tag and the rollback release in the PR. For
+the PR into `main`, cherry-pick the deployed commit onto `main`; it applies cleanly where a merge of `main` would
+conflict. Lift this rule only when the founder approves #72; deploying `main` then ships it.
 
 **Branch from the branch you are building on, not from `main`.** Train 3 was
 branched off `main` while Train 2 sat unmerged; `lib/lifecycle/` did not exist
