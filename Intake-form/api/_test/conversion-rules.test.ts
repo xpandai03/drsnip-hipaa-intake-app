@@ -1,14 +1,14 @@
-// Train 4 — the client's twelve statuses, and the rules that count them.
+// The client's statuses (rules v3, 2026-10-27), and the rules that count them.
 //
 // Three layers:
-//   1. Pure: every one of the client's twelve statuses classifies as listed
+//   1. Pure: every one of the client's fourteen statuses classifies as listed
 //      (TypeScript mirror; always runs).
 //   2. Drift guard: the lists in lib/metrics/conversion-rules.ts are exactly
-//      the lists migration 0023 seeds (always runs).
+//      the lists migration 0025 seeds (always runs).
 //   3. Database: the SQL classifier agrees with the mirror for every label, and
 //      drsnip_conversion_monthly() counts a hand-built fixture correctly.
 //      SKIPPED unless CONVERSION_TEST_DATABASE_URL points at a DISPOSABLE
-//      database carrying migrations through 0023. Never production: it writes.
+//      database carrying migrations through 0025. Never production: it writes.
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -22,30 +22,35 @@ import {
 } from "../../lib/metrics/conversion-rules.js";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
-const MIGRATION = read("../../lib/db/migrations/0023_jeff_conversion_rules.sql");
+const MIGRATION = read("../../lib/db/migrations/0025_jeff_rules_v3.sql");
 
-const UNCLASSIFIED_SEEN_IN_PRODUCTION = ["", "Arrived", "In Room", "MD In", "MD Out", "Checked In Online"];
+// Every label in production (current, transitions, label catalog; 2026-11-04)
+// that is in neither list. All three are ignored.
+const IGNORED_SEEN_IN_PRODUCTION = ["", "MD In", "MD Out"];
 
-describe("the client's twelve statuses", () => {
-  it("lists exactly twelve, nine converted and three not", () => {
-    assert.equal(CLIENT_STATUS_LIST.length, 12);
-    assert.equal(CLIENT_STATUS_LIST.filter((s) => s.is === "converted").length, 9);
+describe("the client's statuses (2026-10-27)", () => {
+  it("lists exactly fourteen, eleven converted and three not", () => {
+    assert.equal(CLIENT_STATUS_LIST.length, 14);
+    assert.equal(CLIENT_STATUS_LIST.filter((s) => s.is === "converted").length, 11);
     assert.equal(CLIENT_STATUS_LIST.filter((s) => s.is === "not_converted").length, 3);
   });
 
   for (const s of CLIENT_STATUS_LIST) {
     it(`${s.status} -> ${s.is}`, () => {
       // The client's own words, and every DrChrono label that means the same.
-      assert.equal(classifyStatus(s.status.replace(/ \(.*\)$/, "").replace("room N", "room 7")), s.is, s.status);
+      assert.equal(classifyStatus(s.status.replace(/ \(.*\)$/, "").replace("Ready / In room", "In room")), s.is, s.status);
       for (const label of s.drchrono) assert.equal(classifyStatus(label), s.is, label);
     });
   }
 
-  it("Ready in room N matches any room number, and nothing else", () => {
+  it("Ready in N, Ready in room N, In Room and In room N match any room, and nothing else", () => {
     for (const n of ["1", "2", "9", "10", "123"]) {
       assert.equal(classifyStatus(`Ready in ${n}`), "converted");
       assert.equal(classifyStatus(`Ready in room ${n}`), "converted");
+      assert.equal(classifyStatus(`In room ${n}`), "converted");
     }
+    assert.equal(classifyStatus("In Room"), "converted");
+    assert.equal(classifyStatus("In Room lobby"), "unclassified");
     assert.equal(classifyStatus("Ready in"), "unclassified");
     assert.equal(classifyStatus("Ready in room"), "unclassified");
     assert.equal(classifyStatus("Ready in lobby"), "unclassified");
@@ -57,8 +62,8 @@ describe("the client's twelve statuses", () => {
     assert.equal(classifyStatus("no-SHOW"), "not_converted");
   });
 
-  it("anything else is unclassified, including every other label seen in production", () => {
-    for (const s of [...UNCLASSIFIED_SEEN_IN_PRODUCTION, null, undefined, "Something New"]) {
+  it("anything else is ignored (class 'unclassified'), including every other label seen in production", () => {
+    for (const s of [...IGNORED_SEEN_IN_PRODUCTION, ...CONVERSION_RULES.ignored, null, undefined, "Something New"]) {
       assert.equal(classifyStatus(s), "unclassified", String(s));
     }
   });
@@ -69,21 +74,33 @@ describe("the client's twelve statuses", () => {
   });
 });
 
-describe("the TypeScript mirror and migration 0023 carry the same lists", () => {
+describe("the TypeScript mirror and migration 0025 carry the same lists", () => {
   const block = MIGRATION.slice(MIGRATION.indexOf("INSERT INTO outcome_status_rules"), MIGRATION.indexOf("ON CONFLICT (version)"));
   const arrayAfter = (key: string): string[] => {
     const m = new RegExp(`'${key}', jsonb_build_array\\(\\s*((?:'(?:[^']|'')*'\\s*,?\\s*)*)\\)`, "s").exec(block);
-    assert.ok(m, `no ${key} array in 0023`);
+    assert.ok(m, `no ${key} array in 0025`);
     return [...m[1].matchAll(/'((?:[^']|'')*)'/g)].map((x) => x[1]);
   };
-  for (const key of ["converted", "converted_patterns", "not_converted", "not_converted_patterns"] as const) {
+  for (const key of ["converted", "converted_patterns", "not_converted", "not_converted_patterns", "ignored"] as const) {
     it(key, () => {
       assert.deepEqual(arrayAfter(key), [...CONVERSION_RULES[key]]);
     });
   }
-  it("seeds version 2 as approved, with provenance", () => {
-    assert.match(block, /VALUES \('2', 'approved'/);
-    assert.match(MIGRATION, /'Jeffrey Cho', 'DrSnip client contact', 'video_call', DATE '2026-09-21'/);
+  it("seeds version 3 as approved, with provenance, and supersedes v2", () => {
+    assert.match(block, /VALUES \('3', 'approved'/);
+    assert.match(MIGRATION, /'Jeffrey Cho', 'DrSnip client contact', 'video_call', DATE '2026-10-27'/);
+    assert.match(MIGRATION, /SET state = 'superseded' WHERE version = '2'/);
+  });
+  it("keeps the classifier's signature, so CREATE OR REPLACE is enough and rollback is clean", () => {
+    const v2 = read("../../lib/db/migrations/0023_jeff_conversion_rules.sql");
+    const sig = (src: string) => {
+      const i = src.indexOf("CREATE OR REPLACE FUNCTION public.drsnip_conversion_classify(p_form text)");
+      return src.slice(i, src.indexOf("LANGUAGE sql", i)).replace(/\s+/g, " ");
+    };
+    assert.equal(sig(MIGRATION), sig(v2));
+    const rb = read("../../lib/db/migrations/0025_rollback.sql");
+    const body = (src: string) => src.slice(src.indexOf(">>> CONVERSION CLASSIFY BODY >>>"), src.indexOf("<<< CONVERSION CLASSIFY BODY <<<"));
+    assert.equal(body(rb), body(v2), "the rollback restores the v2 body byte for byte");
   });
   it("the patient-level classifier is never granted to a caller", () => {
     assert.ok(!/GRANT EXECUTE ON FUNCTION public\.drsnip_conversion_classify/.test(MIGRATION));
@@ -113,8 +130,8 @@ describe(`database classifier and monthly counts (${live ? "live" : "skipped wit
   it("SQL and TypeScript agree on every label", async () => {
     const labels = [
       ...CLIENT_STATUS_LIST.flatMap((s) => s.drchrono),
-      ...UNCLASSIFIED_SEEN_IN_PRODUCTION,
-      "Canceled", "Late canceled", "No-show", "Ready in room 7", "COMPLETE", "Cancellation pending",
+      ...IGNORED_SEEN_IN_PRODUCTION,
+      "Canceled", "Late canceled", "No-show", "Ready in room 7", "In room 7", "In Room lobby", "COMPLETE", "Cancellation pending",
     ];
     const r = await c.query(
       `SELECT l, public.drsnip_conversion_status_class(l, (SELECT rules FROM public.drsnip_conversion_rules())) AS cls
@@ -127,12 +144,12 @@ describe(`database classifier and monthly counts (${live ? "live" : "skipped wit
     try {
       await c.query(`DELETE FROM appointment_status_transitions; DELETE FROM appointment_snapshots;
                      DELETE FROM appointment_sync_windows; DELETE FROM submissions;`);
-      // Twenty-four linked patients, each with a first registration in July 2026
+      // Twenty-five linked patients, each with a first registration in July 2026
       // (Pacific), every one's history read. Each list is one patient's
       // appointments, as [status, deleted?]. Expected bucket in the comment.
       type A = [string, boolean?];
       const P: Array<{ appts: A[]; bucket: string }> = [
-        // 8 converted
+        // 12 converted
         { appts: [["Complete"]], bucket: "converted" },
         { appts: [["Complete"], ["No Show"]], bucket: "converted" },          // any converted wins
         { appts: [["Cancelled"], ["Rescheduled"]], bucket: "converted" },
@@ -141,18 +158,19 @@ describe(`database classifier and monthly counts (${live ? "live" : "skipped wit
         { appts: [["Ready in 2"]], bucket: "converted" },
         { appts: [["In Session"]], bucket: "converted" },
         { appts: [["Signed No Review"], [""]], bucket: "converted" },
-        // 5 not converted
+        // 5 not converted (an ignored status beside a no-show changes nothing)
         { appts: [["No Show"]], bucket: "not_converted" },
         { appts: [["Cancelled"]], bucket: "not_converted" },
         { appts: [["Late Cancel within 48 hrs"]], bucket: "not_converted" },
         { appts: [["Cancelled"], [""]], bucket: "not_converted" },
-        { appts: [["No Show"], ["Arrived"]], bucket: "not_converted" },
-        // 5 unclassified only
-        { appts: [[""]], bucket: "unclassified_only" },
-        { appts: [["Arrived"]], bucket: "unclassified_only" },
-        { appts: [["MD Out"]], bucket: "unclassified_only" },
-        { appts: [["In Room"]], bucket: "unclassified_only" },
-        { appts: [[""], ["Checked In Online"]], bucket: "unclassified_only" },
+        { appts: [["No Show"], ["MD In"]], bucket: "not_converted" },
+        { appts: [["No Show"], ["Arrived"]], bucket: "converted" },           // v3: Arrived converts
+        { appts: [["Arrived"]], bucket: "converted" },
+        { appts: [["In Room"]], bucket: "converted" },                        // v3: numberless In Room
+        { appts: [[""], ["Checked In Online"]], bucket: "converted" },        // v3: Checked In Online
+        // 2 ignored only: not counted at all (rules v3)
+        { appts: [[""]], bucket: "excluded" },
+        { appts: [["MD Out"]], bucket: "excluded" },
         // 6 no appointment
         { appts: [], bucket: "no_appointment" },
         { appts: [], bucket: "no_appointment" },
@@ -192,12 +210,12 @@ describe(`database classifier and monthly counts (${live ? "live" : "skipped wit
       assert.equal(r.rows.length, 1);
       const m = r.rows[0];
       assert.equal(m.row_status, "ok");
-      assert.equal(m.status_rules_version, "2");
-      assert.equal(m.cohort_total, 24);
-      assert.equal(m.covered, 24);
+      assert.equal(m.status_rules_version, "3");
+      assert.equal(m.cohort_total, 23, "the two ignored-only patients are not counted");
+      assert.equal(m.covered, 23);
       assert.equal(m.not_covered, 0);
       assert.deepEqual(
-        [m.converted, m.not_converted, m.unclassified_only, m.no_appointment], [8, 5, 5, 6]);
+        [m.converted, m.not_converted, m.unclassified_only, m.no_appointment], [12, 5, 0, 6]);
       assert.deepEqual(m.withheld, ["unlinked_submissions_small"]);
       assert.equal(m.unlinked_submissions, null, "1 unlinked submission is a small group");
       assert.equal(m.entry_period_complete, true);

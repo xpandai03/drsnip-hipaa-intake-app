@@ -1,18 +1,19 @@
 // Monthly outcomes — where each entry month's patients stand NOW, under the
-// client's own definition of "converted" (Jeffrey Cho, 2026-09-21;
-// outcome_status_rules v2).
+// client's own definition of "converted" (Jeffrey Cho, 2026-10-27;
+// outcome_status_rules v3).
 //
 // For patients whose first registration (or insurance inquiry) fell in a given
 // month: how many have at least one appointment in the converted set, how many
-// only canceled or did not show, how many have only unclassified statuses, and
-// how many have no appointment at all. One count per patient.
+// only canceled or did not show, and how many have no appointment at all. One
+// count per patient. A patient whose appointments all have an ignored status
+// (blank, MD In, …) is not counted.
 //
 // THE PAGE CALCULATES NOTHING. /api/reports/outcomes returns every count, the
 // converted share and every label, already protected. The rules this
 // component holds itself to (see outcomes-view.ts):
 //   * a withheld value renders as "Withheld" — never 0, never blank;
 //   * nothing is added up, divided, or derived from its neighbours;
-//   * a bar is drawn only when all four outcomes were published.
+//   * a bar is drawn only when all three outcomes were published.
 
 import { useCallback, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -34,12 +35,11 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-// Colours for the four outcomes. Unclassified is deliberately NOT grey: grey is
-// how "withheld" reads, and the two must never be confused.
+// Colours for the three outcomes. "No appointment" is a lighter grey-blue than
+// the dashed "withheld" chip, and the two must never be confused.
 const BAR: Record<(typeof BUCKET_KEYS)[number], string> = {
   converted: "hsl(208 79% 26%)",
   not_converted: "hsl(4 62% 58%)",
-  unclassified_only: "hsl(38 80% 58%)",
   no_appointment: "hsl(210 14% 78%)",
 };
 

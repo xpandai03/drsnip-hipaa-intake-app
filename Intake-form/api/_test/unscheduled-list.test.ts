@@ -117,7 +117,7 @@ describe(`count parity against Postgres (${live ? "live" : "skipped without CONV
     assert.ok(months.length >= 4, "fixture spans several months");
     const col: Record<string, string> = {
       unscheduled_d14: "unscheduled_d14", booked_later: "booked_later", never_booked: "never", never_no_appt: "never_no_appointment",
-      never_canceled_noshow: "never_canceled_or_no_show", never_no_status: "never_no_status_only",
+      never_canceled_noshow: "never_canceled_or_no_show",
     };
     const complete = months.filter((m) => m.complete).map((m) => String(m.form_month));
     const cases: { q: Record<string, string>; expect: number }[] = [];

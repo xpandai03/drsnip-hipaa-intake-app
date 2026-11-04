@@ -84,7 +84,7 @@ function ConvertedNow({ r }: { r: PeriodRow }) {
   );
 }
 
-/** Admin only: the unclassified-appointment CSV, with the same count the file has. */
+/** Admin only: the CSV of appointments whose status is ignored (blank or unlisted), with its row count. */
 function UnclassifiedExport() {
   const q = useQuery({
     queryKey: ["unclassified-count"],
@@ -100,7 +100,7 @@ function UnclassifiedExport() {
         className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Download className="h-3.5 w-3.5" aria-hidden="true" />
-        Download unclassified appointments (CSV)
+        Download appointments with an ignored status (CSV)
       </a>
       <span className="text-xs text-muted-foreground" data-testid="unclassified-count">
         {q.data ? `${q.data.rows.toLocaleString("en-US")} rows` : q.isError ? "count unavailable" : "counting…"}

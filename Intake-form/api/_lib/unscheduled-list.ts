@@ -133,7 +133,6 @@ export const BUCKET_LABELS: Record<Bucket, string> = {
   never_booked: "nothing booked by day 14, never booked",
   never_no_appt: "never booked, no appointment",
   never_canceled_noshow: "never booked, canceled or no-show",
-  never_no_status: "never booked, appointment with no status",
   right_now_unbooked: "registered in the last 30 days, nothing booked yet",
   right_now_past_d14: "registered in the last 30 days, nothing booked, more than 14 days ago",
 };

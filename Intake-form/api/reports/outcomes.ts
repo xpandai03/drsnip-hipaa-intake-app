@@ -122,7 +122,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           outcomes: {
             converted,
             not_converted: num(x.not_converted),
-            unclassified_only: num(x.unclassified_only),
             no_appointment: num(x.no_appointment),
           },
           converted_pct: pct(converted, covered),
@@ -133,7 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       suppression: {
         threshold: 5,
         note:
-          "Withheld inside the database. The four outcomes partition the covered cohort, so a small " +
+          "Withheld inside the database. The three outcomes partition the counted cohort, so a small " +
           "one is withheld together with at least one other.",
       },
     });
