@@ -22,7 +22,7 @@ import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-
 import { ATTENDANCE_REVIEW_PROMPT } from "../../lib/metrics/attendance-contract";
 
 const METRICS = ["attendance_registration", "attendance_insurance"] as const;
-const WINDOWS = [7, 14, 30];
+const WINDOWS = [7, 14, 30]; // the console offers 7 / 30; 14 answers old links
 
 type Row = {
   status: string;
@@ -58,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!metric || !(METRICS as readonly string[]).includes(metric)) {
     return res.status(400).json({ error: "invalid metric", allowed: METRICS });
   }
-  const windowDays = Number(firstOf(req.query.window) ?? 14);
+  const windowDays = Number(firstOf(req.query.window) ?? 30);
   if (!WINDOWS.includes(windowDays)) {
     return res.status(400).json({ error: "invalid window", allowed: WINDOWS });
   }

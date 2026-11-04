@@ -79,7 +79,7 @@ export function boundedNegativeClaim(
   return (
     `No appointment scheduled between ${horizon.from} and ${horizon.to} ` +
     `(a contiguous, gap-free sweep of ${horizon.windows_complete} windows), as at ${asOf}. ` +
-    `This does NOT establish that the patient has never booked: an appointment scheduled ` +
+    `This does NOT establish that the patient has not booked: an appointment scheduled ` +
     `outside that horizon would not have been seen, and no patient-filtered retrieval has ` +
     `been completed for them.`
   );
