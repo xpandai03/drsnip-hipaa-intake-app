@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
 import { readAttribution } from "@/lib/attribution";
 import { postConversion } from "@/lib/conversion";
+import { registrationPixelOnResult } from "@/lib/adswizz";
 import {
   getPartialId,
   sendPartialBeacon,
@@ -756,6 +757,9 @@ export default function Home() {
       // ever runs here. Fires ONLY on a confirmed success, so a validation
       // failure or a network error can never report a conversion.
       if (ok) postConversion("registration");
+      // AdsWizz attribution pixel (client request, 2026-11-05): one image
+      // request from this document, on the same confirmed success only.
+      registrationPixelOnResult(ok);
       // A server-side validation rejection carries an actionable message.
       if (!ok && res.status === 400 && typeof json.error === "string" && json.fieldErrors) {
         return json.error;

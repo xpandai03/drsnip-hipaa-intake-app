@@ -7,6 +7,13 @@
 // BAA, returning only gclid/fbclid to the ad platforms. That is the ONLY vendor
 // script this module will ever emit.
 //
+// EXCEPTION (2026-11-05): the client asked for an AdsWizz attribution pixel on
+// registration success. This is the one exception to the 2026-08-27
+// vendor-script rule, made at the client's request. It is an image, not a
+// script, fired from the registration form's own document after the server
+// confirms the submission (artifacts/intake-form/src/lib/adswizz.ts). Nothing
+// here emits it.
+//
 // THE HARD REQUIREMENT: this must never load on /admin/*. The staff console
 // holds patient names, DOBs, insurance details and card images; a tag manager
 // there could exfiltrate all of it through a container change we do not control
