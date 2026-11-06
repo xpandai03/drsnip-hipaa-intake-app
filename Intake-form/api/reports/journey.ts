@@ -1,4 +1,4 @@
-// GET /api/reports/journey?metric=<m>&from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|30 (default 30; 14 still answers)
+// GET /api/reports/journey?metric=<m>&from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|30|60 (default 30; 14 still answers)
 //
 // Aggregate-only patient-journey metrics. Auth-guarded, like every other
 // reporting route.

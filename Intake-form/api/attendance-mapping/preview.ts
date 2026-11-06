@@ -23,7 +23,7 @@ import { validateLabelSet } from "../../lib/metrics/attendance-contract";
 import { sqlState } from "../_lib/reporting";
 
 const METRICS = ["attendance_registration", "attendance_insurance"];
-const WINDOWS = [7, 14, 30];
+const WINDOWS = [7, 14, 30, 60];
 
 type Row = {
   status: string;

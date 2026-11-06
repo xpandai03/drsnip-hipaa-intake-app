@@ -1,5 +1,5 @@
 // GET /api/reports/booking?metric=booking_registration|booking_insurance
-//                          &from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|30 (default 30; 14 still answers)
+//                          &from=YYYY-MM-DD&to=YYYY-MM-DD&window=7|30|60 (default 30; 14 still answers)
 //
 // Appointment-record evidence for an entry cohort. Auth-guarded, aggregate
 // only, and — like /api/reports/journey — it never touches a PHI table: it

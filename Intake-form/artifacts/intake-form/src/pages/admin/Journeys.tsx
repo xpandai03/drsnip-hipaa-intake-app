@@ -88,9 +88,9 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-// 2026-10-27: no 14-day option anywhere in the console. 7 / 30, default 30;
-// a 60-day option waits on the SQL window check (0026).
-const WINDOWS = [7, 30] as const;
+// 2026-10-27: no 14-day option anywhere in the console. 7 / 30 / 60, default 30.
+// 60 needs migration 0027 (the SQL window check) applied first.
+const WINDOWS = [7, 30, 60] as const;
 
 /** Pacific day string, without dragging a date library in. */
 function clinicDay(d: Date): string {
