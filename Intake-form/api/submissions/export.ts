@@ -32,6 +32,7 @@ import {
 import { requireAdmin } from "../_lib/auth";
 import { resolvedLocationSql } from "../_lib/location";
 import { toPacificParts, toPacific } from "../_lib/datetime";
+import { canonicalHowHeardList } from "../_lib/how-heard";
 
 // $inferSelect + the derived, query-time `location` (never a stored column).
 type SubmissionRow = typeof submissions.$inferSelect & {
@@ -120,6 +121,15 @@ function rpPath(...keys: string[]): (r: SubmissionRow) => string {
 }
 
 /** Multi-select array → single readable cell, joined with " | ". */
+// How-heard with retired option values mapped onto their replacement (e.g. a
+// pre-2026-11-12 "Radio" exports as "Podcast / Radio"), de-duplicated per row.
+function rpHowHeard(r: SubmissionRow): string {
+  const v = raw(r).howHeard;
+  if (!Array.isArray(v)) return "";
+  const vals = v.map((x) => (x == null ? "" : String(x))).filter((x) => x !== "");
+  return canonicalHowHeardList(vals).join(" | ");
+}
+
 function rpArray(key: string): (r: SubmissionRow) => string {
   return (r) => {
     const v = raw(r)[key];
@@ -331,7 +341,7 @@ const CONSULTATION_COLUMNS: Column[] = [
   { header: "Emergency Contact Name", get: rp("emergencyName") },
   { header: "Emergency Contact Phone", get: rp("emergencyPhone") },
   { header: "Emergency Contact Relationship", get: rp("emergencyRelationship") },
-  { header: "How Heard About DrSnip", get: rpArray("howHeard") },
+  { header: "How Heard About DrSnip", get: rpHowHeard },
   { header: "How Heard (Other)", get: rp("howHeardOther") },
   { header: "Referring Professional", get: rp("referringProfessional") },
   { header: "Additional Notes", get: rp("additionalNotes") },

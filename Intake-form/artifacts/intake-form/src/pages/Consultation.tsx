@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { MultiStepForm, type FormScreen } from "@/components/MultiStepForm";
 import { readAttribution } from "@/lib/attribution";
 import { postConversion } from "@/lib/conversion";
+import { HOW_HEARD } from "@/lib/how-heard";
 import {
   TextField,
   TextAreaField,
@@ -52,27 +53,7 @@ const BC_METHODS = [
   "Fertility awareness",
   "Other",
 ];
-// Multi-select option set (captured as string[]). Phase 6 (C5): "Family" and
-// "Friend" are merged into a single "Family / Friend" option, and TV Commercial
-// / Insurance Directory / Magazine Ad are added. "Other" stays last so its
-// reveal keeps keying on that value. The merged value and new labels change what
-// lands downstream — n8n/Sheets mapping must learn them (flagged, not changed).
-const HOW_HEARD = [
-  "Family / Friend",
-  "Medical Professional Referral",
-  "Facebook",
-  "Instagram",
-  "Google",
-  "AI Search/Assistant",
-  "Brochure",
-  "Event",
-  "Radio",
-  "TV Commercial",
-  "Streaming Ad",
-  "Insurance Directory",
-  "Magazine Ad",
-  "Other",
-];
+// HOW_HEARD (multi-select option set) lives in ../lib/how-heard.
 const PARTNER_RELATIONSHIPS = ["Married", "Partnered"];
 
 const MAX_CHILDREN = 8;

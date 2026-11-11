@@ -23,6 +23,7 @@ import {
   firstOf,
 } from "../_lib/reporting";
 import { isAllowedLocation } from "../_lib/location";
+import { howHeardCountsSql } from "../_lib/how-heard";
 import { CLINIC_TZ, CLINIC_TZ_LABEL, resolveClinicWindow } from "../_lib/clinic-time";
 
 const LIMIT = 500;
@@ -79,18 +80,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // embeds RESOLVED_LOCATION_SQL, whose correlation is written with literal
     // `submissions.<col>` qualifiers (see the note in api/_lib/location.ts).
     // Aliasing this to `v` — as it was — makes those qualifiers unresolvable.
-    const result = await reportQuery<{ value: string | null; count: number }>(sql`
-      SELECT elem AS value, count(*)::int AS count
-      FROM submissions
-      CROSS JOIN LATERAL jsonb_array_elements_text(
-        CASE WHEN jsonb_typeof(submissions.raw_payload->'howHeard') = 'array'
-             THEN submissions.raw_payload->'howHeard' ELSE '[]'::jsonb END
-      ) AS elem
-      ${where}
-      GROUP BY 1
-      ORDER BY 2 DESC, 1 ASC
-      LIMIT ${LIMIT}
-    `);
+    // Retired option values (e.g. "Radio" → "Podcast / Radio") fold into their
+    // replacement at read time; see api/_lib/how-heard.ts.
+    const result = await reportQuery<{ value: string | null; count: number }>(
+      howHeardCountsSql(where, LIMIT),
+    );
     const { rows, suppressed_cells } = suppressRows(result.rows);
     return res.status(200).json({
       dimension,
